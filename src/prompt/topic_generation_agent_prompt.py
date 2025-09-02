@@ -28,13 +28,14 @@ Topic Generation Instructions and Constraints:
 - Within each discussion topic, you must clearly include:  
    1. `topic` - a short, concise name (3-5 words).  
    2. `focus_area` - a set of skills (taken only from the summary which got selected from leaves/last level of the annotated skill tree) that will be tested in this topic write a guideline for each of the respective focus area saying that you have to focus on this respective skill.  
-   3. `necessary_reference_material` - placeholder for reference purpose based on what discussion will happen to the candidate.  
+   3. `necessary_reference_material` - placeholder for reference purpose based on what discussion will happen to the candidate also if a project is written here as reference then use exact given project id also as given in the summary.  
    4. `total_questions` - total number of questions to be asked in each topic can be random and need not be same.
 
 - Constraints for focus areas:  
    - The focus areas should be as mutually exclusive as possible for each respective topic.  
    - Collectively, the three topics' focus areas must cover all the required skills from the given annotated skill tree's leaves/last level present in the summary.  
    - Skills in focus areas must be referenced exactly as they appear in the annotated skill tree's leaves/last level present in the summary (verbatim, no edits).  
+   - The focus areas should relate to its discussion topic based on the provided summary.
 
 - Constraints for total_questions:
    -  It should follow the constraint that total no. of questions for all generated topics should be 18 altogether.
