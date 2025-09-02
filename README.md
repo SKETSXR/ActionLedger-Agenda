@@ -1,2 +1,1 @@
-# Agenda Generation
-"# ActionLedger-Agenda" 
+# ActionLedger-Agenda 
