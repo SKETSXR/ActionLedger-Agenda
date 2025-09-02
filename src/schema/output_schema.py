@@ -79,10 +79,6 @@ class AnnotatedSkillTreeSummarySchema(BaseModel):
     ]
 
 
-# class DomainToAssessSchema(BaseModel):
-#     name: str = Field(..., description="Domain name, e.g., 'Machine Learning'")
-#     weight: float = Field(..., description="Normalized importance in [0, 1]")
-
 class DomainToAssessSchema(BaseModel):
     name: str = Field(..., description="Domain name, e.g., 'Machine Learning'")
     weight: float = Field(..., description="Normalized importance in [0, 1]")
@@ -99,61 +95,6 @@ class GeneratedSummarySchema(BaseModel):
     candidate_project_summary: CandidateProjectSummarySchema
     annotated_skill_tree: AnnotatedSkillTreeSummarySchema
     domains_assess: DomainsToAssessListSchema
-
-
-# class TopicSchema(BaseModel):
-#     topic: Annotated[
-#         str,
-#         Field(..., description="Short name of the discussion topic",
-#               examples=["Project-related discussion", "Case study based on company's profile"])
-#     ]
-#     focus_area: Annotated[
-#         Dict[str, str],
-#         Field(..., description="Mapping of skills towards the topic in focus",
-#               examples=[{"Training and Finetuning LLMs": "Encoders in Transformer"}])
-#     ]
-#     necessary_reference_material: Annotated[
-#         str,
-#         Field(..., description="Reference material required for further agenda in this topic",
-#               examples=["Case study scenarios related to AI and machine learning applications in the company's industry."])
-#     ]
-#     total_questions: Annotated[
-#         int,
-#         Field(..., description="Total number of questions planned for this topic", examples=[4])
-#     ]
-
-
-# class CollectiveInterviewTopicSchema(BaseModel):
-#     topics: List[TopicSchema]
-
-
-# class TopicSchema(BaseModel):
-#     topic: Annotated[
-#         str,
-#         Field(..., description="Short name of the discussion topic",
-#               examples=["Project-related discussion", "Case study based on company's profile"])
-#     ]
-#     focus_area: Annotated[
-#         Dict[str, str],
-#         Field(..., description="Mapping of skills towards the topic in focus",
-#               examples=[{"Training and Finetuning LLMs": "Focus on fine-tuning LLM outputs"}])
-#     ]
-#     necessary_reference_material: Annotated[
-#         str,
-#         Field(..., description="Reference material required for further agenda in this topic",
-#               examples=["Case study scenarios related to AI and machine learning applications in the company's industry."])
-#     ]
-#     total_questions: Annotated[
-#         int,
-#         Field(..., description="Total number of questions planned for this topic", examples=[4])
-#     ]
-
-
-# class CollectiveInterviewTopicSchema(BaseModel):
-#     interview_topics: List[TopicSchema] = Field(
-#         ...,
-#         description="List of interview topics"
-#     )
 
 
 class TopicSchema(BaseModel):
