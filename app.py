@@ -15,8 +15,9 @@ load_dotenv()
 
 # with open(r"new_jd.json", "r", encoding='utf-8') as j:
 #     jd = json.load(j)
-jd_text = asyncio.run(parse_jd_text_to_json("""We are looking for a skilled Data Scientist to join our team at Tech Innovators Inc. The ideal candidate will have a strong background in statistical analysis, machine learning, and data visualization. Responsibilities include analyzing large datasets to extract insights, building predictive models, and collaborating with cross-functional teams to implement data-driven solutions. A bachelor's degree in Computer Science, Statistics, or a related field is required, with a preference for candidates holding a master's degree or higher. Experience with Python, R, SQL, and cloud platforms such as AWS or Azure is essential. Familiarity with big data technologies like Hadoop and Spark is a plus. Join us at Tech Innovators Inc., a leading company in the tech industry known for its innovative solutions and dynamic work environment."""))
-jd = json.loads(jd_text)
+jd_inp_text = """We are looking for a skilled Data Scientist to join our team at Tech Innovators Inc. The ideal candidate will have a strong background in statistical analysis, machine learning, and data visualization. Responsibilities include analyzing large datasets to extract insights, building predictive models, and collaborating with cross-functional teams to implement data-driven solutions. A bachelor's degree in Computer Science, Statistics, or a related field is required, with a preference for candidates holding a master's degree or higher. Experience with Python, R, SQL, and cloud platforms such as AWS or Azure is essential. Familiarity with big data technologies like Hadoop and Spark is a plus. Join us at Tech Innovators Inc., a leading company in the tech industry known for its innovative solutions and dynamic work environment."""
+jd_json_string = asyncio.run(parse_jd_text_to_json(jd_inp_text))
+jd = json.loads(jd_json_string)
 jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["company_background"], fundamental_knowledge=jd.get("fundamental_knowledge"))
 # print(jdes.model_dump_json(indent=2))
 
