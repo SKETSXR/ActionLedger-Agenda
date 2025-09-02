@@ -28,7 +28,7 @@ Topic Generation Instructions and Constraints:
 - Within each discussion topic, you must clearly include:  
    1. `topic` - a short, concise name (3-5 words).  
    2. `focus_area` - a set of skills (taken only from the summary which got selected from leaves/last level of the annotated skill tree) that will be tested in this topic write a guideline for each of the respective focus area saying that you have to focus on this respective skill.  
-   3. `necessary_reference_material` - placeholder for what will be given to candidate during this discussion for reference purpose.  
+   3. `necessary_reference_material` - placeholder for reference purpose based on what discussion will happen to the candidate.  
    4. `total_questions` - total number of questions to be asked in each topic can be random and need not be same.
 
 - Constraints for focus areas:  

@@ -15,12 +15,12 @@ class TopicGenerationAgent:
 
     llm_tg = llm_tg
 
-    @staticmethod
-    async def cleanup_internal_state(state: AgentInternalState) -> AgentInternalState:
-        state.messages = [
-            RemoveMessage(id=str(m.id)) for m in state.messages
-        ]
-        return state
+    # @staticmethod
+    # async def cleanup_internal_state(state: AgentInternalState) -> AgentInternalState:
+    #     state.messages = [
+    #         RemoveMessage(id=str(m.id)) for m in state.messages
+    #     ]
+    #     return state
 
     @staticmethod
     async def topic_generator(state: AgentInternalState) -> AgentInternalState:
