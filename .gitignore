@@ -215,5 +215,4 @@ notebooks/
 *.json
 
 # Practice code files
-.\db_practice_raw_inpdata_utils.py
-./db_practice_raw_inpdata_utils.py
+db_practice_raw_inpdata_utils.py
