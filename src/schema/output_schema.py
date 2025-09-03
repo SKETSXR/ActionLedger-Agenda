@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Annotated, Optional, Dict, List
+from typing import Annotated, Optional, Dict, List, Union, Literal
 
 __all__ = [
     "GeneratedSummarySchema",
@@ -117,6 +117,50 @@ class CollectiveInterviewTopicSchema(BaseModel):
     interview_topics: List[TopicSchema] = Field(..., description="List of interview topics")
 
 
+# class DiscussionSummaryPerTopicSchema(BaseModel):
+#     listoftopics_discussion_summary: list = Field(..., description="Topic name")
+#     summary: list[str] = Field(..., description="Summary of the discussion for this topic")
+
+
+class DiscussionSummaryPerTopicSchema(BaseModel):
+    class OpeningStep(BaseModel):
+        type: str
+        description: str
+
+    class DirectQuestionStep(BaseModel):
+        type: str
+        graded: bool
+        focus_areas: List[str]
+        reference_sources: List[str]
+
+    class DeepDiveStep(BaseModel):
+        type: str
+        focus_areas: List[str]
+        guidelines: str
+        project_reference: Optional[str]
+
+    class WrapUpStep(BaseModel):
+        type: str
+        description: str
+
+    class DiscussionTopic(BaseModel):
+        topic: str
+        sequence: List[
+            Union[
+                "DiscussionSummaryPerTopicSchema.OpeningStep",
+                "DiscussionSummaryPerTopicSchema.DirectQuestionStep",
+                "DiscussionSummaryPerTopicSchema.DeepDiveStep",
+                "DiscussionSummaryPerTopicSchema.WrapUpStep",
+            ]
+        ]
+        guidelines: str
+        focus_areas_covered: List[str]
+        reference_material: List[str]
+
+    discussion_topics: List[DiscussionTopic]
+
+
 class OutputSchema(BaseModel):
     summary: GeneratedSummarySchema
     interview_topics: CollectiveInterviewTopicSchema
+    discussion_summary_per_topic: DiscussionSummaryPerTopicSchema
