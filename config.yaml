@@ -23,5 +23,5 @@ configurable:
   # reasoning_effort_tg: minimal
   temperature_tg: 0
 
-  thread_id: thread_2
+  thread_id: thread_7
   

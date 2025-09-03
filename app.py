@@ -87,10 +87,12 @@ otpt = asyncio.run(graph.ainvoke(inp, config))
 # Test o/p as a schema object (for entire agenda output)
 # print(otpt)
 
-for i, v in otpt.items():
-    if hasattr(v, "model_dump_json"):
-        print(json.dumps(json.loads(v.model_dump_json()), indent=2))
-    elif hasattr(v, "model_dump"):
-        print(json.dumps(v.model_dump(), indent=2))
-    else:
-        pprint.pprint(v, indent=2)
+for k, v in otpt.items():
+    print(f"\n{k}: {v.model_dump_json(indent=2)}\n")
+# for i, v in otpt.items():
+#     if hasattr(v, "model_dump_json"):
+#         print(json.dumps(json.loads(v.model_dump_json()), indent=2))
+#     elif hasattr(v, "model_dump"):
+#         print(json.dumps(v.model_dump(), indent=2))
+#     else:
+#         pprint.pprint(v, indent=2)
