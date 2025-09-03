@@ -104,7 +104,6 @@ class GeneratedSummarySchema(TotalQuestionsSchema):
     candidate_project_summary: CandidateProjectSummarySchema
     annotated_skill_tree: AnnotatedSkillTreeSummarySchema
     domains_assess: DomainsToAssessListSchema
-    # total_questions: TotalQuestionsSchema
 
 
 class TopicSchema(BaseModel):
