@@ -64,6 +64,10 @@ Here are following headings
    - Reproduce the annotated skill tree but all the domains from the annotated skill tree.  
    - Just write the name and weight keys on this generated Json and not write others and just write domains with name and weight and not root etc.
 
+9. Total questions in entire interview
+   - Should be a less than or equal to a maximum 18 as per feasiblity in a real interview.
+   - Just write it as an integer.
+
 For these heading following are some instructions
 - Headings 4 and 6 must not appear.  
 - Headings 5, 7 and 8 must also always show their correct number being 4th, 5th and 6th respectively.  

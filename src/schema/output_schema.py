@@ -89,12 +89,22 @@ class DomainsToAssessListSchema(BaseModel):
         ..., description="List of domains to be assessed"
     )
 
+class TotalQuestionsSchema(BaseModel):
+    total_questions: Annotated[
+        int,
+        Field(
+            ...,
+            description="Total planned questions in the entire interview",
+            examples=[18]
+        )
+    ]
 
-class GeneratedSummarySchema(BaseModel):
+class GeneratedSummarySchema(TotalQuestionsSchema):
     job_requirements: JobRequirementsSummarySchema
     candidate_project_summary: CandidateProjectSummarySchema
     annotated_skill_tree: AnnotatedSkillTreeSummarySchema
     domains_assess: DomainsToAssessListSchema
+    # total_questions: TotalQuestionsSchema
 
 
 class TopicSchema(BaseModel):

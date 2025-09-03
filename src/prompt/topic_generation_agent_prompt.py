@@ -38,7 +38,7 @@ Topic Generation Instructions and Constraints:
    - The focus areas should relate to its discussion topic based on the provided summary.
 
 - Constraints for total_questions:
-   -  It should follow the constraint that total no. of questions for all generated topics should be 18 altogether.
+   -  It should follow the constraint that total no. of questions for all generated topics should be as provided in the summary altogether.
 ---
 
 <Remember>:  
