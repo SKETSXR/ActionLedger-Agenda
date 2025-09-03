@@ -67,7 +67,6 @@ class TopicGenerationAgent:
     
     @staticmethod
     async def should_regenerate(state: AgentInternalState, config: RunnableConfig) -> bool:
-        # if 
 
         def level3_leaves(root: SkillTreeSchema) -> list[SkillTreeSchema]:
             if not root.children:
