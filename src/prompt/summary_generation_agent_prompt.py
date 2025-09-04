@@ -38,7 +38,7 @@ Here are following headings
    - What does the company expect from the candidate (only technical things).  
 
 2. About the Company / Product
-   - What does the company do or what does the product do.  
+   - What does the company do or what does the product do.  Also write a key named C for this and start with C - (then here comes that information).
 
 3. Project-wise Summaries 
    - Write *separate project-wise summaries with this heading*.  
@@ -50,7 +50,7 @@ Here are following headings
    - If a skill of the skill tree does <not> match the JD -> add a note: *“Skip this skill (no JD match)” *.  
 
 5. Fundamental Knowledge 
-   - Write the fundamental knowledge required as per the degree requirement.  
+   - Write the fundamental knowledge required as per the degree requirement. Also write a key named E for this and start with E - (then here comes that information).  
 
 6. Missing Skills ```Just use this for thinking and don't write this```
    - List the skills required by the company as per the Skill Tree but not known to the candidate.  
