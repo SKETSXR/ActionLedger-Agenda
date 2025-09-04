@@ -1,3 +1,4 @@
+# # Test code with one discussion function having loop every topic sequential running fine
 # from __future__ import annotations
 # from typing_extensions import TypedDict
 # from langgraph.graph.message import add_messages
@@ -113,47 +114,47 @@
 #         }
 
 #     # Running
-#     # @staticmethod
-#     # async def discussion_summary_per_topic_generator(state: AgentInternalState) -> AgentInternalState:
-#     #     # Safety: ensure needed fields exist
-#     #     if state.interview_topics is None or not state.interview_topics.interview_topics:
-#     #         raise ValueError("No interview topics to summarize.")
-#     #     if state.generated_summary is None:
-#     #         raise ValueError("generated_summary is required.")
+#     @staticmethod
+#     async def discussion_summary_per_topic_generator(state: AgentInternalState) -> AgentInternalState:
+#         # Safety: ensure needed fields exist
+#         if state.interview_topics is None or not state.interview_topics.interview_topics:
+#             raise ValueError("No interview topics to summarize.")
+#         if state.generated_summary is None:
+#             raise ValueError("generated_summary is required.")
 
-#     #     # We'll build a list of DiscussionSummaryPerTopicSchema.DiscussionTopic
-#     #     discussion_topics: list[DiscussionSummaryPerTopicSchema.DiscussionTopic] = []
+#         # We'll build a list of DiscussionSummaryPerTopicSchema.DiscussionTopic
+#         discussion_topics: list[DiscussionSummaryPerTopicSchema.DiscussionTopic] = []
 
-#     #     # Alias the nested class for structured output
-#     #     TopicEntry = DiscussionSummaryPerTopicSchema.DiscussionTopic
+#         # Alias the nested class for structured output
+#         TopicEntry = DiscussionSummaryPerTopicSchema.DiscussionTopic
 
-#     #     for topic in state.interview_topics.interview_topics:
-#     #         topic_name = topic.topic
+#         for topic in state.interview_topics.interview_topics:
+#             topic_name = topic.topic
 
-#     #         # Serialize summary safely
-#     #         try:
-#     #             summary_json = state.generated_summary.model_dump_json()
-#     #         except Exception:
-#     #             summary_json = str(state.generated_summary)
+#             # Serialize summary safely
+#             try:
+#                 summary_json = state.generated_summary.model_dump_json()
+#             except Exception:
+#                 summary_json = str(state.generated_summary)
 
-#     #         # Ask the LLM to produce ONE discussion topic entry
-#     #         resp = await PerTopicDiscussionSummaryGenerationAgent.llm_tg \
-#     #             .with_structured_output(TopicEntry, method="function_calling") \
-#     #             .ainvoke([
-#     #                 SystemMessage(
-#     #                     content=DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT.format(
-#     #                         generated_summary=summary_json,
-#     #                         interview_topic=topic_name
-#     #                     )
-#     #                 )
-#     #             ])
+#             # Ask the LLM to produce ONE discussion topic entry
+#             resp = await PerTopicDiscussionSummaryGenerationAgent.llm_tg \
+#                 .with_structured_output(TopicEntry, method="function_calling") \
+#                 .ainvoke([
+#                     SystemMessage(
+#                         content=DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT.format(
+#                             generated_summary=summary_json,
+#                             interview_topic=topic_name
+#                         )
+#                     )
+#                 ])
 
-#     #         discussion_topics.append(resp)
+#             discussion_topics.append(resp)
 
-#     #     state.discussion_summary_per_topic = DiscussionSummaryPerTopicSchema(
-#     #         discussion_topics=[dt.model_dump() if hasattr(dt, "model_dump") else dt for dt in discussion_topics]
-#     #     )
-#     #     return state
+#         state.discussion_summary_per_topic = DiscussionSummaryPerTopicSchema(
+#             discussion_topics=[dt.model_dump() if hasattr(dt, "model_dump") else dt for dt in discussion_topics]
+#         )
+#         return state
 
 #     # Test
 #     # @staticmethod
@@ -203,123 +204,124 @@
 #             }
 #             yield Send("worker", payload)
 
-#     @staticmethod
-#     async def discussion_summary_per_topic_generator(state: AgentInternalState) -> AgentInternalState:
+#     # # Test 2
+#     # @staticmethod
+#     # async def discussion_summary_per_topic_generator(state: AgentInternalState) -> AgentInternalState:
         
-#         class State(TypedDict):
-#             topic: str
-#             combined_output: str
-#         # Nodes
-#         async def call_llm_1(state: State):
-#             msg = await PerTopicDiscussionSummaryGenerationAgent.llm_tg \
-#             .with_structured_output(DiscussionSummaryPerTopicSchema.DiscussionTopic, method="function_calling") \
-#             .ainvoke(
-#                 [
-#                     SystemMessage(
-#                         content=DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT.format(
-#                             generated_summary=state.generated_summary.model_dump_json(),
-#                             interview_topic=json.dumps(topic)  # pass the full topic dict
-#                         )
-#                     ),
-#                     state["messages"][-1] if len(state["messages"]) else ""
-#                 ]
-#             )
+#     #     class State(TypedDict):
+#     #         topic: str
+#     #         combined_output: str
+#     #     # Nodes
+#     #     async def call_llm_1(state: State):
+#     #         msg = await PerTopicDiscussionSummaryGenerationAgent.llm_tg \
+#     #         .with_structured_output(DiscussionSummaryPerTopicSchema.DiscussionTopic, method="function_calling") \
+#     #         .ainvoke(
+#     #             [
+#     #                 SystemMessage(
+#     #                     content=DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT.format(
+#     #                         generated_summary=state.generated_summary.model_dump_json(),
+#     #                         interview_topic=json.dumps(topic)  # pass the full topic dict
+#     #                     )
+#     #                 ),
+#     #                 state["messages"][-1] if len(state["messages"]) else ""
+#     #             ]
+#     #         )
 
-#             return {"topic1": msg.content}
-
-
-#         async def call_llm_2(state: State):
-#             msg = await PerTopicDiscussionSummaryGenerationAgent.llm_tg \
-#             .with_structured_output(DiscussionSummaryPerTopicSchema.DiscussionTopic, method="function_calling") \
-#             .ainvoke(
-#                 [
-#                     SystemMessage(
-#                         content=DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT.format(
-#                             generated_summary=state.generated_summary.model_dump_json(),
-#                             interview_topic=json.dumps(topic)  # pass the full topic dict
-#                         )
-#                     ),
-#                     state["messages"][-1] if len(state["messages"]) else ""
-#                 ]
-#             )
-
-#             return {"topic2": msg.content}
+#     #         return {"topic1": msg.content}
 
 
-#         async def call_llm_3(state: State):
-#             msg = await PerTopicDiscussionSummaryGenerationAgent.llm_tg \
-#             .with_structured_output(DiscussionSummaryPerTopicSchema.DiscussionTopic, method="function_calling") \
-#             .ainvoke(
-#                 [
-#                     SystemMessage(
-#                         content=DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT.format(
-#                             generated_summary=generated_summary.model_dump_json(),
-#                             interview_topic=json.dumps(topic)  # pass the full topic dict
-#                         )
-#                     ),
-#                     state["messages"][-1] if len(state["messages"]) else ""
-#                 ]
-#             )
+#     #     async def call_llm_2(state: State):
+#     #         msg = await PerTopicDiscussionSummaryGenerationAgent.llm_tg \
+#     #         .with_structured_output(DiscussionSummaryPerTopicSchema.DiscussionTopic, method="function_calling") \
+#     #         .ainvoke(
+#     #             [
+#     #                 SystemMessage(
+#     #                     content=DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT.format(
+#     #                         generated_summary=state.generated_summary.model_dump_json(),
+#     #                         interview_topic=json.dumps(topic)  # pass the full topic dict
+#     #                     )
+#     #                 ),
+#     #                 state["messages"][-1] if len(state["messages"]) else ""
+#     #             ]
+#     #         )
 
-#             return {"topic3": msg.content}
-
-#         def aggregator(state: State):
-#             """Combine into a single output"""
-
-#             combined += f"TOPIC 1:\n{state['topic1']}\n\n"
-#             combined += f"TOPIC 2:\n{state['topic2']}\n\n"
-#             combined += f"TOPIC 3:\n{state['topic3']}\n\n"
-#             return {"combined_output": combined}
+#     #         return {"topic2": msg.content}
 
 
-#         # Build workflow
-#         parallel_builder = StateGraph(State)
+#     #     async def call_llm_3(state: State):
+#     #         msg = await PerTopicDiscussionSummaryGenerationAgent.llm_tg \
+#     #         .with_structured_output(DiscussionSummaryPerTopicSchema.DiscussionTopic, method="function_calling") \
+#     #         .ainvoke(
+#     #             [
+#     #                 SystemMessage(
+#     #                     content=DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT.format(
+#     #                         generated_summary=generated_summary.model_dump_json(),
+#     #                         interview_topic=json.dumps(topic)  # pass the full topic dict
+#     #                     )
+#     #                 ),
+#     #                 state["messages"][-1] if len(state["messages"]) else ""
+#     #             ]
+#     #         )
 
-#         # Add nodes
-#         parallel_builder.add_node("call_llm_1", call_llm_1)
-#         parallel_builder.add_node("call_llm_2", call_llm_2)
-#         parallel_builder.add_node("call_llm_3", call_llm_3)
-#         parallel_builder.add_node("aggregator", aggregator)
+#     #         return {"topic3": msg.content}
 
-#         # Add edges to connect nodes
-#         parallel_builder.add_edge(START, "call_llm_1")
-#         parallel_builder.add_edge(START, "call_llm_2")
-#         parallel_builder.add_edge(START, "call_llm_3")
-#         parallel_builder.add_edge("call_llm_1", "aggregator")
-#         parallel_builder.add_edge("call_llm_2", "aggregator")
-#         parallel_builder.add_edge("call_llm_3", "aggregator")
-#         parallel_builder.add_edge("aggregator", END)
-#         # Build subgraph
-#         g = StateGraph(PerTopicDiscussionSummaryGenerationAgent.State)
-#         g.add_node("fan_out", PerTopicDiscussionSummaryGenerationAgent.fan_out)
-#         g.add_node("worker", PerTopicDiscussionSummaryGenerationAgent.worker)
-#         g.add_node("join", PerTopicDiscussionSummaryGenerationAgent.join)
-#         g.add_edge(START, "fan_out")
-#         g.add_edge("worker", "join")
-#         g.add_edge("join", END)
-#         app = g.compile()
+#     #     def aggregator(state: State):
+#     #         """Combine into a single output"""
 
-#         # Prepare initial subgraph state
-#         # Use the list of dicts for interview_topics
-#         initial: PerTopicDiscussionSummaryGenerationAgent.State = {
-#             "messages": [],
-#             "interview_topics": [t.model_dump() for t in state.interview_topics.interview_topics],
-#             "generated_summary": state.generated_summary,
-#             "current_topic": None,
-#             "outputs": {},
-#         }
+#     #         combined += f"TOPIC 1:\n{state['topic1']}\n\n"
+#     #         combined += f"TOPIC 2:\n{state['topic2']}\n\n"
+#     #         combined += f"TOPIC 3:\n{state['topic3']}\n\n"
+#     #         return {"combined_output": combined}
 
-#         # Await the subgraph
-#         result = await app.ainvoke(initial)
-#         # result["outputs"] is dict: topic_name -> DiscussionTopic (dict)
 
-#         # Remove any _meta key if present
-#         discussion_topics = [v for k, v in result["outputs"].items() if k != "_meta"]
-#         dsp = DiscussionSummaryPerTopicSchema(discussion_topics=discussion_topics)
+#     #     # Build workflow
+#     #     parallel_builder = StateGraph(State)
 
-#         # Save back into the main AgentInternalState
-#         state.discussion_summary_per_topic = dsp
-#         return state
+#     #     # Add nodes
+#     #     parallel_builder.add_node("call_llm_1", call_llm_1)
+#     #     parallel_builder.add_node("call_llm_2", call_llm_2)
+#     #     parallel_builder.add_node("call_llm_3", call_llm_3)
+#     #     parallel_builder.add_node("aggregator", aggregator)
+
+#     #     # Add edges to connect nodes
+#     #     parallel_builder.add_edge(START, "call_llm_1")
+#     #     parallel_builder.add_edge(START, "call_llm_2")
+#     #     parallel_builder.add_edge(START, "call_llm_3")
+#     #     parallel_builder.add_edge("call_llm_1", "aggregator")
+#     #     parallel_builder.add_edge("call_llm_2", "aggregator")
+#     #     parallel_builder.add_edge("call_llm_3", "aggregator")
+#     #     parallel_builder.add_edge("aggregator", END)
+#     #     # Build subgraph
+#     #     g = StateGraph(PerTopicDiscussionSummaryGenerationAgent.State)
+#     #     g.add_node("fan_out", PerTopicDiscussionSummaryGenerationAgent.fan_out)
+#     #     g.add_node("worker", PerTopicDiscussionSummaryGenerationAgent.worker)
+#     #     g.add_node("join", PerTopicDiscussionSummaryGenerationAgent.join)
+#     #     g.add_edge(START, "fan_out")
+#     #     g.add_edge("worker", "join")
+#     #     g.add_edge("join", END)
+#     #     app = g.compile()
+
+#     #     # Prepare initial subgraph state
+#     #     # Use the list of dicts for interview_topics
+#     #     initial: PerTopicDiscussionSummaryGenerationAgent.State = {
+#     #         "messages": [],
+#     #         "interview_topics": [t.model_dump() for t in state.interview_topics.interview_topics],
+#     #         "generated_summary": state.generated_summary,
+#     #         "current_topic": None,
+#     #         "outputs": {},
+#     #     }
+
+#     #     # Await the subgraph
+#     #     result = await app.ainvoke(initial)
+#     #     # result["outputs"] is dict: topic_name -> DiscussionTopic (dict)
+
+#     #     # Remove any _meta key if present
+#     #     discussion_topics = [v for k, v in result["outputs"].items() if k != "_meta"]
+#     #     dsp = DiscussionSummaryPerTopicSchema(discussion_topics=discussion_topics)
+
+#     #     # Save back into the main AgentInternalState
+#     #     state.discussion_summary_per_topic = dsp
+#     #     return state
 
 #     # @staticmethod
 #     # async def should_continue(state: AgentInternalState) -> bool:
@@ -347,176 +349,107 @@
 #     print(g)
 
 
-# per_topic_agent.py
-# from __future__ import annotations
+# Parallel topic running properly
 import json
-from typing import Annotated, List, Dict, Any, Optional
-from typing_extensions import TypedDict
-from operator import or_
+import asyncio
+import logging
+from typing import List, Dict, Any
 
 from langgraph.graph import StateGraph, START, END
-from langgraph.types import Send
-from langgraph.graph.message import add_messages
 from langchain_core.messages import SystemMessage
 from langchain.globals import set_llm_cache
 from langchain_community.cache import InMemoryCache
 
 from ..schema.agent_schema import AgentInternalState
-from ..schema.output_schema import (
-    CollectiveInterviewTopicSchema, 
-    DiscussionSummaryPerTopicSchema
-)
+from ..schema.output_schema import DiscussionSummaryPerTopicSchema
 from ..prompt.discussion_summary_per_topic_generation_agent_prompt import (
     DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT
 )
 from ..model_handling import llm_tg
 
+# log = logging.getLogger("per_topic")
 set_llm_cache(InMemoryCache())
 
 
 class PerTopicDiscussionSummaryGenerationAgent:
     llm_tg = llm_tg
 
-    class FanoutState(TypedDict):
-        # Subgraph state used only inside the per-topic fanout
-        messages: Annotated[list, add_messages]
-        interview_topics: List[Dict[str, Any]]         # list of topic dicts
-        current_topic: Optional[Dict[str, Any]]        # topic dict for this branch
-        generated_summary: Any                         # your upstream summary object
-        outputs: Annotated[Dict[str, Any], or_]        # merged results { topic_name: result }
-
     @staticmethod
-    async def fan_out(state: "PerTopicDiscussionSummaryGenerationAgent.FanoutState"):
-        """Yield a Send for each topic; LangGraph will process workers concurrently."""
-        for topic in state["interview_topics"]:
-            payload: PerTopicDiscussionSummaryGenerationAgent.FanoutState = {
-                "messages": [],                           # fresh message list per branch
-                "interview_topics": state["interview_topics"],
-                "generated_summary": state["generated_summary"],
-                "current_topic": topic,
-                "outputs": {},                            # worker returns per-topic dict
-            }
-            # IMPORTANT: yield a Send to fan out
-            yield Send("worker", payload)
-
-    @staticmethod
-    async def worker(state: "PerTopicDiscussionSummaryGenerationAgent.FanoutState") -> "PerTopicDiscussionSummaryGenerationAgent.FanoutState":
-        """One branch per topic: call the LLM and return structured output keyed by topic name."""
-        topic: Dict[str, Any] = state.get("current_topic") or {}
-        topic_name = topic.get("topic", "unnamed-topic")
-        generated_summary = state.get("generated_summary")
-
-        # Safely serialize your upstream summary for the prompt
-        try:
-            summary_json = generated_summary.model_dump_json()
-        except Exception:
-            # fallback if it's already a dict/str
-            summary_json = getattr(generated_summary, "json", lambda: str(generated_summary))()
-
-        # Ask the model for ONE structured entry for this topic
+    async def _one_topic_call(generated_summary_json: str, topic: Dict[str, Any]):
+        """Call LLM once for a single topic and return a structured DiscussionTopic."""
         TopicEntry = DiscussionSummaryPerTopicSchema.DiscussionTopic
-        response = await PerTopicDiscussionSummaryGenerationAgent.llm_tg \
+        resp = await PerTopicDiscussionSummaryGenerationAgent.llm_tg \
             .with_structured_output(TopicEntry, method="function_calling") \
             .ainvoke([
                 SystemMessage(
                     content=DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT.format(
-                        generated_summary=summary_json,
-                        interview_topic=json.dumps(topic)  # pass full dict
+                        generated_summary=generated_summary_json,
+                        interview_topic=json.dumps(topic)
                     )
                 )
             ])
-
-        # Merge into outputs under the topic name. DO NOT mutate interview_topics.
-        return {
-            "outputs": {topic_name: response},
-            "generated_summary": generated_summary,
-            "interview_topics": state["interview_topics"],
-            "messages": state["messages"],
-            "current_topic": state["current_topic"],
-        }
-
-    @staticmethod
-    async def join(state: "PerTopicDiscussionSummaryGenerationAgent.FanoutState") -> "PerTopicDiscussionSummaryGenerationAgent.FanoutState":
-        """Optional post-processing: add meta, totals, etc."""
-        outputs = state.get("outputs", {})
-        # Example meta
-        meta = {
-            "topics_count": len([k for k in outputs.keys() if k != "_meta"])
-        }
-        outputs["_meta"] = meta
-        return {
-            "outputs": outputs,
-            "generated_summary": state["generated_summary"],
-            "interview_topics": state["interview_topics"],
-            "messages": state["messages"],
-            "current_topic": state["current_topic"],
-        }
+        return resp
 
     @staticmethod
     async def discussion_summary_per_topic_generator(state: AgentInternalState) -> AgentInternalState:
         """
-        Builds a subgraph that runs one 'worker' per topic in parallel,
-        then merges to a single DiscussionSummaryPerTopicSchema.
+        Parallel per-topic summaries using asyncio.gather (no inner subgraph).
+        Produces DiscussionSummaryPerTopicSchema with one entry per input topic.
         """
-        # Build parallel subgraph
-        g = StateGraph(PerTopicDiscussionSummaryGenerationAgent.FanoutState)
-        g.add_node("fan_out", PerTopicDiscussionSummaryGenerationAgent.fan_out)
-        g.add_node("worker", PerTopicDiscussionSummaryGenerationAgent.worker)
-        g.add_node("join", PerTopicDiscussionSummaryGenerationAgent.join)
-
-        g.add_edge(START, "fan_out")
-        # Each 'Send("worker",...)" returns here; edges from worker to join accumulate
-        g.add_edge("worker", "join")
-        g.add_edge("join", END)
-
-        app = g.compile(name="PerTopicParallelSummaries")
-
-        # Prepare initial fanout state from your top-level AgentInternalState
-        # Ensure state.interview_topics is a list[dict]
+        # Normalize topics list coming from parent state
         try:
-            topics_list = [t.model_dump() for t in state.interview_topics.interview_topics]
+            topics_list: List[Dict[str, Any]] = [t.model_dump() for t in state.interview_topics.interview_topics]
         except Exception:
-            topics_list = state.interview_topics  # already list[dict]?
+            topics_list = state.interview_topics  # already a list[dict]
 
-        initial: PerTopicDiscussionSummaryGenerationAgent.FanoutState = {
-            "messages": [],                 # we are not using messages per-branch here
-            "interview_topics": topics_list,
-            "generated_summary": state.generated_summary,
-            "current_topic": None,
-            "outputs": {},
-        }
+        if not isinstance(topics_list, list) or len(topics_list) == 0:
+            raise ValueError("interview_topics must be a non-empty list[dict]")
 
-        # Run the subgraph (branches execute concurrently under the hood via asyncio)
-        result = await app.ainvoke(initial)
+        # Serialize generated_summary for prompt
+        try:
+            generated_summary_json = state.generated_summary.model_dump_json()
+        except Exception:
+            generated_summary_json = json.dumps(state.generated_summary)
 
-        # Convert outputs dict -> list[DiscussionTopic] for your top-level schema
-        # Skip _meta
-        per_topic = [v for k, v in result["outputs"].items() if k != "_meta"]
-        dsp = DiscussionSummaryPerTopicSchema(discussion_topics=per_topic)
+        # Fire all topic calls concurrently
+        tasks = [
+            PerTopicDiscussionSummaryGenerationAgent._one_topic_call(generated_summary_json, topic)
+            for topic in topics_list
+        ]
+        # log.info("Spawning %d parallel LLM calls for topics", len(tasks))
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Save back to your main state
-        state.discussion_summary_per_topic = dsp
+        # Collect successful DiscussionTopic entries; log failures but continue
+        discussion_topics = []
+        for idx, r in enumerate(results):
+            if isinstance(r, Exception):
+                # log.warning("Topic %d failed: %s", idx, r)
+                continue
+            # r is already a structured DiscussionSummaryPerTopicSchema.DiscussionTopic
+            try:
+                discussion_topics.append(r)
+            except Exception as e:
+                # log.warning("Topic %d: could not append structured response (%s)", idx, e)
+                print("Topic %d: could not append structured response (%s)", idx, e)
+
+        state.discussion_summary_per_topic = DiscussionSummaryPerTopicSchema(
+            discussion_topics=discussion_topics
+        )
+        # log.info("Assembled %d topic summaries", len(discussion_topics))
         return state
 
     @staticmethod
     def get_graph(checkpointer=None):
-        """
-        Top-level graph that has a single node invoking the parallel per-topic subgraph.
-        You can add more nodes before/after as needed.
-        """
-        graph_builder = StateGraph(state_schema=AgentInternalState)
-        graph_builder.add_node(
+        gb = StateGraph(AgentInternalState)
+        gb.add_node(
             "discussion_summary_per_topic_generator",
             PerTopicDiscussionSummaryGenerationAgent.discussion_summary_per_topic_generator
         )
-        graph_builder.add_edge(START, "discussion_summary_per_topic_generator")
-        graph = graph_builder.compile(
-            checkpointer=checkpointer,
-            name="Discussion Summary per Topic Generation Agent"
-        )
-        return graph
-    
+        gb.add_edge(START, "discussion_summary_per_topic_generator")
+        gb.add_edge("discussion_summary_per_topic_generator", END)
+        return gb.compile(checkpointer=checkpointer, name="AgendaGenerationAgent")
+
+
 if __name__ == "__main__":
     graph = PerTopicDiscussionSummaryGenerationAgent.get_graph()
-    g = graph.get_graph().draw_ascii()
-    print(g)
+    print(graph.get_graph().draw_ascii())

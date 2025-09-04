@@ -126,22 +126,24 @@ class DiscussionSummaryPerTopicSchema(BaseModel):
     class OpeningStep(BaseModel):
         type: str
         description: str
+        guidelines: str
+        focus_areas: List[str]
+        reference_sources: List[str]
+
 
     class DirectQuestionStep(BaseModel):
         type: str
-        graded: bool
+        description: str
+        guidelines: str
         focus_areas: List[str]
         reference_sources: List[str]
 
     class DeepDiveStep(BaseModel):
         type: str
-        focus_areas: List[str]
-        guidelines: str
-        project_reference: Optional[str]
-
-    class WrapUpStep(BaseModel):
-        type: str
         description: str
+        guidelines: str
+        focus_areas: List[str]
+        reference_sources: List[str]
 
     class DiscussionTopic(BaseModel):
         topic: str
@@ -149,8 +151,7 @@ class DiscussionSummaryPerTopicSchema(BaseModel):
             Union[
                 "DiscussionSummaryPerTopicSchema.OpeningStep",
                 "DiscussionSummaryPerTopicSchema.DirectQuestionStep",
-                "DiscussionSummaryPerTopicSchema.DeepDiveStep",
-                "DiscussionSummaryPerTopicSchema.WrapUpStep",
+                "DiscussionSummaryPerTopicSchema.DeepDiveStep"
             ]
         ]
         guidelines: str
