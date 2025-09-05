@@ -23,5 +23,9 @@ configurable:
   # reasoning_effort_tg: minimal
   temperature_tg: 0
 
-  thread_id: thread_49
+  model_provider_dts: openai
+  model_dts: gpt-4o
+  # reasoning_effort_dts: minimal
+  temperature_dts: 0
+  thread_id: thread_52
   

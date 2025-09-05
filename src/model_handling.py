@@ -70,3 +70,37 @@ elif config["configurable"]["model_provider_tg"] == "ollama":
     temperature_tg = config["configurable"].get("temperature_tg", None)
     reasoning_effort_tg = config["configurable"].get("reasoning_effort_tg", None)
     llm_tg = ChatOllama(model=model_tg)
+
+
+
+if config["configurable"]["model_provider_dts"] == "openai":
+    model_dts = config["configurable"]["model_dts"]
+    model_provider_dts = config["configurable"]["model_provider_dts"]
+    max_retries_dts = config["configurable"].get("max_retries_dts", 25)
+    temperature_dts = config["configurable"].get("temperature_dts", None)
+    reasoning_effort_dts = config["configurable"].get("reasoning_effort_dts", None)
+    llm_dts = ChatOpenAI(model=model_dts, max_retries=max_retries_dts, temperature=temperature_dts, reasoning_effort=reasoning_effort_dts, timeout=60)
+
+elif config["configurable"]["model_provider_dts"] == "google_genai":
+    model_dts = config["configurable"]["model_dts"]
+    model_provider_dts = config["configurable"]["model_provider_dts"]
+    max_retries_dts = config["configurable"].get("max_retries_dts", 25)
+    temperature_dts = config["configurable"].get("temperature_dts", None)
+    reasoning_effort_dts = config["configurable"].get("reasoning_effort_dts", None)
+    llm_dts = ChatGoogleGenerativeAI(model=model_dts)
+
+elif config["configurable"]["model_provider_dts"] == "groq":
+    model_dts = config["configurable"]["model_dts"]
+    model_provider_dts = config["configurable"]["model_provider_dts"]
+    max_retries_dts = config["configurable"].get("max_retries_dts", 25)
+    temperature_dts = config["configurable"].get("temperature_dts", None)
+    reasoning_effort_dts = config["configurable"].get("reasoning_effort_dts", None)
+    llm_dts = ChatGroq(model=model_dts)
+
+elif config["configurable"]["model_provider_dts"] == "ollama":
+    model_dts = config["configurable"]["model_dts"]
+    model_provider_dts = config["configurable"]["model_provider_dts"]
+    max_retries_dts = config["configurable"].get("max_retries_dts", 25)
+    temperature_dts = config["configurable"].get("temperature_dts", None)
+    reasoning_effort_dts = config["configurable"].get("reasoning_effort_dts", None)
+    llm_dts = ChatOllama(model=model_dts)

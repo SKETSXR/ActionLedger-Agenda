@@ -352,7 +352,6 @@
 # Parallel topic running properly
 import json
 import asyncio
-import logging
 from typing import List, Dict, Any
 
 from langgraph.graph import StateGraph, START, END
@@ -365,20 +364,19 @@ from ..schema.output_schema import DiscussionSummaryPerTopicSchema
 from ..prompt.discussion_summary_per_topic_generation_agent_prompt import (
     DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT
 )
-from ..model_handling import llm_tg
+from ..model_handling import llm_dts
 
-# log = logging.getLogger("per_topic")
 set_llm_cache(InMemoryCache())
 
 
 class PerTopicDiscussionSummaryGenerationAgent:
-    llm_tg = llm_tg
+    llm_dts = llm_dts
 
     @staticmethod
     async def _one_topic_call(generated_summary_json: str, topic: Dict[str, Any]):
         """Call LLM once for a single topic and return a structured DiscussionTopic."""
         TopicEntry = DiscussionSummaryPerTopicSchema.DiscussionTopic
-        resp = await PerTopicDiscussionSummaryGenerationAgent.llm_tg \
+        resp = await PerTopicDiscussionSummaryGenerationAgent.llm_dts \
             .with_structured_output(TopicEntry, method="function_calling") \
             .ainvoke([
                 SystemMessage(
@@ -416,26 +414,22 @@ class PerTopicDiscussionSummaryGenerationAgent:
             PerTopicDiscussionSummaryGenerationAgent._one_topic_call(generated_summary_json, topic)
             for topic in topics_list
         ]
-        # log.info("Spawning %d parallel LLM calls for topics", len(tasks))
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Collect successful DiscussionTopic entries; log failures but continue
+        # Collect successful DiscussionTopic entries
         discussion_topics = []
         for idx, r in enumerate(results):
             if isinstance(r, Exception):
-                # log.warning("Topic %d failed: %s", idx, r)
                 continue
             # r is already a structured DiscussionSummaryPerTopicSchema.DiscussionTopic
             try:
                 discussion_topics.append(r)
             except Exception as e:
-                # log.warning("Topic %d: could not append structured response (%s)", idx, e)
                 print("Topic %d: could not append structured response (%s)", idx, e)
 
         state.discussion_summary_per_topic = DiscussionSummaryPerTopicSchema(
             discussion_topics=discussion_topics
         )
-        # log.info("Assembled %d topic summaries", len(discussion_topics))
         return state
 
     @staticmethod
