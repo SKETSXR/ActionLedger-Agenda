@@ -10,7 +10,7 @@ async def parse_jd_text_to_json(jd_text):
     Now extract structured data and return only a JSON object in this exact format:
     {{
         "job_role":"actual job role name - ...",
-        "fundamental_knowledge": "...", // If it is not mentioned then it can be null
+        "fundamental_knowledge": "...", // If it is not mentioned then it should be null
         "company_background":"actual company name - ..."
     }}
     Job Description Text:
