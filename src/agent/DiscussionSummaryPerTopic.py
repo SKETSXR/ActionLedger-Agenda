@@ -245,7 +245,7 @@ from ..model_handling import llm_dts
 set_llm_cache(InMemoryCache())
 
 
-class PerTopicDiscussionSummaryGenerationAgent:
+class PerTopicDiscussionSummaryGenerationAgent:        
     llm_dts = llm_dts
 
     @staticmethod
@@ -263,6 +263,18 @@ class PerTopicDiscussionSummaryGenerationAgent:
                 )
             ])
         return resp
+
+    @staticmethod
+    async def should_regenerate(state: AgentInternalState):
+        input_topics = {t.topic for t in state.interview_topics.interview_topics}
+        output_topics = {dt.topic for dt in state.discussion_summary_per_topic.discussion_topics}
+        if input_topics != output_topics:
+            missing = input_topics - output_topics
+            extra = output_topics - input_topics
+            print(f"[PerTopic] Topic mismatch: missing {missing}, extra {extra}")
+            return True
+        else:
+            return False
 
     @staticmethod
     async def discussion_summary_per_topic_generator(state: AgentInternalState) -> AgentInternalState:
@@ -316,6 +328,14 @@ class PerTopicDiscussionSummaryGenerationAgent:
             PerTopicDiscussionSummaryGenerationAgent.discussion_summary_per_topic_generator
         )
         gb.add_edge(START, "discussion_summary_per_topic_generator")
+        gb.add_conditional_edges(
+            "discussion_summary_per_topic_generator",
+            PerTopicDiscussionSummaryGenerationAgent.should_regenerate,
+            {
+                False: END,
+                True: "discussion_summary_per_topic_generator"
+            }
+        )
         gb.add_edge("discussion_summary_per_topic_generator", END)
         return gb.compile(checkpointer=checkpointer, name="AgendaGenerationAgent")
 
