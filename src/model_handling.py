@@ -72,7 +72,6 @@ elif config["configurable"]["model_provider_tg"] == "ollama":
     llm_tg = ChatOllama(model=model_tg)
 
 
-
 if config["configurable"]["model_provider_dts"] == "openai":
     model_dts = config["configurable"]["model_dts"]
     model_provider_dts = config["configurable"]["model_provider_dts"]
@@ -104,3 +103,36 @@ elif config["configurable"]["model_provider_dts"] == "ollama":
     temperature_dts = config["configurable"].get("temperature_dts", None)
     reasoning_effort_dts = config["configurable"].get("reasoning_effort_dts", None)
     llm_dts = ChatOllama(model=model_dts)
+
+
+if config["configurable"]["model_provider_n"] == "openai":
+    model_n = config["configurable"]["model_dts"]
+    model_provider_n = config["configurable"]["model_provider_n"]
+    max_retries_n = config["configurable"].get("max_retries_n", 25)
+    temperature_n = config["configurable"].get("temperature_n", None)
+    reasoning_effort_n = config["configurable"].get("reasoning_effort_n", None)
+    llm_n = ChatOpenAI(model=model_n, max_retries=max_retries_n, temperature=temperature_n, reasoning_effort=reasoning_effort_n, timeout=60)
+
+elif config["configurable"]["model_provider_n"] == "google_genai":
+    model_n = config["configurable"]["model_n"]
+    model_provider_n = config["configurable"]["model_provider_n"]
+    max_retries_n = config["configurable"].get("max_retries_n", 25)
+    temperature_n = config["configurable"].get("temperature_n", None)
+    reasoning_effort_n = config["configurable"].get("reasoning_effort_n", None)
+    llm_n = ChatGoogleGenerativeAI(model=model_n)
+
+elif config["configurable"]["model_provider_n"] == "groq":
+    model_n = config["configurable"]["model_n"]
+    model_provider_n = config["configurable"]["model_provider_n"]
+    max_retries_n = config["configurable"].get("max_retries_n", 25)
+    temperature_n = config["configurable"].get("temperature_n", None)
+    reasoning_effort_n = config["configurable"].get("reasoning_effort_n", None)
+    llm_n = ChatGroq(model=model_n)
+
+elif config["configurable"]["model_provider_n"] == "ollama":
+    model_n = config["configurable"]["model_n"]
+    model_provider_n = config["configurable"]["model_provider_n"]
+    max_retries_n = config["configurable"].get("max_retries_n", 25)
+    temperature_n = config["configurable"].get("temperature_n", None)
+    reasoning_effort_n = config["configurable"].get("reasoning_effort_n", None)
+    llm_n = ChatOllama(model=model_n)

@@ -89,13 +89,13 @@ from langchain_core.messages import SystemMessage
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
 from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
-from ..model_handling import llm_dts
+from ..model_handling import llm_n
 
 ALLOWED_TYPES = {"Direct", "Deep Dive"}
 
 
 class NodesGenerationAgent:
-    llm_dts = llm_dts
+    llm_n = llm_n
 
     @staticmethod
     def _as_dict(x: Any) -> Dict[str, Any]:
@@ -209,7 +209,7 @@ class NodesGenerationAgent:
             expected_topic = NodesGenerationAgent._get_topic_name(dspt_obj)
 
             # Call LLM with ONLY this topic’s summary + T
-            resp: TopicWithNodesSchema = await NodesGenerationAgent.llm_dts \
+            resp: TopicWithNodesSchema = await NodesGenerationAgent.llm_n \
                 .with_structured_output(TopicWithNodesSchema, method="function_calling") \
                 .ainvoke([
                     SystemMessage(content=NODES_AGENT_PROMPT.format(
