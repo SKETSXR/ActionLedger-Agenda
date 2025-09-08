@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from .SummaryGenerationAgent import SummaryGenerationAgent
 from .TopicGenerationAgent import TopicGenerationAgent
 from .DiscussionSummaryPerTopic import PerTopicDiscussionSummaryGenerationAgent 
+from .NodesAgent import NodesGenerationAgent
 from ..schema.agent_schema import AgentInternalState
 from ..schema.input_schema import InputSchema
 from ..schema.output_schema import OutputSchema
@@ -118,7 +119,8 @@ class AgendaGenerationAgent:
         output = OutputSchema(
             summary=state.generated_summary,
             interview_topics=state.interview_topics,
-            discussion_summary_per_topic=state.discussion_summary_per_topic
+            discussion_summary_per_topic=state.discussion_summary_per_topic,
+            nodes=state.nodes
         )
         return output
 
@@ -136,6 +138,7 @@ class AgendaGenerationAgent:
         graph_builder.add_node("summary_generation_agent", SummaryGenerationAgent.get_graph())
         graph_builder.add_node("topic_generation_agent", TopicGenerationAgent.get_graph())
         graph_builder.add_node("discussion_summary_per_topic_generator", PerTopicDiscussionSummaryGenerationAgent.get_graph())
+        graph_builder.add_node("nodes_generator", NodesGenerationAgent.get_graph())
         # graph_builder.add_node("summary_storage_tool", AgendaGenerationAgent.store_summary_tool)
         graph_builder.add_node("summary_storage_tool", AgendaGenerationAgent.store_inp_summary_tool)
         # graph_builder.add_node("interview_topics_storage_tool", AgendaGenerationAgent.store_inferred_topics_tool)
@@ -146,7 +149,9 @@ class AgendaGenerationAgent:
         graph_builder.add_edge("summary_generation_agent", "summary_storage_tool")
         graph_builder.add_edge("summary_storage_tool", "topic_generation_agent")
         graph_builder.add_edge("topic_generation_agent", "discussion_summary_per_topic_generator")
-        graph_builder.add_edge("discussion_summary_per_topic_generator", "output_formatter")
+        graph_builder.add_edge("discussion_summary_per_topic_generator", "nodes_generator")
+        graph_builder.add_edge("nodes_generator", "output_formatter")
+        # graph_builder.add_edge("discussion_summary_per_topic_generator", "output_formatter")
         # graph_builder.add_edge("summary_storage_tool", "output_formatter")
         graph_builder.add_edge("output_formatter", END)
 

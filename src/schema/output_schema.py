@@ -123,7 +123,7 @@ class CollectiveInterviewTopicSchema(BaseModel):
 
 
 class DiscussionSummaryPerTopicSchema(BaseModel):
-    class OpeningStep(BaseModel):
+    class Opening(BaseModel):
         type: str
         description: str
         guidelines: str
@@ -131,14 +131,14 @@ class DiscussionSummaryPerTopicSchema(BaseModel):
         reference_sources: List[str]
 
 
-    class DirectQuestionStep(BaseModel):
+    class DirectQuestion(BaseModel):
         type: str
         description: str
         guidelines: str
         focus_areas: List[str]
         reference_sources: List[str]
 
-    class DeepDiveStep(BaseModel):
+    class DeepDive(BaseModel):
         type: str
         description: str
         guidelines: str
@@ -149,9 +149,9 @@ class DiscussionSummaryPerTopicSchema(BaseModel):
         topic: str
         sequence: List[
             Union[
-                "DiscussionSummaryPerTopicSchema.OpeningStep",
-                "DiscussionSummaryPerTopicSchema.DirectQuestionStep",
-                "DiscussionSummaryPerTopicSchema.DeepDiveStep"
+                "DiscussionSummaryPerTopicSchema.Opening",
+                "DiscussionSummaryPerTopicSchema.DirectQuestion",
+                "DiscussionSummaryPerTopicSchema.DeepDive"
             ]
         ]
         guidelines: str
@@ -161,7 +161,49 @@ class DiscussionSummaryPerTopicSchema(BaseModel):
     discussion_topics: List[DiscussionTopic]
 
 
+QuestionType = Literal["Opening", "Direct", "Deep Dive"]
+
+
+# class NodeSchema(BaseModel):
+#     id: int = Field(..., ge=1)
+#     question_type: QuestionType
+#     graded: bool
+#     next_node: Optional[int] = Field(None, ge=1)
+#     context: str
+#     skills: List[str] = Field(..., min_items=1)
+#     total_question_threshold: Optional[int] = Field(None, ge=1)
+#     question_guidelines: Optional[str] = None
+
+# class TopicWithNodesSchema(BaseModel):
+#     topic: str
+#     nodes: List[NodeSchema] = Field(..., min_items=1)
+
+# class NodesSchema(BaseModel):
+#     topics_with_nodes: List[TopicWithNodesSchema] = Field(..., min_items=1)
+
+
+class NodeSchema(BaseModel):
+    id: int = Field(..., ge=1)
+    question_type: QuestionType
+    graded: bool
+    next_node: Optional[int] = Field(None, ge=1)
+    context: str = Field(..., min_length=1)
+    skills: List[str] = Field(..., min_items=1)
+    total_question_threshold: Optional[int] = Field(None, ge=1)
+    question_guidelines: Optional[str] = None
+
+
+class TopicWithNodesSchema(BaseModel):
+    topic: str
+    nodes: List[NodeSchema] = Field(..., min_items=1)
+
+
+class NodesSchema(BaseModel):
+    topics_with_nodes: List[TopicWithNodesSchema] = Field(..., min_items=1)
+
+
 class OutputSchema(BaseModel):
     summary: GeneratedSummarySchema
     interview_topics: CollectiveInterviewTopicSchema
     discussion_summary_per_topic: DiscussionSummaryPerTopicSchema
+    nodes: NodesSchema

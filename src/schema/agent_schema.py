@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from langchain_core.messages import AnyMessage, RemoveMessage
 from langgraph.graph import add_messages
 
-from .output_schema import GeneratedSummarySchema, CollectiveInterviewTopicSchema, DiscussionSummaryPerTopicSchema
+from .output_schema import GeneratedSummarySchema, CollectiveInterviewTopicSchema, DiscussionSummaryPerTopicSchema, NodesSchema
 from .input_schema import JobDescriptionSchema, SkillTreeSchema, CandidateProfileSchema
 
 
@@ -31,3 +31,4 @@ class AgentInternalState(BaseModel):
     generated_summary: GeneratedSummarySchema | None = None
     interview_topics: CollectiveInterviewTopicSchema | None = None
     discussion_summary_per_topic: DiscussionSummaryPerTopicSchema | None = None
+    nodes: NodesSchema | None = None

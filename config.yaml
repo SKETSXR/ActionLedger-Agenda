@@ -27,5 +27,5 @@ configurable:
   model_dts: gpt-4o
   # reasoning_effort_dts: minimal
   temperature_dts: 0
-  thread_id: thread_52
+  thread_id: thread_17
   

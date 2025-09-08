@@ -287,7 +287,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
 
         # Run all topic calls concurrently
         tasks = [
-            PerTopicDiscussionSummaryGenerationAgent._one_topic_call(generated_summary_json, topic)
+            asyncio.create_task(PerTopicDiscussionSummaryGenerationAgent._one_topic_call(generated_summary_json, topic))
             for topic in topics_list
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -323,3 +323,169 @@ class PerTopicDiscussionSummaryGenerationAgent:
 if __name__ == "__main__":
     graph = PerTopicDiscussionSummaryGenerationAgent.get_graph()
     print(graph.get_graph().draw_ascii())
+
+
+# # Guard for all topic discussion summary generation try
+# import json
+# import asyncio
+# from typing import List, Dict, Any, Tuple, Union
+
+# from langgraph.graph import StateGraph, START, END
+# from langchain_core.messages import SystemMessage
+# from langchain.globals import set_llm_cache
+# from langchain_community.cache import InMemoryCache
+
+# from ..schema.agent_schema import AgentInternalState
+# from ..schema.output_schema import DiscussionSummaryPerTopicSchema
+# from ..prompt.discussion_summary_per_topic_generation_agent_prompt import (
+#     DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT
+# )
+# from ..model_handling import llm_dts
+
+# set_llm_cache(InMemoryCache())
+
+
+# def _as_dict(x: Any) -> Dict[str, Any]:
+#     if hasattr(x, "model_dump"):
+#         return x.model_dump()
+#     if hasattr(x, "dict"):
+#         return x.dict()
+#     return x if isinstance(x, dict) else {}
+
+
+# def _topic_label(d: Dict[str, Any]) -> str:
+#     for k in ("topic", "name", "title", "label"):
+#         v = d.get(k)
+#         if isinstance(v, str) and v.strip():
+#             return v.strip()
+#     return "Unknown"
+
+
+# class PerTopicDiscussionSummaryGenerationAgent:
+#     llm_dts = llm_dts
+
+#     @staticmethod
+#     async def _one_topic_call(idx: int, generated_summary_json: str, topic_dict: Dict[str, Any]):
+#         """Call LLM once for a single topic and return (idx, DiscussionTopic)."""
+#         TopicEntry = DiscussionSummaryPerTopicSchema.DiscussionTopic
+#         sysmsg = SystemMessage(
+#             content=DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT.format(
+#                 generated_summary=generated_summary_json,
+#                 interview_topic=json.dumps(topic_dict)
+#             )
+#         )
+#         result = await PerTopicDiscussionSummaryGenerationAgent.llm_dts \
+#             .with_structured_output(TopicEntry, method="function_calling") \
+#             .ainvoke([sysmsg])
+#         return idx, result
+
+#     @staticmethod
+#     async def discussion_summary_per_topic_generator(state: AgentInternalState) -> AgentInternalState:
+#         """
+#         Generate per-topic discussion summaries with coverage check.
+#         If some topics are missing/mismatched, regenerate only those until all are covered (or attempts exhausted).
+#         """
+#         # ---- Normalize topics list ----
+#         try:
+#             topics_list: List[Dict[str, Any]] = [t.model_dump() for t in state.interview_topics.interview_topics]
+#         except Exception:
+#             topics_list = list(state.interview_topics)  # assume list[dict]
+
+#         if not topics_list:
+#             raise ValueError("interview_topics must be a non-empty list.")
+
+#         input_labels = [_topic_label(_as_dict(t)) for t in topics_list]
+#         print(f"[PerTopic] Topics in: {input_labels} (count={len(input_labels)})")
+
+#         # ---- Serialize global generated summary ----
+#         try:
+#             generated_summary_json = state.generated_summary.model_dump_json()
+#         except Exception:
+#             gs = state.generated_summary
+#             generated_summary_json = json.dumps(gs.model_dump() if hasattr(gs, "model_dump") else gs)
+
+#         n = len(topics_list)
+#         ordered: List[DiscussionSummaryPerTopicSchema.DiscussionTopic] = [None] * n  # type: ignore
+
+#         # ---- Regeneration loop: try to cover all topics ----
+#         max_attempts = 3
+#         concurrency = 2  # tweak if your provider allows more
+#         attempt = 1
+
+#         while attempt <= max_attempts:
+#             # Figure out which indices still need generation
+#             pending_indices = [i for i, x in enumerate(ordered) if x is None]
+#             if not pending_indices:
+#                 break  # all covered
+
+#             if attempt == 1:
+#                 print(f"[PerTopic] Generating all {n} topics (attempt {attempt}/{max_attempts})...")
+#             else:
+#                 pend_names = [input_labels[i] for i in pending_indices]
+#                 print(f"[PerTopic] Regenerating {len(pending_indices)} pending topics "
+#                       f"(attempt {attempt}/{max_attempts}): {pend_names}")
+
+#             sem = asyncio.Semaphore(concurrency)
+
+#             async def _guarded(i: int) -> Tuple[int, Union[Exception, Any]]:
+#                 async with sem:
+#                     topic_dict = topics_list[i]
+#                     try:
+#                         return await asyncio.wait_for(
+#                             PerTopicDiscussionSummaryGenerationAgent._one_topic_call(
+#                                 i, generated_summary_json, topic_dict
+#                             ),
+#                             timeout=60,
+#                         )
+#                     except Exception as e:
+#                         print(f"[PerTopic][ERROR] idx={i} topic='{input_labels[i]}' failed: "
+#                               f"{type(e).__name__}: {e}")
+#                         return i, e
+
+#             tasks = [_guarded(i) for i in pending_indices]
+#             results = await asyncio.gather(*tasks, return_exceptions=False)
+
+#             # Validate & place results
+#             for i, payload in results:
+#                 if isinstance(payload, Exception):
+#                     continue
+#                 output_label = _topic_label(_as_dict(payload))
+#                 expected_label = input_labels[i]
+#                 if output_label != expected_label:
+#                     print(f"[PerTopic][WARN] Label mismatch at idx={i}: "
+#                           f"input='{expected_label}' vs output='{output_label}' (will retry this topic)")
+#                     continue
+#                 ordered[i] = payload  # success
+
+#             attempt += 1
+
+#         # ---- Final coverage check ----
+#         still_missing = [i for i, x in enumerate(ordered) if x is None]
+#         if still_missing:
+#             missing_names = [input_labels[i] for i in still_missing]
+#             raise RuntimeError(
+#                 f"[PerTopic][ERROR] Could not generate discussion summaries for indices {still_missing} "
+#                 f"(topics: {missing_names}) after {max_attempts} attempts."
+#             )
+
+#         print(f"[PerTopic] Successfully generated coverage for {n}/{n} topics.")
+#         state.discussion_summary_per_topic = DiscussionSummaryPerTopicSchema(
+#             discussion_topics=ordered
+#         )
+#         return state
+
+#     @staticmethod
+#     def get_graph(checkpointer=None):
+#         gb = StateGraph(AgentInternalState)
+#         gb.add_node(
+#             "discussion_summary_per_topic_generator",
+#             PerTopicDiscussionSummaryGenerationAgent.discussion_summary_per_topic_generator
+#         )
+#         gb.add_edge(START, "discussion_summary_per_topic_generator")
+#         gb.add_edge("discussion_summary_per_topic_generator", END)
+#         return gb.compile(checkpointer=checkpointer, name="PerTopicDiscussionSummaryGenerationAgent")
+
+
+# if __name__ == "__main__":
+#     graph = PerTopicDiscussionSummaryGenerationAgent.get_graph()
+#     print(graph.get_graph().draw_ascii())
