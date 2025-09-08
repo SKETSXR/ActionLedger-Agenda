@@ -1,88 +1,5 @@
-# Running Test with all topics given
-# from typing_extensions import TypedDict
-# from langgraph.graph import StateGraph, START, END
-# from langchain_core.messages import SystemMessage
-# from langchain.globals import set_llm_cache
-# from langchain_community.cache import InMemoryCache
-# from ..schema.agent_schema import AgentInternalState
-# from ..schema.output_schema import (
-#     NodesSchema,
-#     TopicWithNodesSchema,
-# )
-# from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
-# from ..model_handling import llm_dts
-# from typing import List, Dict, Any
-# import json
-
-# set_llm_cache(InMemoryCache())
-
-
-# class NodesGenerationAgent:
-
-#     llm_dts = llm_dts
-
-#     @staticmethod
-#     async def nodes_generator(state: AgentInternalState) -> AgentInternalState:
-#         # Safety checks
-#         if state.interview_topics is None or not getattr(state.interview_topics, "interview_topics", None):
-#             raise ValueError("No interview topics to summarize.")
-#         if state.generated_summary is None:
-#             raise ValueError("generated_summary is required.")
-#         if state.discussion_summary_per_topic is None:
-#             raise ValueError("discussion_summary_per_topic is required.")
-
-#         # Serialize inputs for the prompt
-#         try:
-#             discussion_summary_json = state.discussion_summary_per_topic.model_dump_json()
-#         except Exception:
-#             discussion_summary_json = json.dumps(state.discussion_summary_per_topic.discussion_topics)
-
-#         topics_out: List[TopicWithNodesSchema] = []
-
-#         # For each topic, ask the model to produce nodes for that topic
-#         for topic in state.interview_topics.interview_topics:
-#             # total questions budget for this topic
-#             total_no_questions_context = getattr(topic, "total_questions", None)
-#             interview_topic_json = topic.model_dump_json() if hasattr(topic, "model_dump_json") else json.dumps(topic)
-#             resp: TopicWithNodesSchema = await NodesGenerationAgent.llm_dts \
-#                 .with_structured_output(TopicWithNodesSchema, method="function_calling") \
-#                 .ainvoke([
-#                     SystemMessage(
-#                         content=NODES_AGENT_PROMPT.format(
-#                             discussion_summary=discussion_summary_json,
-#                             # interview_topic_json = interview_topic_json,
-#                             total_no_questions_context=total_no_questions_context
-#                         )
-#                     )
-#                 ])
-
-#             # Ensure the topic name is present; if your prompt already includes it, this is redundant
-#             if not resp.topic:
-#                 resp = TopicWithNodesSchema(topic=getattr(topic, "topic", "Unknown"), nodes=resp.nodes)
-
-#             topics_out.append(resp)
-
-#         # Assign back to state using the CORRECT container field
-#         state.nodes = NodesSchema(
-#             topics_with_nodes=[t.model_dump() if hasattr(t, "model_dump") else t for t in topics_out]
-#         )
-#         return state
-
-#     @staticmethod
-#     def get_graph(checkpointer=None):
-#         graph_builder = StateGraph(state_schema=AgentInternalState)
-#         graph_builder.add_node("nodes_generator", NodesGenerationAgent.nodes_generator)
-#         graph_builder.add_edge(START, "nodes_generator")
-#         graph = graph_builder.compile(checkpointer=checkpointer, name="Nodes Generation Agent")
-#         return graph
-
-# if __name__ == "__main__":
-#     graph = NodesGenerationAgent.get_graph()
-#     g = graph.get_graph().draw_ascii()
-#     print(g)
-
 from typing import List, Any, Dict
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import StateGraph, START
 import json
 import copy
 from langchain_core.messages import SystemMessage
@@ -116,7 +33,7 @@ class NodesGenerationAgent:
 
     @staticmethod
     def _get_total_questions(topic_obj: Any, dspt_obj: Any) -> int:
-        # prefer topic.total_questions, then dspt.total_questions
+
         for src in (topic_obj, dspt_obj):
             d = NodesGenerationAgent._as_dict(src)
             tq = d.get("total_questions")
@@ -208,7 +125,7 @@ class NodesGenerationAgent:
             per_topic_summary_json = NodesGenerationAgent._to_json_one(dspt_obj)
             expected_topic = NodesGenerationAgent._get_topic_name(dspt_obj)
 
-            # Call LLM with ONLY this topic’s summary + T
+            # Call LLM with only this topic’s summary + the topic question count (T)
             resp: TopicWithNodesSchema = await NodesGenerationAgent.llm_n \
                 .with_structured_output(TopicWithNodesSchema, method="function_calling") \
                 .ainvoke([
