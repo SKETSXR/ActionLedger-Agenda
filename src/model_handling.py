@@ -106,7 +106,7 @@ elif config["configurable"]["model_provider_dts"] == "ollama":
 
 
 if config["configurable"]["model_provider_n"] == "openai":
-    model_n = config["configurable"]["model_dts"]
+    model_n = config["configurable"]["model_n"]
     model_provider_n = config["configurable"]["model_provider_n"]
     max_retries_n = config["configurable"].get("max_retries_n", 25)
     temperature_n = config["configurable"].get("temperature_n", None)
