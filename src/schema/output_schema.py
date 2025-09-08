@@ -164,24 +164,6 @@ class DiscussionSummaryPerTopicSchema(BaseModel):
 QuestionType = Literal["Opening", "Direct", "Deep Dive"]
 
 
-# class NodeSchema(BaseModel):
-#     id: int = Field(..., ge=1)
-#     question_type: QuestionType
-#     graded: bool
-#     next_node: Optional[int] = Field(None, ge=1)
-#     context: str
-#     skills: List[str] = Field(..., min_items=1)
-#     total_question_threshold: Optional[int] = Field(None, ge=1)
-#     question_guidelines: Optional[str] = None
-
-# class TopicWithNodesSchema(BaseModel):
-#     topic: str
-#     nodes: List[NodeSchema] = Field(..., min_items=1)
-
-# class NodesSchema(BaseModel):
-#     topics_with_nodes: List[TopicWithNodesSchema] = Field(..., min_items=1)
-
-
 class NodeSchema(BaseModel):
     id: int = Field(..., ge=1)
     question_type: QuestionType
