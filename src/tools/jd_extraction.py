@@ -1,10 +1,10 @@
 import re
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
-
+from ..model_handling import llm_jd
 
 async def parse_jd_text_to_json(jd_text):
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.2, max_retries=10)
+    llm = llm_jd
     
     prompt = f'''Give me a JSON from the provided job description, that should have the job_role as its key with a value having the actual job role name then a - followed by the given details of technical knowledge and fundamental_knowledge as its other key whose value mentions any educational requirements and company_background as its other key having its value as the actual company name then a - followed by the provided background details, if no company name is provided but background details are then just writing those details without the company name and also if the background details are missing but the company name is present then again only write the company name there without any background details, also if none of background details or company name are present then just write company background is not provided in this key.
     Now extract structured data and return only a JSON object in this exact format:

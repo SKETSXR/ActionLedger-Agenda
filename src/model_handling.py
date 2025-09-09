@@ -9,6 +9,37 @@ load_dotenv()
 
 config = load_config("config.yaml")
 
+if config["configurable"]["model_provider_jd"] == "openai":
+    model_jd = config["configurable"]["model_jd"]
+    model_provider_jd = config["configurable"]["model_provider_jd"]
+    max_retries_jd = config["configurable"].get("max_retries_jd", 10)
+    temperature_jd = config["configurable"].get("temperature_jd", None)
+    reasoning_effort_jd = config["configurable"].get("reasoning_effort_jd", None)
+    
+    llm_jd = ChatOpenAI(model=model_jd, max_retries=max_retries_jd, temperature=temperature_jd, reasoning_effort=reasoning_effort_jd, timeout=60)
+
+elif config["configurable"]["model_provider_jd"] == "google_genai":
+    model_jd = config["configurable"]["model_jd"]
+    model_provider_jd = config["configurable"]["model_provider_jd"]
+    temperature_jd = config["configurable"].get("temperature_jd", None)
+    reasoning_effort_jd = config["configurable"].get("reasoning_effort_jd", None)
+    llm_jd = ChatGoogleGenerativeAI(model=model_jd)
+
+elif config["configurable"]["model_provider_jd"] == "groq":
+    model_jd = config["configurable"]["model_jd"]
+    model_provider_jd = config["configurable"]["model_provider_jd"]
+    temperature_jd = config["configurable"].get("temperature_jd", None)
+    reasoning_effort_jd = config["configurable"].get("reasoning_effort_jd", None)
+    llm_jd = ChatGroq(model=model_jd)
+
+elif config["configurable"]["model_provider_jd"] == "ollama":
+    model_jd = config["configurable"]["model_jd"]
+    model_provider_jd = config["configurable"]["model_provider_jd"]
+    temperature_jd = config["configurable"].get("temperature_jd", None)
+    reasoning_effort_jd = config["configurable"].get("reasoning_effort_jd", None)
+    llm_jd = ChatOllama(model=model_jd, temperature=temperature_jd)
+
+
 if config["configurable"]["model_provider_sg"] == "openai":
     model_sg = config["configurable"]["model_sg"]
     model_provider_sg = config["configurable"]["model_provider_sg"]
