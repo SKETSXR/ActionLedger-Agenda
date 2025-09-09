@@ -1,3 +1,183 @@
+# Running with schema check and regenerate
+from typing import List, Any, Dict
+from langgraph.graph import StateGraph, START, END
+import json, copy
+from langchain_core.messages import SystemMessage
+from pydantic import ValidationError
+from ..schema.agent_schema import AgentInternalState
+from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
+from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
+from ..model_handling import llm_n
+
+
+class NodesGenerationAgent:
+    llm_n = llm_n
+
+    @staticmethod
+    def _as_dict(x: Any) -> Dict[str, Any]:
+        if hasattr(x, "model_dump"):
+            return x.model_dump()
+        if hasattr(x, "dict"):
+            return x.dict()
+        return x if isinstance(x, dict) else {}
+
+    @staticmethod
+    def _get_topic_name(obj: Any) -> str:
+        d = NodesGenerationAgent._as_dict(obj)
+        for k in ("topic", "name", "title", "label"):
+            v = d.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return "Unknown"
+
+    @staticmethod
+    def _to_json_one(x: Any) -> str:
+        # deep copy -> dict -> json (avoid mutating upstream structures)
+        if hasattr(x, "model_dump"):
+            return json.dumps(copy.deepcopy(x.model_dump()))
+        if hasattr(x, "dict"):
+            return json.dumps(copy.deepcopy(x.dict()))
+        return json.dumps(copy.deepcopy(x))
+
+    @staticmethod
+    def _get_total_questions(topic_obj: Any, dspt_obj: Any) -> int:
+
+        for src in (topic_obj, dspt_obj):
+            d = NodesGenerationAgent._as_dict(src)
+            tq = d.get("total_questions")
+            if isinstance(tq, int) and tq >= 2:
+                return tq
+        raise ValueError("total_questions must be >= 2 for each topic")
+
+    @staticmethod
+    async def _gen_once(per_topic_summary_json: str, T, nodes_error) -> TopicWithNodesSchema:
+        sys = NODES_AGENT_PROMPT.format(
+            per_topic_summary_json=per_topic_summary_json,
+            total_no_questions_context=T,
+            nodes_error=nodes_error
+        )
+        return await NodesGenerationAgent.llm_n \
+            .with_structured_output(TopicWithNodesSchema, method="function_calling") \
+            .ainvoke([SystemMessage(content=sys)])
+
+    @staticmethod
+    async def should_regenerate(state: AgentInternalState) -> bool:
+        """
+        Return True if we need to regenerate (schema invalid), else False.
+        Validates the container (NodesSchema) and each TopicWithNodesSchema item inside it.
+        """
+        # Nothing produced yet? -> regenerate
+        if getattr(state, "nodes", None) is None:
+            return True
+
+        # Validate NodesSchema (container)
+        try:
+            # accept either a Pydantic instance or a plain dictionary
+            NodesSchema.model_validate(
+                state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else state.nodes
+            )
+        except ValidationError as ve:
+            print("[NodesGen][ValidationError] Container NodesSchema invalid")
+            print(str(ve))
+            state.nodes_error += "The previous generated o/p did not follow the given schema as it got following errors:\n" + (getattr(state, "nodes_error", "") or "") + \
+                                "\n[NodesSchema ValidationError]\n" + str(ve) + "\n"
+            return True
+
+        # Validate each topic payload
+        try:
+            topics_payload = (
+                state.nodes.topics_with_nodes
+                if hasattr(state.nodes, "topics_with_nodes")
+                else state.nodes.get("topics_with_nodes", [])
+            )
+        except Exception as e:
+            print("[NodesGen][ValidationError] Could not read topics_with_nodes:", e)
+            state.nodes_error += (getattr(state, "nodes_error", "") or "") + \
+                                "\n[NodesSchema Payload Error]\n" + str(e) + "\n"
+            return True
+
+        any_invalid = False
+        for idx, item in enumerate(topics_payload):
+            try:
+                # item can be pydantic model or dictionary
+                TopicWithNodesSchema.model_validate(
+                    item.model_dump() if hasattr(item, "model_dump") else item
+                )
+            except ValidationError as ve:
+                any_invalid = True
+                print(f"[NodesGen][ValidationError] TopicWithNodesSchema invalid at index {idx}")
+                print(str(ve))
+                state.nodes_error += (getattr(state, "nodes_error", "") or "") + \
+                                    f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n" + str(ve) + "\n"
+
+        return any_invalid
+
+    # -----------------------------
+    # Main Node generation node
+    # -----------------------------
+    @staticmethod
+    async def nodes_generator(state: AgentInternalState) -> AgentInternalState:
+        # Guards
+        if state.interview_topics is None or not getattr(state.interview_topics, "interview_topics", None):
+            raise ValueError("No interview topics to summarize.")
+        if state.discussion_summary_per_topic is None:
+            raise ValueError("discussion_summary_per_topic is required.")
+
+        topics_list = list(state.interview_topics.interview_topics)
+        try:
+            summaries_list = list(state.discussion_summary_per_topic.discussion_topics)
+        except Exception:
+            summaries_list = list(state.discussion_summary_per_topic)
+
+        pair_count = min(len(topics_list), len(summaries_list))
+        if pair_count == 0:
+            raise ValueError("No topics/summaries to process.")
+
+        # Snapshot upstream summaries (sanity: ensure we don't mutate them)
+        snapshot = json.dumps(
+            [s.model_dump() if hasattr(s, "model_dump") else s for s in summaries_list],
+            sort_keys=True
+        )
+
+        out: List[TopicWithNodesSchema] = []
+
+        for topic_obj, dspt_obj in zip(topics_list, summaries_list):
+            T = NodesGenerationAgent._get_total_questions(topic_obj, dspt_obj)
+            per_topic_summary_json = NodesGenerationAgent._to_json_one(dspt_obj)
+
+            resp = await NodesGenerationAgent._gen_once(per_topic_summary_json, T, state.nodes_error)
+            out.append(resp)
+
+        # Verify upstream summary wasn’t mutated
+        after = json.dumps(
+            [s.model_dump() if hasattr(s, "model_dump") else s for s in summaries_list],
+            sort_keys=True
+        )
+        if after != snapshot:
+            raise RuntimeError("discussion_summary_per_topic mutated during node generation")
+
+        state.nodes = NodesSchema(
+            topics_with_nodes=[t.model_dump() if hasattr(t, "model_dump") else t for t in out]
+        )
+        return state
+
+    @staticmethod
+    def get_graph(checkpointer=None):
+        gb = StateGraph(state_schema=AgentInternalState)
+        gb.add_node("nodes_generator", NodesGenerationAgent.nodes_generator)
+        gb.add_edge(START, "nodes_generator")
+        gb.add_conditional_edges(
+            "nodes_generator",
+            NodesGenerationAgent.should_regenerate,  # returns True/False
+            { True: "nodes_generator", False: END }
+        )
+        return gb.compile(checkpointer=checkpointer, name="Nodes Generation Agent")
+
+if __name__ == "__main__":
+    graph = NodesGenerationAgent.get_graph()
+    g = graph.get_graph().draw_ascii()
+    print(g)
+
 # # Running nodes agent without schema check
 # from typing import List, Any, Dict
 # from langgraph.graph import StateGraph, START
@@ -50,50 +230,6 @@
 #         if hasattr(x, "dict"):
 #             return json.dumps(copy.deepcopy(x.dict()))
 #         return json.dumps(copy.deepcopy(x))
-
-#     @staticmethod
-#     def _validate_topic_nodes(resp: TopicWithNodesSchema, expected_topic: str, T: int) -> None:
-#         if resp.topic != expected_topic:
-#             raise ValueError(f"Topic label mismatch: expected '{expected_topic}', got '{resp.topic}'")
-
-#         nodes = resp.nodes or []
-#         if len(nodes) != T:
-#             raise ValueError(f"Expected exactly {T} nodes, got {len(nodes)}")
-
-#         for i, n in enumerate(nodes, start=1):
-#             # ids and linear next pointers
-#             if n.id != i:
-#                 raise ValueError("ids must be 1..T increasing by 1")
-#             if i < T and n.next_node != i + 1:
-#                 raise ValueError("next_node must be i+1 for nodes before last")
-#             if i == T and n.next_node is not None:
-#                 raise ValueError("last node must have next_node=null")
-
-#             # types & grading per position
-#             if n.question_type not in ALLOWED_TYPES:
-#                 raise ValueError(f"Invalid question_type '{n.question_type}' (allowed: Direct, Deep Dive)")
-
-#             if i == 1:
-#                 if not (n.question_type == "Direct" and n.graded is False):
-#                     raise ValueError("Node#1 must be Direct and graded=false")
-#                 if n.total_question_threshold is not None or n.question_guidelines is not None:
-#                     raise ValueError("Direct nodes must have null guidelines/threshold")
-#             elif i < T:
-#                 if not (n.question_type == "Direct" and n.graded is True):
-#                     raise ValueError("Intermediate nodes must be Direct and graded=true")
-#                 if n.total_question_threshold is not None or n.question_guidelines is not None:
-#                     raise ValueError("Direct nodes must have null guidelines/threshold")
-#             else:
-#                 if not (n.question_type == "Deep Dive" and n.graded is True):
-#                     raise ValueError("Last node must be Deep Dive and graded=true")
-#                 if not isinstance(n.total_question_threshold, int) or n.total_question_threshold < 1:
-#                     raise ValueError("Deep Dive requires total_question_threshold >= 1")
-#                 if not n.question_guidelines or not str(n.question_guidelines).strip():
-#                     raise ValueError("Deep Dive requires non-empty question_guidelines")
-
-#             # skills required
-#             if not n.skills or not all(isinstance(s, str) and s.strip() for s in n.skills):
-#                 raise ValueError("Each node must list ≥1 non-empty skill")
 
 #     @staticmethod
 #     async def nodes_generator(state: AgentInternalState) -> AgentInternalState:
@@ -167,219 +303,6 @@
 #     g = graph.get_graph().draw_ascii()
 #     print(g)
 
-# Running with schema check and regenerate
-from typing import List, Any, Dict
-from langgraph.graph import StateGraph, START, END
-import json, copy
-from langchain_core.messages import SystemMessage
-from pydantic import ValidationError
-from ..schema.agent_schema import AgentInternalState
-from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
-from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
-from ..model_handling import llm_n
-
-
-class NodesGenerationAgent:
-    llm_n = llm_n
-
-    @staticmethod
-    def _as_dict(x: Any) -> Dict[str, Any]:
-        if hasattr(x, "model_dump"):
-            return x.model_dump()
-        if hasattr(x, "dict"):
-            return x.dict()
-        return x if isinstance(x, dict) else {}
-
-    @staticmethod
-    def _get_topic_name(obj: Any) -> str:
-        d = NodesGenerationAgent._as_dict(obj)
-        for k in ("topic", "name", "title", "label"):
-            v = d.get(k)
-            if isinstance(v, str) and v.strip():
-                return v.strip()
-        return "Unknown"
-
-    @staticmethod
-    def _to_json_one(x: Any) -> str:
-        # deep copy -> dict -> json (avoid mutating upstream structures)
-        if hasattr(x, "model_dump"):
-            return json.dumps(copy.deepcopy(x.model_dump()))
-        if hasattr(x, "dict"):
-            return json.dumps(copy.deepcopy(x.dict()))
-        return json.dumps(copy.deepcopy(x))
-
-    @staticmethod
-    def _get_total_questions(topic_obj: Any, dspt_obj: Any) -> int:
-
-        for src in (topic_obj, dspt_obj):
-            d = NodesGenerationAgent._as_dict(src)
-            tq = d.get("total_questions")
-            if isinstance(tq, int) and tq >= 2:
-                return tq
-        raise ValueError("total_questions must be >= 2 for each topic")
-
-    @staticmethod
-    async def _gen_once(per_topic_summary_json: str, T, nodes_error) -> TopicWithNodesSchema:
-        sys = NODES_AGENT_PROMPT.format(
-            per_topic_summary_json=per_topic_summary_json,
-            total_no_questions_context=T,
-            nodes_error=nodes_error
-        )
-        return await NodesGenerationAgent.llm_n \
-            .with_structured_output(TopicWithNodesSchema, method="function_calling") \
-            .ainvoke([SystemMessage(content=sys)])
-
-    # -----------------------------
-    # Reflection retry if validation fails
-    # -----------------------------
-    @staticmethod
-    async def _reflect_and_regenerate(per_topic_summary_json: str, err_text: str, T) -> TopicWithNodesSchema:
-        schema_json = json.dumps(TopicWithNodesSchema.model_json_schema(), indent=2)
-        critique = (
-            "Your previous output failed schema validation. Fix ONLY schema issues and regenerate.\n"
-            f"- Validation error:\n{err_text}\n\n"
-            "Schema (TopicWithNodesSchema):\n"
-            f"{schema_json}\n\n"
-            "Regenerate a STRICTLY compliant JSON object for this one topic."
-        )
-        sys = NODES_AGENT_PROMPT.format(
-            per_topic_summary_json=per_topic_summary_json,
-            total_no_questions_context=T
-        ) + "\n\n" + critique
-
-        return await NodesGenerationAgent.llm_n \
-            .with_structured_output(TopicWithNodesSchema, method="function_calling") \
-            .ainvoke([SystemMessage(content=sys)])
-
-    @staticmethod
-    async def should_regenerate(state: AgentInternalState) -> bool:
-        """
-        Return True if we need to regenerate (schema invalid), else False.
-        Validates the container (NodesSchema) and each TopicWithNodesSchema item inside it.
-        """
-        # Nothing produced yet? -> regenerate
-        if getattr(state, "nodes", None) is None:
-            return True
-
-        # Validate NodesSchema (container)
-        try:
-            # accept either a Pydantic instance or a plain dict
-            NodesSchema.model_validate(
-                state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else state.nodes
-            )
-        except ValidationError as ve:
-            print("[NodesGen][ValidationError] Container NodesSchema invalid")
-            print(str(ve))
-            state.nodes_error += "The previous generated o/p did not follow the given schema as it got following errors:\n" + (getattr(state, "nodes_error", "") or "") + \
-                                "\n[NodesSchema ValidationError]\n" + str(ve) + "\n"
-            return True
-
-        # Validate each topic payload
-        try:
-            topics_payload = (
-                state.nodes.topics_with_nodes
-                if hasattr(state.nodes, "topics_with_nodes")
-                else state.nodes.get("topics_with_nodes", [])
-            )
-        except Exception as e:
-            print("[NodesGen][ValidationError] Could not read topics_with_nodes:", e)
-            state.nodes_error += (getattr(state, "nodes_error", "") or "") + \
-                                "\n[NodesSchema Payload Error]\n" + str(e) + "\n"
-            return True
-
-        any_invalid = False
-        for idx, item in enumerate(topics_payload):
-            try:
-                # item can be pydantic model or dict
-                TopicWithNodesSchema.model_validate(
-                    item.model_dump() if hasattr(item, "model_dump") else item
-                )
-            except ValidationError as ve:
-                any_invalid = True
-                print(f"[NodesGen][ValidationError] TopicWithNodesSchema invalid at index {idx}")
-                print(str(ve))
-                state.nodes_error += (getattr(state, "nodes_error", "") or "") + \
-                                    f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n" + str(ve) + "\n"
-
-        return any_invalid
-
-    # -----------------------------
-    # Main Node generation node
-    # -----------------------------
-    @staticmethod
-    async def nodes_generator(state: AgentInternalState) -> AgentInternalState:
-        # Guards
-        if state.interview_topics is None or not getattr(state.interview_topics, "interview_topics", None):
-            raise ValueError("No interview topics to summarize.")
-        if state.discussion_summary_per_topic is None:
-            raise ValueError("discussion_summary_per_topic is required.")
-
-        topics_list = list(state.interview_topics.interview_topics)
-        try:
-            summaries_list = list(state.discussion_summary_per_topic.discussion_topics)
-        except Exception:
-            summaries_list = list(state.discussion_summary_per_topic)
-
-        pair_count = min(len(topics_list), len(summaries_list))
-        if pair_count == 0:
-            raise ValueError("No topics/summaries to process.")
-
-        # Snapshot upstream summaries (sanity: ensure we don't mutate them)
-        snapshot = json.dumps(
-            [s.model_dump() if hasattr(s, "model_dump") else s for s in summaries_list],
-            sort_keys=True
-        )
-
-        out: List[TopicWithNodesSchema] = []
-
-        # Generate per-topic nodes with schema-only validation + single reflection retry
-        for topic_obj, dspt_obj in zip(topics_list, summaries_list):
-            T = NodesGenerationAgent._get_total_questions(topic_obj, dspt_obj)
-            expected_topic = NodesGenerationAgent._get_topic_name(dspt_obj)
-            per_topic_summary_json = NodesGenerationAgent._to_json_one(dspt_obj)
-
-            try:
-                resp = await NodesGenerationAgent._gen_once(per_topic_summary_json, T, state.nodes_error)
-            except ValidationError as ve:
-                print(f"[NodesGen][WARN] Pydantic validation failed for topic '{expected_topic}' on first attempt.")
-                print(str(ve))
-                # # reflection retry
-                # resp = await NodesGenerationAgent._reflect_and_regenerate(per_topic_summary_json, str(ve), T)
-
-            # Second chance might still fail (rare) → surface it
-            if not isinstance(resp, TopicWithNodesSchema):
-                raise TypeError("Model did not return TopicWithNodesSchema after reflection.")
-            out.append(resp)
-
-        # Verify upstream summary wasn’t mutated
-        after = json.dumps(
-            [s.model_dump() if hasattr(s, "model_dump") else s for s in summaries_list],
-            sort_keys=True
-        )
-        if after != snapshot:
-            raise RuntimeError("discussion_summary_per_topic mutated during node generation")
-
-        state.nodes = NodesSchema(
-            topics_with_nodes=[t.model_dump() if hasattr(t, "model_dump") else t for t in out]
-        )
-        return state
-
-    @staticmethod
-    def get_graph(checkpointer=None):
-        gb = StateGraph(state_schema=AgentInternalState)
-        gb.add_node("nodes_generator", NodesGenerationAgent.nodes_generator)
-        gb.add_edge(START, "nodes_generator")
-        gb.add_conditional_edges(
-            "nodes_generator",
-            NodesGenerationAgent.should_regenerate,  # returns True/False
-            { True: "nodes_generator", False: END }
-        )
-        return gb.compile(checkpointer=checkpointer, name="Nodes Generation Agent")
-
-if __name__ == "__main__":
-    graph = NodesGenerationAgent.get_graph()
-    g = graph.get_graph().draw_ascii()
-    print(g)
 
 # # Test per topic node pl
 # import json
