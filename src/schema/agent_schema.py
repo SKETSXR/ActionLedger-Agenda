@@ -32,3 +32,4 @@ class AgentInternalState(BaseModel):
     interview_topics: CollectiveInterviewTopicSchema | None = None
     discussion_summary_per_topic: DiscussionSummaryPerTopicSchema | None = None
     nodes: NodesSchema | None = None
+    nodes_error: str = ""  # To capture any errors during node generation

@@ -14,6 +14,9 @@ Discussion Summary for a topic:
 \n```{per_topic_summary_json}```\n
 Here in this opening means starting questions related to the background of the candidate, Direct Questions are those which are related to respective topic only and Deep Dive(s) mean those that dive deep into the respective particular topic rest other things are self-explanatory.  
 
+Use the errors from all the previous node generations (if any) related to schema validation given below as a feedback to you to fix your generated outputs:
+\n```{nodes_error}```\n
+
 QA Block Instruction Templates:
 Direct / New Question QA block:
 ```Generate a Question Answer (QA) Pair as per the instructions below: 
@@ -37,6 +40,7 @@ Node Format
 Each node must contain:
 - `id`: Unique identifier of a node
 - `question_type`: Direct / Deep Dive (QA Block)
+- `question`: If the question_type is given as Direct then this should be a Direct question generated
 - `graded`: true/false
 - `next_node`: ID of the next node
 - `context`: Short description of what this particular node covers
@@ -59,8 +63,8 @@ Output must be a JSON object grouped by topic:
     {{
       "topic": "short name",
       "nodes": [
-        {{"id": 1, "question_type": "Direct", "graded": false, "next_node": 2, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
-        {{"id": 2, "question_type": "Direct", "graded": true, "next_node": 3, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
+        {{"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
+        {{"id": 2, "question_type": "Direct", "question": "...", "graded": true, "next_node": 3, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
         {{"id": 3, "question_type": "Deep Dive", "graded": true, "next_node": 4, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
         ...
       ]
@@ -68,7 +72,7 @@ Output must be a JSON object grouped by topic:
   {{
       "topic": "short name",
       "nodes": [
-        {{"id": 1, "question_type": "Direct", "graded": false, "next_node": 2, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
+        {{"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
         {{"id": 2, "question_type": "Deep Dive", "graded": false, "next_node": 3, "context": "...", "skills": [...], "question_guidelines": "This deep diving question should", "total_question_threshold": 2}},
         {{"id": 3, "question_type": "Deep Dive", "graded": true, "next_node": 4, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": 2}},
         ...

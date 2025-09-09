@@ -167,6 +167,7 @@ QuestionType = Literal["Opening", "Direct", "Deep Dive"]
 class NodeSchema(BaseModel):
     id: int = Field(..., ge=1)
     question_type: QuestionType
+    question: Optional[str] = None  # Required if question_type is "Direct"
     graded: bool
     next_node: Optional[int] = Field(None, ge=1)
     context: str = Field(..., min_length=1)

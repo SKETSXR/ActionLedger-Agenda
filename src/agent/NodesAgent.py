@@ -169,7 +169,7 @@
 
 # Running with schema check and regenerate
 from typing import List, Any, Dict
-from langgraph.graph import StateGraph, START
+from langgraph.graph import StateGraph, START, END
 import json, copy
 from langchain_core.messages import SystemMessage
 from pydantic import ValidationError
@@ -219,11 +219,11 @@ class NodesGenerationAgent:
         raise ValueError("total_questions must be >= 2 for each topic")
 
     @staticmethod
-    async def _gen_once(per_topic_summary_json: str, T) -> TopicWithNodesSchema:
+    async def _gen_once(per_topic_summary_json: str, T, nodes_error) -> TopicWithNodesSchema:
         sys = NODES_AGENT_PROMPT.format(
             per_topic_summary_json=per_topic_summary_json,
-            total_no_questions_context=T
-
+            total_no_questions_context=T,
+            nodes_error=nodes_error
         )
         return await NodesGenerationAgent.llm_n \
             .with_structured_output(TopicWithNodesSchema, method="function_calling") \
@@ -250,6 +250,58 @@ class NodesGenerationAgent:
         return await NodesGenerationAgent.llm_n \
             .with_structured_output(TopicWithNodesSchema, method="function_calling") \
             .ainvoke([SystemMessage(content=sys)])
+
+    @staticmethod
+    async def should_regenerate(state: AgentInternalState) -> bool:
+        """
+        Return True if we need to regenerate (schema invalid), else False.
+        Validates the container (NodesSchema) and each TopicWithNodesSchema item inside it.
+        """
+        # Nothing produced yet? -> regenerate
+        if getattr(state, "nodes", None) is None:
+            return True
+
+        # Validate NodesSchema (container)
+        try:
+            # accept either a Pydantic instance or a plain dict
+            NodesSchema.model_validate(
+                state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else state.nodes
+            )
+        except ValidationError as ve:
+            print("[NodesGen][ValidationError] Container NodesSchema invalid")
+            print(str(ve))
+            state.nodes_error += "The previous generated o/p did not follow the given schema as it got following errors:\n" + (getattr(state, "nodes_error", "") or "") + \
+                                "\n[NodesSchema ValidationError]\n" + str(ve) + "\n"
+            return True
+
+        # Validate each topic payload
+        try:
+            topics_payload = (
+                state.nodes.topics_with_nodes
+                if hasattr(state.nodes, "topics_with_nodes")
+                else state.nodes.get("topics_with_nodes", [])
+            )
+        except Exception as e:
+            print("[NodesGen][ValidationError] Could not read topics_with_nodes:", e)
+            state.nodes_error += (getattr(state, "nodes_error", "") or "") + \
+                                "\n[NodesSchema Payload Error]\n" + str(e) + "\n"
+            return True
+
+        any_invalid = False
+        for idx, item in enumerate(topics_payload):
+            try:
+                # item can be pydantic model or dict
+                TopicWithNodesSchema.model_validate(
+                    item.model_dump() if hasattr(item, "model_dump") else item
+                )
+            except ValidationError as ve:
+                any_invalid = True
+                print(f"[NodesGen][ValidationError] TopicWithNodesSchema invalid at index {idx}")
+                print(str(ve))
+                state.nodes_error += (getattr(state, "nodes_error", "") or "") + \
+                                    f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n" + str(ve) + "\n"
+
+        return any_invalid
 
     # -----------------------------
     # Main Node generation node
@@ -287,12 +339,12 @@ class NodesGenerationAgent:
             per_topic_summary_json = NodesGenerationAgent._to_json_one(dspt_obj)
 
             try:
-                resp = await NodesGenerationAgent._gen_once(per_topic_summary_json, T)
+                resp = await NodesGenerationAgent._gen_once(per_topic_summary_json, T, state.nodes_error)
             except ValidationError as ve:
                 print(f"[NodesGen][WARN] Pydantic validation failed for topic '{expected_topic}' on first attempt.")
                 print(str(ve))
-                # reflection retry
-                resp = await NodesGenerationAgent._reflect_and_regenerate(per_topic_summary_json, str(ve), T)
+                # # reflection retry
+                # resp = await NodesGenerationAgent._reflect_and_regenerate(per_topic_summary_json, str(ve), T)
 
             # Second chance might still fail (rare) → surface it
             if not isinstance(resp, TopicWithNodesSchema):
@@ -317,6 +369,11 @@ class NodesGenerationAgent:
         gb = StateGraph(state_schema=AgentInternalState)
         gb.add_node("nodes_generator", NodesGenerationAgent.nodes_generator)
         gb.add_edge(START, "nodes_generator")
+        gb.add_conditional_edges(
+            "nodes_generator",
+            NodesGenerationAgent.should_regenerate,  # returns True/False
+            { True: "nodes_generator", False: END }
+        )
         return gb.compile(checkpointer=checkpointer, name="Nodes Generation Agent")
 
 if __name__ == "__main__":
