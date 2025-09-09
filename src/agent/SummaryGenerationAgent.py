@@ -33,7 +33,7 @@ class SummaryGenerationAgent:
                 state.messages[-1] if len(state.messages) else ""
             ]
         )
-        state.generated_summary = summary # type: ignore
+        state.generated_summary = summary
         return state
 
     @staticmethod

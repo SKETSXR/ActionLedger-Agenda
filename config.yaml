@@ -14,6 +14,8 @@ configurable:
   # temperature: 0
   # verbosity: low
   # reasoning_effort: minimal
+
+  # Open AI models
   model_provider_sg: openai
   model_sg: gpt-4o
   # reasoning_effort_sg: minimal
@@ -33,5 +35,5 @@ configurable:
   # reasoning_effort_n: minimal
   temperature_n: 0
 
-  thread_id: thread_34
+  thread_id: thread_39
   
