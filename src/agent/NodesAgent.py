@@ -233,7 +233,7 @@ class NodesGenerationAgent:
     # Reflection retry if validation fails
     # -----------------------------
     @staticmethod
-    async def _reflect_and_regenerate(per_topic_summary_json: str, err_text: str) -> TopicWithNodesSchema:
+    async def _reflect_and_regenerate(per_topic_summary_json: str, err_text: str, T) -> TopicWithNodesSchema:
         schema_json = json.dumps(TopicWithNodesSchema.model_json_schema(), indent=2)
         critique = (
             "Your previous output failed schema validation. Fix ONLY schema issues and regenerate.\n"
@@ -243,7 +243,8 @@ class NodesGenerationAgent:
             "Regenerate a STRICTLY compliant JSON object for this one topic."
         )
         sys = NODES_AGENT_PROMPT.format(
-            per_topic_summary_json=per_topic_summary_json
+            per_topic_summary_json=per_topic_summary_json,
+            total_no_questions_context=T
         ) + "\n\n" + critique
 
         return await NodesGenerationAgent.llm_n \
@@ -291,7 +292,7 @@ class NodesGenerationAgent:
                 print(f"[NodesGen][WARN] Pydantic validation failed for topic '{expected_topic}' on first attempt.")
                 print(str(ve))
                 # reflection retry
-                resp = await NodesGenerationAgent._reflect_and_regenerate(per_topic_summary_json, str(ve))
+                resp = await NodesGenerationAgent._reflect_and_regenerate(per_topic_summary_json, str(ve), T)
 
             # Second chance might still fail (rare) → surface it
             if not isinstance(resp, TopicWithNodesSchema):
