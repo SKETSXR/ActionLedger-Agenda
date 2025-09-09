@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Annotated, Optional, Dict, List, Union, Literal
 
 __all__ = [
@@ -178,6 +178,17 @@ class NodeSchema(BaseModel):
 class TopicWithNodesSchema(BaseModel):
     topic: str
     nodes: List[NodeSchema] = Field(..., min_items=1)
+    # @model_validator(mode="after")
+    # def enforce_node_distribution(self):
+    #     direct_count = sum(1 for n in self.nodes if n.question_type == "Direct")
+    #     deep_dive_count = sum(1 for n in self.nodes if n.question_type == "Deep Dive")
+
+    #     if direct_count != 1:
+    #         raise ValueError(f"Must have exactly 1 Direct question, found {direct_count}")
+    #     if deep_dive_count != 2:
+    #         raise ValueError(f"Must have exactly 2 Deep Dive questions, found {deep_dive_count}")
+
+    #     return self
 
 
 class NodesSchema(BaseModel):
