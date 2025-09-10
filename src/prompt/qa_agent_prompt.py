@@ -9,6 +9,8 @@ QA Generation Rules
   - "block_id": A unique identifier for the block  
   - "qa_id": A unique identifier for the QA within the block (e.g., QA1, QA2, …)  
   - "guideline": Short instruction on how to frame the question (summarized from discussion guidelines and focus area)  
+  - "q_type": Its the question type which should be among <First Question>, <New Question> or <Counter Question> as per the requirements of conducting the interview but make sure all 3 should be covered
+  - "q_difficulty": Its the question type which should be among <Easy>, <Medium> or <Hard> as per the requirements of conducting the interview but make sure all 3 should be covered
   - "example_questions": Exactly 5 short and clear technical questions  
 - Questions should be diverse in style and difficulty (Easy, Medium, Hard, Interrogatory, Twist) but do not explicitly label difficulty in the final output — just reflect it in the variety of questions.  
 - Reference the candidate's actual projects, skills, or summary text if provided.  
@@ -84,6 +86,8 @@ Output must be grouped by topic → QA blocks → 5 questions each, like this:
           "block_id": "B1",
           "qa_id": "QA1",
           "guideline": "",
+          "q_type": "",
+          "q_difficulty": "",
           "example_questions": [
             "...",
             "...",
@@ -96,6 +100,8 @@ Output must be grouped by topic → QA blocks → 5 questions each, like this:
           "block_id": "B2",
           "qa_id": "QA2",
           "guideline": "",
+          "q_type": "",
+          "q_difficulty": "",
           "example_questions": [
             "...",
             "...",
@@ -113,6 +119,8 @@ Output must be grouped by topic → QA blocks → 5 questions each, like this:
           "block_id": "B3",
           "qa_id": "QA3",
           "guideline": "",
+          "q_type": "",
+          "q_difficulty": "",
           "example_questions": [
             "...",
             "...",

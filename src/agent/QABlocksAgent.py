@@ -235,7 +235,8 @@ class QABlockGenerationAgent:
         # Iterate topics ONCE; collect all Deep Dives for that topic → single call
         for topic_entry in state.nodes.topics_with_nodes:
             # robust Pydantic/dict handling
-            topic_dict = topic_entry.model_dump() if hasattr(topic_entry, "model_dump") else topic_entry
+            # topic_dict = topic_entry.model_dump() if hasattr(topic_entry, "model_dump") else topic_entry
+            topic_dict = topic_entry.model_dump()
             topic_name = topic_dict.get("topic") or QABlockGenerationAgent._get_topic_name(topic_entry)
 
             summary_obj = QABlockGenerationAgent._find_summary_for_topic(topic_name, summaries_list)
@@ -256,7 +257,8 @@ class QABlockGenerationAgent:
                 continue
 
             # Prepare JSON strings
-            summary_json = json.dumps(copy.deepcopy(summary_obj.model_dump() if hasattr(summary_obj, "model_dump") else summary_obj))
+            # summary_json = json.dumps(copy.deepcopy(summary_obj.model_dump() if hasattr(summary_obj, "model_dump") else summary_obj))
+            summary_json = json.dumps(copy.deepcopy(summary_obj.model_dump()))
             deep_dive_nodes_json = json.dumps(copy.deepcopy(deep_dive_nodes))
 
             # Single generation per topic
