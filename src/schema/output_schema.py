@@ -205,6 +205,8 @@ class QABlock(BaseModel):
     block_id: str = Field(..., description="Block identifier like 'B1'")
     qa_id: str = Field(..., description="QA identifier like 'QA1'")
     guideline: str = Field(..., min_length=1)
+    q_type: str = Literal["First Question", "New Question", "Counter Question"]
+    q_difficulty: str = Literal["Easy", "Medium", "Hard"]
     example_questions: List[str] = Field(
         ..., min_items=1,
         description="A set of deep dive QA sample questions",
