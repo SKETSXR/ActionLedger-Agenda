@@ -167,3 +167,36 @@ elif config["configurable"]["model_provider_n"] == "ollama":
     temperature_n = config["configurable"].get("temperature_n", None)
     reasoning_effort_n = config["configurable"].get("reasoning_effort_n", None)
     llm_n = ChatOllama(model=model_n)
+
+
+if config["configurable"]["model_provider_qa"] == "openai":
+    model_qa = config["configurable"]["model_qa"]
+    model_provider_qa = config["configurable"]["model_provider_qa"]
+    max_retries_qa = config["configurable"].get("max_retries_qa", 25)
+    temperature_qa = config["configurable"].get("temperature_qa", None)
+    reasoning_effort_qa = config["configurable"].get("reasoning_effort_qa", None)
+    llm_qa = ChatOpenAI(model=model_qa, max_retries=max_retries_qa, temperature=temperature_qa, reasoning_effort=reasoning_effort_qa, timeout=60)
+
+elif config["configurable"]["model_provider_qa"] == "google_genai":
+    model_qa = config["configurable"]["model_qa"]
+    model_provider_qa = config["configurable"]["model_provider_qa"]
+    max_retries_qa = config["configurable"].get("max_retries_qa", 25)
+    temperature_qa = config["configurable"].get("temperature_qa", None)
+    reasoning_effort_qa = config["configurable"].get("reasoning_effort_qa", None)
+    llm_qa = ChatGoogleGenerativeAI(model=model_qa)
+
+elif config["configurable"]["model_provider_qa"] == "groq":
+    model_qa = config["configurable"]["model_qa"]
+    model_provider_qa = config["configurable"]["model_provider_qa"]
+    max_retries_qa = config["configurable"].get("max_retries_qa", 25)
+    temperature_qa = config["configurable"].get("temperature_qa", None)
+    reasoning_effort_qa = config["configurable"].get("reasoning_effort_qa", None)
+    llm_qa = ChatGroq(model=model_qa)
+
+elif config["configurable"]["model_provider_qa"] == "ollama":
+    model_qa = config["configurable"]["model_qa"]
+    model_provider_qa = config["configurable"]["model_provider_qa"]
+    max_retries_qa = config["configurable"].get("max_retries_qa", 25)
+    temperature_qa = config["configurable"].get("temperature_qa", None)
+    reasoning_effort_qa = config["configurable"].get("reasoning_effort_qa", None)
+    llm_qa = ChatOllama(model=model_qa)

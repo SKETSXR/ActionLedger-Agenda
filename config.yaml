@@ -40,5 +40,10 @@ configurable:
   # reasoning_effort_n: minimal
   temperature_n: 0
 
-  thread_id: thread_88
+  model_provider_qa: openai
+  model_qa: gpt-4o
+  # reasoning_effort_qa: minimal
+  temperature_qa: 0
+
+  thread_id: thread_90
   
