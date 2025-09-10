@@ -14,7 +14,7 @@ QA Generation Rules
   - "example_questions": Exactly 5 short and clear technical questions  
 - Questions should be diverse in style and difficulty (Easy, Medium, Hard, Interrogatory, Twist) but do not explicitly label difficulty in the final output — just reflect it in the variety of questions.  
 - Reference the candidate's actual projects, skills, or summary text if provided.  
-- Skills must be drawn only from the associated focus_area.  
+- Skills must be drawn only from the associated respective skills/focus_area field values.  
 - Do not skip any of the 5 questions for each block.  
 
 ---
@@ -28,7 +28,8 @@ Node for question generation:
 Conditional schema related error as feedback for previous wrong generations if any:
 \n```{qa_error}```\n
 
-Sample question generation guidelines along with 5 example questions:
+---
+Sample question generation guidelines for first and new question along with 5 example questions:
 
 <1> Guidelines + Examples
 Difficulty Metrics (Medium): 
@@ -72,6 +73,49 @@ Examples:
 3. In your computer vision project, what model or library did you first choose for image classification?
 4. During your LLM fine-tuning project, what was the primary objective of the fine-tuning?
 5. For the multi-agent system you built, can you briefly explain what each agent was responsible for?
+---
+
+---
+Sample question generation guidelines for counter question along with 5 example questions:
+
+<1> Guidelines + Examples
+Difficulty Metrics (Easy): 
+1. Tests basic understanding or clarification of simple concepts 
+2. Answerable in 1-2 sentences 
+3. Ideal number of distinct concepts in the answer: 1-2 
+
+Examples:
+1. In Node.js, why is the event loop important? 
+2. How does Python handle indentation differently from many other languages? 
+3. What's the benefit of using TypeScript over plain JavaScript? 
+4. Why would you use REST instead of GraphQL in some cases? 
+5. In async programming, what problem does await help solve? 
+
+<2> Guidelines + Examples
+Difficulty Metrics (Hard):
+1. Tests deep reasoning, edge cases, or optimization insights
+2. Answer requires detailed, precise explanation in 3-5 sentences
+3. Ideal number of distinct concepts in the answer: 3-5
+
+Sample questions are following:
+1. How do you ensure consistency across environments when resolving merge conflicts across teams?
+2. Can you combine multiple authors' commits during squashing? What's the impact on authorship history?
+3. How do you validate correctness of merged code (automatically or manually)?
+4. Can you expire or clear the reflog? What happens if you do?
+5. How do you ensure secrets used in GitHub Actions are secure and rotated properly?
+
+<3> Guideline + Examples
+Difficulty Metrics (Medium):
+1. Tests applied knowledge or understanding of effects/behavior
+2. Answerable clearly in 2-4 sentences
+3. Ideal number of distinct concepts in the answer: 2-3
+
+Sample questions are following:
+1. How do streams improve performance when reading large files in Node.js?
+2. If a middleware doesn't call next(), what happens to the request?
+3. How would you make a plugin reusable across multiple Fastify services with configuration options?
+4. Can you turn a generator into a list? When would it be a bad idea to do so?
+5. When would you use a ModelForm over a Form, especially in admin or API views?
 ---
 
 Output Format
