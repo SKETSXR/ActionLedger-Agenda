@@ -1,3 +1,4 @@
+import re
 from pydantic import BaseModel, Field, model_validator
 from typing import Annotated, Optional, Dict, List, Union, Literal
 
@@ -196,8 +197,39 @@ class NodesSchema(BaseModel):
     topics_with_nodes: List[TopicWithNodesSchema] = Field(..., min_items=1)
 
 
+BLOCK_ID_RE = re.compile(r"^B[1-9]\d*$")   # B1, B2, ...
+QA_ID_RE    = re.compile(r"^QA[1-9]\d*$")  # QA1, QA2, ...
+
+
+class QABlock(BaseModel):
+    block_id: str = Field(..., description="Block identifier like 'B1'")
+    qa_id: str = Field(..., description="QA identifier like 'QA1'")
+    guideline: str = Field(..., min_length=1)
+    example_questions: List[str] = Field(
+        ..., min_items=1,
+        description="A set of deep dive QA sample questions",
+        examples=[
+            "Can you describe a project where you applied prompt engineering to improve LLM outputs, and what specific techniques did you use?",
+            "What challenges did you face when fine-tuning LLM outputs using prompt engineering, and how did you overcome them?",
+            "How do you determine the effectiveness of prompt engineering techniques in enhancing LLM performance?",
+            "In your experience, what are the key factors to consider when applying prompt engineering to LLMs for specific tasks?",
+            "Can you provide an example of how you optimized a prompt to achieve better results in an LLM application?"
+          ]
+    )
+
+
+class QASet(BaseModel):
+    topic: str = Field(..., min_length=1, description="Readable topic name")
+    qa_blocks: List[QABlock] = Field(..., min_items=1)
+
+
+class QASetsSchema(BaseModel):
+    qa_sets: List[QASet] = Field(..., min_items=1)
+
+
 class OutputSchema(BaseModel):
     summary: GeneratedSummarySchema
     interview_topics: CollectiveInterviewTopicSchema
     discussion_summary_per_topic: DiscussionSummaryPerTopicSchema
     nodes: NodesSchema
+    qa_blocks: QASetsSchema
