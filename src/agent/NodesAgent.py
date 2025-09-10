@@ -92,8 +92,7 @@ class NodesGenerationAgent:
             )
         except Exception as e:
             print("[NodesGen][ValidationError] Could not read topics_with_nodes:", e)
-            state.nodes_error += (getattr(state, "nodes_error", "") or "") + \
-                                "\n[NodesSchema Payload Error]\n" + str(e) + "\n"
+            state.nodes_error += "\n[NodesSchema Payload Error]\n" + str(e) + "\n"
             return True
 
         any_invalid = False
@@ -107,8 +106,7 @@ class NodesGenerationAgent:
                 any_invalid = True
                 print(f"[NodesGen][ValidationError] TopicWithNodesSchema invalid at index {idx}")
                 print(str(ve))
-                state.nodes_error += (getattr(state, "nodes_error", "") or "") + \
-                                    f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n" + str(ve) + "\n"
+                state.nodes_error += f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n" + str(ve) + "\n"
 
         return any_invalid
 

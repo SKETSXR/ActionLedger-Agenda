@@ -3,6 +3,7 @@ from typing import List, Any, Dict, Optional
 from langgraph.graph import StateGraph, START, END
 import json, copy
 from langchain_core.messages import SystemMessage
+from pydantic import ValidationError
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import QASetsSchema
 from ..prompt.qa_agent_prompt import QA_BLOCK_AGENT_PROMPT
@@ -131,10 +132,36 @@ class QABlockGenerationAgent:
         return state
 
     @staticmethod
+    async def should_regenerate(state: AgentInternalState) -> bool:
+        """
+        Return True if we need to regenerate (schema invalid), else False.
+        Validates the container (QASetsSchema).
+        """
+
+        # Validate QASetsSchema (container)
+        try:
+            # accept either a Pydantic instance or a plain dictionary
+            QASetsSchema.model_validate(
+                state.qa_blocks.model_dump()
+            )
+            return False
+        except ValidationError as ve:
+            print("[QABlockGen][ValidationError] Container QASetsSchema invalid")
+            print(str(ve))
+            state.qa_error += "The previous generated o/p did not follow the given schema as it got following errors:\n" + \
+                                "\n[QABlockGen ValidationError]\n" + str(ve) + "\n"
+            return True
+
+    @staticmethod
     def get_graph(checkpointer=None):
         gb = StateGraph(state_schema=AgentInternalState)
         gb.add_node("qablock_generator", QABlockGenerationAgent.qablock_generator)
         gb.add_edge(START, "qablock_generator")
+        gb.add_conditional_edges(
+            "qablock_generator",
+            QABlockGenerationAgent.should_regenerate,  # returns True/False
+            { True: "qablock_generator", False: END }
+        )
         return gb.compile(checkpointer=checkpointer, name="QA Block Generation Agent")
 
 
