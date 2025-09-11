@@ -3,7 +3,6 @@ import json
 import re
 import fitz
 import asyncio
-import multiprocessing
 from langchain_core.messages import HumanMessage
 from rich import print as rprint
 from rich.console import Console
@@ -83,26 +82,17 @@ async def main():
     args = parser.parse_args()
 
     console = Console()
-    console.print(f"\n[bold blue]🔍 Parsing resume:[/bold blue] {args.pdf_path}\n")
-    # # Step 1: Parallel transform
-    # with multiprocessing.Pool() as pool1:
-    #     links_with_text = pool1.map(extract_links_with_text, args.pdf_path)
-
-    # # Step 2: Parallel process the intermediate results
-    # with multiprocessing.Pool() as pool2:
-    #     markdown = pool2.map(extract_markdown_from_pdf, args.pdf_path)
-
-    # markdown = await extract_markdown_from_pdf(args.pdf_path)
+    console.print(f"\n[bold blue] Parsing resume:[/bold blue] {args.pdf_path}\n")
 
     parsed_json = await parse_pdf_to_json(args.pdf_path)
 
-    console.print("[bold green]✅ Parsed Resume JSON:[/bold green]\n")
+    console.print("[bold green] Parsed Resume JSON:[/bold green]\n")
     rprint(parsed_json)
 
     if args.save:
         with open(args.save, "w", encoding="utf-8") as f:
             json.dump(parsed_json, f, indent=4)
-        console.print(f"\n[bold yellow]📁 Saved output to:[/bold yellow] {args.save}")
+        console.print(f"\n[bold yellow] Saved output to:[/bold yellow] {args.save}")
 
 if __name__ == "__main__":
     asyncio.run(main())
