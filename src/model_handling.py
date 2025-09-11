@@ -40,6 +40,37 @@ elif config["configurable"]["model_provider_jd"] == "ollama":
     llm_jd = ChatOllama(model=model_jd, temperature=temperature_jd)
 
 
+if config["configurable"]["model_provider_cv"] == "openai":
+    model_cv = config["configurable"]["model_cv"]
+    model_provider_cv = config["configurable"]["model_provider_cv"]
+    max_retries_cv = config["configurable"].get("max_retries_cv", 10)
+    temperature_cv = config["configurable"].get("temperature_cv", None)
+    reasoning_effort_cv = config["configurable"].get("reasoning_effort_cv", None)
+    
+    llm_cv = ChatOpenAI(model=model_cv, max_retries=max_retries_cv, temperature=temperature_cv, reasoning_effort=reasoning_effort_cv, timeout=60)
+
+elif config["configurable"]["model_provider_cv"] == "google_genai":
+    model_cv = config["configurable"]["model_cv"]
+    model_provider_cv = config["configurable"]["model_provider_cv"]
+    temperature_cv = config["configurable"].get("temperature_cv", None)
+    reasoning_effort_cv = config["configurable"].get("reasoning_effort_cv", None)
+    llm_cv = ChatGoogleGenerativeAI(model=model_cv)
+
+elif config["configurable"]["model_provider_cv"] == "groq":
+    model_cv = config["configurable"]["model_cv"]
+    model_provider_cv = config["configurable"]["model_provider_cv"]
+    temperature_cv = config["configurable"].get("temperature_cv", None)
+    reasoning_effort_cv = config["configurable"].get("reasoning_effort_cv", None)
+    llm_cv = ChatGroq(model=model_cv)
+
+elif config["configurable"]["model_provider_cv"] == "ollama":
+    model_cv = config["configurable"]["model_cv"]
+    model_provider_cv = config["configurable"]["model_provider_cv"]
+    temperature_cv = config["configurable"].get("temperature_cv", None)
+    reasoning_effort_cv = config["configurable"].get("reasoning_effort_cv", None)
+    llm_cv = ChatOllama(model=model_cv, temperature=temperature_cv)
+
+
 if config["configurable"]["model_provider_sg"] == "openai":
     model_sg = config["configurable"]["model_sg"]
     model_provider_sg = config["configurable"]["model_provider_sg"]

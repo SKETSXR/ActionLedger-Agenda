@@ -21,6 +21,11 @@ configurable:
   # reasoning_effort_jd: minimal
   temperature_jd: 0
 
+  model_provider_cv: openai
+  model_cv: gpt-4o
+  # reasoning_effort_cv: minimal
+  temperature_cv: 0
+
   model_provider_sg: openai
   model_sg: gpt-4o
   # reasoning_effort_sg: minimal
@@ -45,5 +50,5 @@ configurable:
   # reasoning_effort_qa: minimal
   temperature_qa: 0
 
-  thread_id: thread_101
+  thread_id: thread_107
   

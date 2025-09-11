@@ -7,6 +7,7 @@ from src.agent.AgendaGenerationAgent import AgendaGenerationAgent
 from src.schema.input_schema import JobDescriptionSchema, CandidateProfileSchema, SkillTreeSchema, InputSchema
 # from src.schema.output_schema import OutputSchema
 from src.tools.jd_extraction import parse_jd_text_to_json
+from src.tools.cv_extraction import parse_pdf_to_json
 from dotenv import load_dotenv
 # from src.db_fetch import read_start
 
@@ -23,8 +24,12 @@ jd = json.loads(jd_json_string)
 jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["company_background"], fundamental_knowledge=jd.get("fundamental_knowledge"))
 # print(jdes.model_dump_json(indent=2))
 
-with open(r"parsed_cv7.json", "r", encoding='utf-8') as c:
-    candidate_profile = json.load(c)
+# with open(r"parsed_cv7.json", "r", encoding='utf-8') as c:
+#     candidate_profile = json.load(c)
+
+candidate_profile = asyncio.run(parse_pdf_to_json(r"C:\Users\akshivk\Desktop\sample resumes\Sourav_s_CV.pdf"))
+# print(candidate_profile)
+candidate_profile = json.loads(candidate_profile)
 cp = CandidateProfileSchema(skills=candidate_profile["skills"],
                             projects=candidate_profile["projects"],
                             experience=candidate_profile["experience"])
