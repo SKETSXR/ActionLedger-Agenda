@@ -19,7 +19,7 @@ class SummaryGenerationAgent:
     @staticmethod
     async def summary_generator(state: AgentInternalState) -> AgentInternalState:
         summary = await SummaryGenerationAgent.llm_sg \
-        .with_structured_output(GeneratedSummarySchema) \
+        .with_structured_output(GeneratedSummarySchema, method="function_calling") \
         .ainvoke(
             [
                 SystemMessage(
