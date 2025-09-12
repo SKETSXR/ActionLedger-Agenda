@@ -21,70 +21,11 @@ from langgraph.prebuilt import ToolNode
 
 set_llm_cache(InMemoryCache())
 
-# @tool
-# def db_retriever():
-
-    
-#     # # ---------- FETCH ALL COLLECTIONS ----------
-#     # async def fetch_all_from_mongo(mongo_client: str, mongo_db: str):
-#     #     client = pymongo.MongoClient(mongo_client)
-#     #     db = client[mongo_db]
-
-#     #     collections = db.list_collection_names()
-#     #     all_data = {}
-
-#     #     for coll_name in collections:
-#     #         collection = db[coll_name]
-#     #         docs = list(collection.find({}, {"_id": 0}))  # exclude _id for readability
-#     #         all_data[coll_name] = docs
-
-#     #     client.close()
-#     #     print(json.dumps(all_data, indent=2))
-#     #     return all_data
-
-
-#     # # ---------- FETCH SPECIFIC COLLECTION ----------
-#     # def fetch_from_collection(mongo_client: str, mongo_db: str, collection_name: str):
-#     #     client = pymongo.MongoClient(mongo_client)
-#     #     db = client[mongo_db]
-#     #     docs = list(db[collection_name].find({}, {"_id": 0}))
-#     #     client.close()
-#     #     return docs
-
-
-#     # def read_start():
-#     env_vals = dotenv_values()
-#     mongo_client = env_vals["MONGO_CLIENT"]
-#     mongo_db = env_vals["MONGO_DB"]
-
-#     # await fetch_all_from_mongo(mongo_client, mongo_db)
-
-#     # summaries = fetch_from_collection(mongo_client, mongo_db, "summary")
-#     # print("Summaries:\n", json.dumps(summaries, indent=2))
-
-#     db_wrapper = MongoDBDatabase.from_connection_string(
-#     mongo_client, database=mongo_db
-#     )
-#     llm = llm_tg
-#     toolkit = MongoDBDatabaseToolkit(db=db_wrapper, llm=llm)
-
-#     system_message = MONGODB_AGENT_SYSTEM_PROMPT.format(top_k=5)
-
-#     # test_query = "Which country's customers spent the most?"
-#     # agent = create_react_agent(llm, toolkit.get_tools(), state_modifier=system_message)
-#     # agent.step_timeout = 60
-#     # events = agent.stream(
-#     # {"messages": [("user", test_query)]},
-#     #     stream_mode="values",
-#     # )
-#     # messages = []
-#     return toolkit.get_tools()
 
 class TopicGenerationAgent:
 
     llm_tg = llm_tg
     MONGO_TOOLS = get_mongo_tools(llm=llm_tg)
-    # mongo_toolnode = ToolNode(MONGO_TOOLS)
     llm_tg_with_tools = llm_tg.bind_tools(MONGO_TOOLS)
     
     @staticmethod

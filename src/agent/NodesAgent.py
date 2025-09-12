@@ -5,7 +5,6 @@ import json, copy
 from langchain_core.messages import SystemMessage
 from pydantic import ValidationError
 from src.mongo_tools import get_mongo_tools
-from langgraph.prebuilt import ToolNode
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
 from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
@@ -15,8 +14,6 @@ from ..model_handling import llm_n
 class NodesGenerationAgent:
     llm_n = llm_n
     MONGO_TOOLS = get_mongo_tools(llm=llm_n)
-    # mongo_toolnode = ToolNode(MONGO_TOOLS)
-    # llm_n_with_tools = llm_n.bind_tools(mongo_toolnode)
     llm_n_with_tools = llm_n.bind_tools(MONGO_TOOLS) 
 
     @staticmethod

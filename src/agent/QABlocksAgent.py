@@ -5,7 +5,6 @@ import json, copy
 from langchain_core.messages import SystemMessage
 from pydantic import ValidationError
 from src.mongo_tools import get_mongo_tools
-from langgraph.prebuilt import ToolNode
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import QASetsSchema
 from ..prompt.qa_agent_prompt import QA_BLOCK_AGENT_PROMPT
@@ -15,8 +14,6 @@ from ..model_handling import llm_qa
 class QABlockGenerationAgent:
     llm_qa = llm_qa
     MONGO_TOOLS = get_mongo_tools(llm=llm_qa)
-    # mongo_toolnode = ToolNode(MONGO_TOOLS)
-    # llm_qa_with_tools = llm_qa.bind_tools(mongo_toolnode)
     llm_qa_with_tools = llm_qa.bind_tools(MONGO_TOOLS) 
 
     @staticmethod
