@@ -198,6 +198,7 @@ QA Generation Rules
 - Reference the candidate's actual projects, skills, or summary text if provided.  
 - Skills must be drawn only from the associated respective skills/focus_area field values.  
 - Do not skip any of the 5 questions for each block.  
+- You can use database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T)
 
 ---
 Inputs:

@@ -234,7 +234,8 @@ from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage
 from langchain.globals import set_llm_cache
 from langchain_community.cache import InMemoryCache
-
+from src.mongo_tools import get_mongo_tools
+from langgraph.prebuilt import ToolNode
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import DiscussionSummaryPerTopicSchema
 from ..prompt.discussion_summary_per_topic_generation_agent_prompt import (
@@ -247,12 +248,16 @@ set_llm_cache(InMemoryCache())
 
 class PerTopicDiscussionSummaryGenerationAgent:        
     llm_dts = llm_dts
+    MONGO_TOOLS = get_mongo_tools(llm=llm_dts)
+    # mongo_toolnode = ToolNode(MONGO_TOOLS)
+    # llm_dts_with_tools = llm_dts.bind_tools(mongo_toolnode)
+    llm_dts_with_tools = llm_dts.bind_tools(MONGO_TOOLS) 
 
     @staticmethod
     async def _one_topic_call(generated_summary_json: str, topic: Dict[str, Any]):
         """Call LLM once for a single topic and return a structured DiscussionTopic."""
         TopicEntry = DiscussionSummaryPerTopicSchema.DiscussionTopic
-        resp = await PerTopicDiscussionSummaryGenerationAgent.llm_dts \
+        resp = await PerTopicDiscussionSummaryGenerationAgent.llm_dts_with_tools \
             .with_structured_output(TopicEntry, method="function_calling") \
             .ainvoke([
                 SystemMessage(

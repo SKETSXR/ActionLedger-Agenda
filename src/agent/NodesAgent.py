@@ -4,6 +4,8 @@ from langgraph.graph import StateGraph, START, END
 import json, copy
 from langchain_core.messages import SystemMessage
 from pydantic import ValidationError
+from src.mongo_tools import get_mongo_tools
+from langgraph.prebuilt import ToolNode
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
 from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
@@ -12,6 +14,10 @@ from ..model_handling import llm_n
 
 class NodesGenerationAgent:
     llm_n = llm_n
+    MONGO_TOOLS = get_mongo_tools(llm=llm_n)
+    # mongo_toolnode = ToolNode(MONGO_TOOLS)
+    # llm_n_with_tools = llm_n.bind_tools(mongo_toolnode)
+    llm_n_with_tools = llm_n.bind_tools(MONGO_TOOLS) 
 
     @staticmethod
     def _as_dict(x: Any) -> Dict[str, Any]:
@@ -56,7 +62,7 @@ class NodesGenerationAgent:
             total_no_questions_context=T,
             nodes_error=nodes_error
         )
-        return await NodesGenerationAgent.llm_n \
+        return await NodesGenerationAgent.llm_n_with_tools \
             .with_structured_output(TopicWithNodesSchema, method="function_calling") \
             .ainvoke([SystemMessage(content=sys)])
 
