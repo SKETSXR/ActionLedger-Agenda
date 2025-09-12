@@ -42,11 +42,11 @@ Each node must contain:
 - `question_type`: Direct / Deep Dive (QA Block)
 - `question`: If the question_type is given as Direct then this should be a Direct question generated
 - `graded`: true/false
-- `next_node`: ID of the next node
+- `next_node`: ID of the next node and for last node this should always be null
 - `context`: Short description of what this particular node covers
 - `skills`: List of skills to test in that particular node (taken verbatim from focus areas)
-- `question_guidelines`: It is only required for Deep Dive or QA blocks but should not be null
-- `total_question_threshold`: A threshold number of questions only for Deep dive or QA blocks but the maximum number of these deep dive questions but it should follow a constraint that it should accommodate the fact that 1 opening question of each topic will be always there and also that there shall be some 2-3 direct questions for each topic for sure and also it shall follow another given constraint that overall the total no. of questions which is actually the sum of opening question, direct question(s) & deep dive questions should be equal to per total no of questions per topic and this is given as an input to you.
+- `question_guidelines`: It is only required for Deep Dive or QA blocks and should not be null but null for others
+- `total_question_threshold`: A threshold number of questions only for Deep dive or QA blocks but the maximum number of these deep dive questions but it should follow a constraint that it should accommodate the fact that 1 opening question of each topic will be always there and also that there shall be some 2-3 direct questions for each topic for sure and also it shall follow another given constraint that overall the total no. of questions which is actually the sum of opening question, direct question(s) & deep dive questions should be equal to per total no of questions per topic and this is given as an input to you. Also for non Deep Dive / QA Blocks it shall be null. 
 
 Rules
 - Sequence must follow a walkthrough order for each topic.  

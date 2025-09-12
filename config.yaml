@@ -52,3 +52,41 @@ configurable:
 
   thread_id: thread_6
   
+  
+  # # Open AI models
+  # model_provider_jd: openai
+  # model_jd: gpt-4o
+  # # reasoning_effort_jd: minimal
+  # temperature_jd: 0
+
+  # model_provider_cv: openai
+  # model_cv: gpt-4o
+  # # reasoning_effort_cv: minimal
+  # temperature_cv: 0
+
+  # model_provider_sg: google_genai
+  # model_sg: gemini-2.5-pro
+  # # reasoning_effort_sg: minimal
+  # temperature_sg: 0
+  # model_provider_tg: google_genai
+  # model_tg: gemini-2.5-pro
+  # # reasoning_effort_tg: minimal
+  # temperature_tg: 0
+
+  # model_provider_dts: google_genai
+  # model_dts: gemini-2.5-pro
+  # # reasoning_effort_dts: minimal
+  # temperature_dts: 0
+
+  # model_provider_n: google_genai
+  # model_n: gemini-2.5-pro
+  # # reasoning_effort_n: minimal
+  # temperature_n: 0
+
+  # model_provider_qa: google_genai
+  # model_qa: gemini-2.5-pro
+  # # reasoning_effort_qa: minimal
+  # temperature_qa: 0
+
+  # thread_id: thread_7
+  
