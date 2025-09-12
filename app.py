@@ -88,7 +88,6 @@ Distributed systems patterns (event-driven, CQRS, async messaging).
 Advanced monitoring/alerting (Prometheus, Grafana, ELK, OpenTelemetry). 
 
 Experience leading technical spikes, POCs, or cross-team integrations. 
-
     
 '''
 jd_json_string = asyncio.run(parse_jd_text_to_json(jd_inp_text))
@@ -99,7 +98,7 @@ jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["comp
 # with open(r"parsed_cv7.json", "r", encoding='utf-8') as c:
 #     candidate_profile = json.load(c)
 
-candidate_profile = asyncio.run(parse_pdf_to_json(r"C:\Users\akshivk\Desktop\Action Ledger - Agenda\testing\Nitish\nitish_resume-8 - Nitish Pratap Yadav.pdf"))
+candidate_profile = asyncio.run(parse_pdf_to_json(r"testing\Ghanshyam - SWE\Resume-Ghanshyam-jangir - GHANSHYAM JANGIR.pdf"))
 # print(candidate_profile)
 candidate_profile = json.loads(candidate_profile)
 cp = CandidateProfileSchema(skills=candidate_profile["skills"],
@@ -111,7 +110,7 @@ cp = CandidateProfileSchema(skills=candidate_profile["skills"],
 def load_skill_tree(tree_json: dict) -> SkillTreeSchema:
     return SkillTreeSchema(**tree_json)
 
-with open(r"testing\Nitish\skill_tree.json", "r") as f:
+with open(r"testing\Ghanshyam - SWE\skill_tree.json", "r") as f:
     tree_data = json.load(f)
 
 root = load_skill_tree(tree_data)
@@ -164,9 +163,14 @@ otpt = asyncio.run(graph.ainvoke(inp, config))
 # Test o/p as a schema object (for entire agenda output)
 # print(otpt)
 
+x = ""
 for k, v in otpt.items():
     k = str(k).capitalize()
     print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
+    x += f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n"
+
+with open(r"testing\op1.txt", "a") as f:
+    f.write(x)
 # for i, v in otpt.items():
 #     if hasattr(v, "model_dump_json"):
 #         print(json.dumps(json.loads(v.model_dump_json()), indent=2))
