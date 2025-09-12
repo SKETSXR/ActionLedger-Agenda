@@ -216,5 +216,5 @@ notebooks/
 
 # Practice code files
 db_practice_raw_inpdata_utils.py
-testing/
-testing\
+testing/*
+testing\*
