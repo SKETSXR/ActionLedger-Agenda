@@ -44,40 +44,44 @@ Here are following headings
    - Write *separate project-wise summaries with this heading*.  
    - From the project section of the given input candidate profile describe in 1-2 lines what the person did in each project and what the project was about (only technical) but each line should begin with the project id like P1 - "the 1-2 line description", P2 - "the 1-2 line description" and so on.
 
-4. Overlapping Skills (with Notes) ```Just use this for thinking and don't write this```
+4. Experience-wise Summaries 
+   - Write *separate experience-wise summaries with this heading*.  
+   - From the experience section of the given input candidate profile describe in 1-2 lines what the person did in each experience and what the experience was about (only technical) but each line should begin with the experience id like E1 - "the 1-2 line description", E2 - "the 1-2 line description" and so on.
+   
+5. Overlapping Skills (with Notes) ```Just use this for thinking and don't write this```
    - List the skills known by the candidate which overlap with the required skills (<only the leaf nodes of the skill tree>).  
    - If a JD skill matches the skill tree -> add a note: * “Focus more on this skill (JD overlap)” *.  
    - If a skill of the skill tree does <not> match the JD -> add a note: *“Skip this skill (no JD match)” *.  
 
-5. Fundamental Knowledge 
+6. Fundamental Knowledge 
    - Write the fundamental knowledge required as per the degree requirement.
 
-6. Missing Skills ```Just use this for thinking and don't write this```
+7. Missing Skills ```Just use this for thinking and don't write this```
    - List the skills required by the company as per the Skill Tree but not known to the candidate.  
 
-7. Annotated Skill Tree (T) 
+8. Annotated Skill Tree (T) 
    - Reproduce the skill tree exactly as given (keep names and weights only).  
    - Add a new key `"comment"` for each leaf (skill).  
    - The `"comment"` must state the <exact evidence from the candidate profile in this format evidence - ... > if available, otherwise `"no such evidence"`.  
 
-8. Domains to assess (D)
+9. Domains to assess (D)
    - Reproduce the annotated skill tree but all the domains from the annotated skill tree.  
    - Just write the name and weight keys on this generated Json and not write others and just write domains with name and weight and not root etc.
 
-9. Total questions in entire interview
+10. Total questions in entire interview
    - Should be a less than or equal to a maximum 18 as per feasiblity in a real interview.
    - Just write it as an integer.
 
 For these heading following are some instructions
-- Headings 4 and 6 must not appear.  
-- Headings 5, 7 and 8 must also always show their correct number being 4th, 5th and 6th respectively.  
+- Headings 5 and 7 must not appear.  
+- Headings 6, 8 and 9 must also always show their correct number being 5th, 6th and 7th respectively.  
 - Now generate the required headings.
 
 ---  
 
 Ensure that:  
-- Always output all 6 headings in order.  
-- Headings 4 and 6 should not appear but all others with correct content and numbering.  
+- Always output all 7 headings in order.  
+- Headings 5 and 7 should not appear but all others with correct content and numbering.  
 - No extra headings or renumbering.  
 - No information outside of the given inputs.  
 '''
