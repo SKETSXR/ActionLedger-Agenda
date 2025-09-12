@@ -165,7 +165,8 @@ otpt = asyncio.run(graph.ainvoke(inp, config))
 # print(otpt)
 
 for k, v in otpt.items():
-    print(f"\n{k}: {v.model_dump_json(indent=2)}\n")
+    k = str(k).capitalize()
+    print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
 # for i, v in otpt.items():
 #     if hasattr(v, "model_dump_json"):
 #         print(json.dumps(json.loads(v.model_dump_json()), indent=2))
