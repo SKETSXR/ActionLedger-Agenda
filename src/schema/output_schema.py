@@ -103,12 +103,13 @@ class TotalQuestionsSchema(BaseModel):
 class GeneratedSummarySchema(TotalQuestionsSchema):
     job_requirements: JobRequirementsSummarySchema
     candidate_project_summary: CandidateProjectSummarySchema
-    annotated_skill_tree: AnnotatedSkillTreeSummarySchema
-    domains_assess: DomainsToAssessListSchema
+    annotated_skill_tree_T: AnnotatedSkillTreeSummarySchema
+    domains_assess_D: DomainsToAssessListSchema
 
 
 class TopicSchema(BaseModel):
     topic: Annotated[str, Field(..., description="Short name of the discussion topic")]
+    why_this_topic: Annotated[str, Field(..., description="A short reason for why this discussion topic has been chosen")]
     focus_area: Annotated[Dict[str, str], Field(..., description="skill -> focus description")]
     necessary_reference_material: Annotated[str, Field(..., description="Reference material for this topic")]
     total_questions: Annotated[int, Field(..., description="Planned question count")]

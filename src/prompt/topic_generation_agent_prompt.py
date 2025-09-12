@@ -26,10 +26,11 @@ Topic Generation Instructions and Constraints:
    - Coding question  
    - General skill assessment  
 - Within each discussion topic, you must clearly include:  
-   1. `topic` - a short, concise name (3-5 words).  
-   2. `focus_area` - a set of skills (taken only from the summary which got selected from leaves/last level of the annotated skill tree) that will be tested in this topic write a guideline for each of the respective focus area saying that you have to focus on this respective skill.  
-   3. `necessary_reference_material` - placeholder for reference purpose based on what discussion will happen to the candidate also if a project is written here as reference then use exact given project id (P1 or P2 etc), company id (C) and fundamental knowledge (E) also as given in the summary along with those respective information like P1 - ..., C - ... etc only use the references that are mentioned and don't consider non mentioned or null as references for your topics.  
-   4. `total_questions` - total number of questions to be asked in each topic can be random and need not be same.
+   1. `topic` - a short, concise name (3-5 words). 
+   2. `why_this_topic` - A short reason for why this discussion topic has been chosen. 
+   3. `focus_area` - a set of skills (taken only from the summary which got selected from leaves/last level of the annotated skill tree) that will be tested in this topic write a guideline for each of the respective focus area saying that you have to focus on this respective skill.  
+   4. `necessary_reference_material` - placeholder for reference purpose based on what discussion will happen with the candidate also if a project is written here as reference then use exact given project id (P1 or P2 etc), experience id (E1 or E2 etc), summary key (S), skill tree (T) and domains (D) and nothing else etc only use the references that are mentioned and don't consider non mentioned or null as references for your topics.  
+   5. `total_questions` - total number of questions to be asked in each topic can be random and need not be same.
 
 - Constraints for focus areas:  
    - The focus areas should be as mutually exclusive as possible for each respective topic.  
@@ -46,6 +47,7 @@ Topic Generation Instructions and Constraints:
 
 `class TopicSchema(BaseModel):
     topic: Annotated[str, Field(..., description="Short name of the discussion topic")]
+    why_this_topic: Annotated[str, Field(..., description="A short reason for why this discussion topic has been chosen")]
     focus_area: Annotated[Dict[str, str], Field(..., description="skill -> focus description")]
     necessary_reference_material: Annotated[str, Field(..., description="Reference material for this topic")]
     total_questions: Annotated[int, Field(..., description="Planned question count")]

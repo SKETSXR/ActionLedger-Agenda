@@ -78,7 +78,7 @@ Instructions
    - `"focus_areas"` is always an array, even for one skill.  
    - Skills must be copied verbatim from the skill tree or candidate summary. No renaming (e.g., always `"Component Object Model (COM/DCOM)"`, never `"COM/DCOM"`).  
    - `"reference_sources"` is always an array, even for one source.  
-   - `"reference_material"` must only be the union of all `reference_sources` from the sequence. Do not inject anything extra.  Also give me that only as the given keys like P1, P2 for project references or C for Company name references and E for education/fundamental knowledge references. 
+   - `"reference_material"` must only be the union of all `reference_sources` from the sequence. Do not inject anything extra. Also give me that only as the given keys like P1, P2 etc for project references, E1 or E2 etc for experience related references and summary key (S) or skill tree (T) or domains (D) for there respective references. 
    - For any opening question keep the value of graded key as always false.
    - All keys must appear for each step, with no omissions.  
 

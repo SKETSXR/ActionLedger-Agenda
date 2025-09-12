@@ -38,7 +38,7 @@ Here are following headings
    - What does the company expect from the candidate (only technical things).  
 
 2. About the Company / Product
-   - What does the company do or what does the product do.  Also write a key named C for this and start with C - (then here comes that information).
+   - What does the company do or what does the product do.
 
 3. Project-wise Summaries 
    - Write *separate project-wise summaries with this heading*.  
@@ -50,17 +50,17 @@ Here are following headings
    - If a skill of the skill tree does <not> match the JD -> add a note: *“Skip this skill (no JD match)” *.  
 
 5. Fundamental Knowledge 
-   - Write the fundamental knowledge required as per the degree requirement. Also write a key named E for this and start with E - (then here comes that information).  
+   - Write the fundamental knowledge required as per the degree requirement.
 
 6. Missing Skills ```Just use this for thinking and don't write this```
    - List the skills required by the company as per the Skill Tree but not known to the candidate.  
 
-7. Annotated Skill Tree  
+7. Annotated Skill Tree (T) 
    - Reproduce the skill tree exactly as given (keep names and weights only).  
    - Add a new key `"comment"` for each leaf (skill).  
    - The `"comment"` must state the <exact evidence from the candidate profile in this format evidence - ... > if available, otherwise `"no such evidence"`.  
 
-8. Domains to assess
+8. Domains to assess (D)
    - Reproduce the annotated skill tree but all the domains from the annotated skill tree.  
    - Just write the name and weight keys on this generated Json and not write others and just write domains with name and weight and not root etc.
 
