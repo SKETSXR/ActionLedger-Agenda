@@ -27,6 +27,13 @@ class ProjectSchema(ExperienceProjectBaseSchema):
 
 
 class ExperienceSchema(ExperienceProjectBaseSchema):
+    id: Annotated[
+        str,
+        Field(...,
+            description="A unique id associated to each experience",
+            examples=["E1", "E2", "E3"]
+        )
+    ]
     company: Annotated[
         str,
         Field(...,

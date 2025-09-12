@@ -19,6 +19,7 @@ Now extract structured data and return only in a JSON format in this given forma
   "skills": ["..."],
   "experience": [
     {{
+      "id": "...", <Assign a unique id to each experience like E1, E2, etc>
       "title": "...",
       "company": "...",
       "description": "..."
