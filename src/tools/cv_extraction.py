@@ -26,7 +26,7 @@ Now extract structured data and return only in a JSON format in this given forma
   ],
   "projects": [
     {{
-      "id": "...", // Assign a unique id to each project like P1, P2, etc
+      "id": "...", <Assign a unique id to each project like P1, P2, etc>
       "title": "...",
       "description": "..."
     }}
@@ -93,6 +93,7 @@ async def main():
         with open(args.save, "w", encoding="utf-8") as f:
             json.dump(parsed_json, f, indent=4)
         console.print(f"\n[bold yellow] Saved output to:[/bold yellow] {args.save}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

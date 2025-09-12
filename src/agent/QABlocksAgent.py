@@ -50,7 +50,6 @@ class QABlockGenerationAgent:
         { "topic": "<topic_name>", "qa_blocks": [ ... ] }
         """
         sys = QA_BLOCK_AGENT_PROMPT.format(
-            topic=topic_name,
             discussion_summary=discussion_summary_json,
             node=deep_dive_nodes_json,
             qa_error=qa_error or ""

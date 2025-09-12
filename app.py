@@ -16,9 +16,81 @@ load_dotenv()
 # with open(r"new_jd.json", "r", encoding='utf-8') as j:
 #     jd = json.load(j)
 # jd_inp_text = """We are looking for a skilled Data Scientist to join our team at Tech Innovators Inc. The ideal candidate will have a strong background in statistical analysis, machine learning, and data visualization. Responsibilities include analyzing large datasets to extract insights, building predictive models, and collaborating with cross-functional teams to implement data-driven solutions. A bachelor's degree in Computer Science, Statistics, or a related field is required, with a preference for candidates holding a master's degree or higher. Experience with Python, R, SQL, and cloud platforms such as AWS or Azure is essential. Familiarity with big data technologies like Hadoop and Spark is a plus. Join us at Tech Innovators Inc., a leading company in the tech industry known for its innovative solutions and dynamic work environment."""
-jd_inp_text = """Edwisely - Intelligent Learning Infrastructure
+jd_inp_text = '''
+Software Engineer - L3 (Software Engineer II) 
 
-Were seeking an AI Solutions Engineer to lead the integration of GenAI tools such as ChatGPT or Claudeinto our core platform. Youll design, prototype, and deploy features that elevate student outcomes, make teaching exciting, and enrich dashboards with intelligent insights, all while upholding privacy and governance standards. Key Responsibilities Design and build GenAI-powered features like guided study assistants, automated remediation engine, and intelligent feedback tools. Develop end-to-end pipelines (prompt design model integration CI/CD deployment) that align with Edwiselys Intelligent Learning Infrastructure. Collaborate with product teams, faculty, and UX designers to deploy AI features in classrooms and dashboards. Ensure all AI implementations meet ISO 27001 security and CERT-In data protection guidelines. Measure adoption and impact via analytics dashboardssupport evidence-based learning outcomes. What You’ll Bring Strong in prompt engineering, RAG, embeddings, or QA systems using frameworks like OpenAI API, LangChain, Hugging Face Transformers. Familiarity with ML deployment—FastAPI, Docker, AWS/GCP—within production-grade applications. Experience with education data, knowledge graphs, student modeling, or assessment systems is a big plus. Results-driven: ability to turn prototypes into scalable features. Passionate about improving higher education with impactful, AI-driven solutions."""
+Location & Type: Delhi , Full – Time 
+
+Role Overview 
+
+As a Software Engineer II, you will own and deliver larger cross-cutting modules and systems end-to-end across backend and frontend. You’ll write design docs, mentor junior engineers, lead technical discussions, and ensure reliability of critical features. This role expects strong skills in backend services, APIs, databases, and modern frontend frameworks (React/Next.js). 
+
+What You’ll Do 
+
+Own and deliver larger modules/systems that span backend services and frontend applications. 
+
+Author and present detailed design docs, drive technical discussions and trade-off decisions. 
+
+Build production-grade services in Node.js and integrate AI systems in Python. 
+
+Architect high-performance REST/GraphQL APIs, ensure versioning, security, and backward compatibility. 
+
+Design and optimize schemas in Postgres and MongoDB for scale and availability. 
+
+Lead development of frontend features in React/Next.js with focus on performance, accessibility, and maintainability. 
+
+Enforce CI/CD best practices: test automation, deployment readiness, and rollback strategies. 
+
+Define and monitor observability standards (metrics, logs, alerts) and lead incidents. 
+
+Mentor and coach junior engineers through reviews, pair programming, and knowledge sharing. 
+
+Design and roll out multi-layer caching for high-traffic paths, define hit-rate/latency SLOs. 
+
+Establish cache governance: keys/namespaces, TTL policies, invalidation playbooks, and observability (hit/miss dashboards). 
+
+Technical Qualifications 
+
+3–4 years of professional software engineering experience. 
+
+Advanced proficiency in Node.js services and Python integrations. 
+
+Strong experience in REST/GraphQL API design and scaling. 
+
+Deep knowledge of Postgres schema design, indexing, and query optimization. 
+
+Hands-on with MongoDB aggregation pipelines and sharding strategies. 
+
+Proficiency with React/Next.js (or equivalent) for building production UIs. 
+
+Experience with AWS ECS/ECR and scaling containerized workloads. 
+
+Strong CI/CD practices and release automation experience. 
+
+Skilled in diagnosing and fixing production issues using logs, metrics, and traces. 
+
+Solid system design skills: concurrency, fault tolerance, latency vs. throughput trade-offs. 
+
+Hands-on with Redis at scale (pipelines, Lua scripts, locks), CDN edge caching, and GraphQL/REST response caching. 
+
+Deep understanding of consistency vs. freshness trade-offs, idempotency, and rate limiting around cached flows. 
+
+Nice to Have 
+
+TypeScript proficiency in both frontend and backend. 
+
+Kubernetes (EKS) and service mesh (Istio/Linkerd). 
+
+Infrastructure-as-Code (Terraform/CDK/CloudFormation). 
+
+Distributed systems patterns (event-driven, CQRS, async messaging). 
+
+Advanced monitoring/alerting (Prometheus, Grafana, ELK, OpenTelemetry). 
+
+Experience leading technical spikes, POCs, or cross-team integrations. 
+
+    
+'''
 jd_json_string = asyncio.run(parse_jd_text_to_json(jd_inp_text))
 jd = json.loads(jd_json_string)
 jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["company_background"], fundamental_knowledge=jd.get("fundamental_knowledge"))
@@ -27,7 +99,7 @@ jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["comp
 # with open(r"parsed_cv7.json", "r", encoding='utf-8') as c:
 #     candidate_profile = json.load(c)
 
-candidate_profile = asyncio.run(parse_pdf_to_json(r"C:\Users\akshivk\Desktop\sample resumes\Sourav_s_CV.pdf"))
+candidate_profile = asyncio.run(parse_pdf_to_json(r"C:\Users\akshivk\Desktop\Action Ledger - Agenda\testing\Nitish\nitish_resume-8 - Nitish Pratap Yadav.pdf"))
 # print(candidate_profile)
 candidate_profile = json.loads(candidate_profile)
 cp = CandidateProfileSchema(skills=candidate_profile["skills"],
@@ -39,7 +111,7 @@ cp = CandidateProfileSchema(skills=candidate_profile["skills"],
 def load_skill_tree(tree_json: dict) -> SkillTreeSchema:
     return SkillTreeSchema(**tree_json)
 
-with open("skilltree.json", "r") as f:
+with open(r"testing\Nitish\skill_tree.json", "r") as f:
     tree_data = json.load(f)
 
 root = load_skill_tree(tree_data)

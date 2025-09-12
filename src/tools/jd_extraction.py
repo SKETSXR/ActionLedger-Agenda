@@ -1,7 +1,7 @@
 import re
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from ..model_handling import llm_jd
+
 
 async def parse_jd_text_to_json(jd_text):
     llm = llm_jd
@@ -10,7 +10,7 @@ async def parse_jd_text_to_json(jd_text):
     Now extract structured data and return only a JSON object in this exact format:
     {{
         "job_role":"actual job role name - ...",
-        "fundamental_knowledge": "...", // If it is not mentioned then it should be null
+        "fundamental_knowledge": "...",  <If it is not mentioned then it should be null always>
         "company_background":"actual company name - ..."
     }}
     Job Description Text:
