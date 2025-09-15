@@ -4,7 +4,7 @@ from langchain_core.messages import AnyMessage, RemoveMessage
 from langgraph.graph import add_messages
 
 from .output_schema import GeneratedSummarySchema, CollectiveInterviewTopicSchema, DiscussionSummaryPerTopicSchema, NodesSchema, QASetsSchema
-from .input_schema import JobDescriptionSchema, SkillTreeSchema, CandidateProfileSchema, QuestionGuidelinesSchema
+from .input_schema import JobDescriptionSchema, SkillTreeSchema, CandidateProfileSchema, QuestionGuidelinesCompleteSchema
 
 
 class AgentInternalState(BaseModel):
@@ -28,7 +28,7 @@ class AgentInternalState(BaseModel):
     job_description: JobDescriptionSchema
     skill_tree: SkillTreeSchema
     candidate_profile: CandidateProfileSchema
-    question_guidelines: QuestionGuidelinesSchema
+    question_guidelines: QuestionGuidelinesCompleteSchema
 
     generated_summary: GeneratedSummarySchema | None = None
     interview_topics: CollectiveInterviewTopicSchema | None = None

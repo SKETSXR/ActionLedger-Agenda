@@ -113,35 +113,64 @@ class AgendaGenerationAgent:
         except ServerSelectionTimeoutError as server_error:
             print(f"Could not communicate with MongoDB server, thus summary was not stored.: {server_error}")
         
-        # ----- question_guidelines upsert(s) -----
-        # Pydantic will coerce your dict input; use the INSTANCE on state
-        qg_model = state.question_guidelines
-        guideline_text = qg_model.question_guidelines  # str
-        type_names = qg_model.question_type_name       # list[str]
+        # # ----- question_guidelines upsert(s) -----
+        # # Pydantic will coerce your dict input; use the INSTANCE on state
+        # qg_model = state.question_guidelines
+        # guideline_text = qg_model.question_guidelines  # str
+        # type_names = qg_model.question_type_name       # list[str]
 
-        # Optional: make sure we have a unique index on _id (implicit) or on question_type_name if you prefer that field.
-        # qg_collection.create_index("question_type_name", unique=True)  # only if you use that as key instead of _id
+        # # Optional: make sure we have a unique index on _id (implicit) or on question_type_name if you prefer that field.
+        # # qg_collection.create_index("question_type_name", unique=True)  # only if you use that as key instead of _id
 
-        for name in type_names:
-            # one document per question type
+        # for name in type_names:
+        #     # one document per question type
+        #     doc = {
+        #         "_id": str(name),  # using the type name as the stable primary key
+        #         "question_type_name": name,
+        #         "question_guidelines": guideline_text
+        #         # "updated_at": datetime.utcnow()
+        #     }
+        #     try:
+        #         # upsert ensures idempotency
+        #         question_guidelines_collection.replace_one({"_id": doc["_id"]}, doc, upsert=True)
+        #         # print(f" Upserted guideline for '{name}'")
+        #     except Exception as e:
+        #         # print(f" Guideline '{name}' already exists with the same _id. Skipping.")
+        #         print(f"Error upserting the guidelines into the database {e}")
+        #     # except PyMongoError as e:
+        #     #     print(f" Failed to upsert guideline '{name}': {e}")
+
+        # ---- Upsert each guideline item (list[QuestionGuidelineItem]) ----
+        # Optional (safe to run repeatedly): dedicated unique index if you ever switch off _id as key
+        # qg_collection.create_index("question_type_name", unique=True, name="uq_qg_type")
+
+        for raw_item in state.question_guidelines.question_guidelines:   # list of models or dicts
+            # item = _as_dict(raw_item)
+            item = raw_item.model_dump()
+
+            name = str(item.get("question_type_name", "")).strip()
+            text = str(item.get("question_guidelines", "")).strip()
+
+            if not name:
+                print(" Skipping a guideline with empty 'question_type_name'.")
+                continue
+            if not text:
+                print(f" Skipping '{name}' because 'question_guidelines' is empty.")
+                continue
+
             doc = {
-                "_id": str(name),  # using the type name as the stable primary key
+                "_id": name,  # use question_type_name as stable primary key
                 "question_type_name": name,
-                "question_guidelines": guideline_text
-                # "updated_at": datetime.utcnow()
+                "question_guidelines": text,
             }
+
             try:
-                # upsert ensures idempotency
-                question_guidelines_collection.replace_one({"_id": doc["_id"]}, doc, upsert=True)
+                question_guidelines_collection.replace_one({"_id": name}, doc, upsert=True)
                 # print(f" Upserted guideline for '{name}'")
             except Exception as e:
-                # print(f" Guideline '{name}' already exists with the same _id. Skipping.")
-                print(f"Error upserting the guidelines into the database {e}")
-            # except PyMongoError as e:
-            #     print(f" Failed to upsert guideline '{name}': {e}")
+                print(f" Failed to upsert guideline: {e}")
         client.close()
         return state
-
 
     @staticmethod
     async def output_formatter(state: AgentInternalState) -> OutputSchema:

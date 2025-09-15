@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Annotated, Optional
+from typing import Annotated, Optional, List
 
 
 class ExperienceProjectBaseSchema(BaseModel):
@@ -103,18 +103,18 @@ class JobDescriptionSchema(BaseModel):
 
 
 class QuestionGuidelinesSchema(BaseModel):
-    question_guidelines: Annotated[
-        str,
-        Field(...,
-            description="Guidelines for example question generations"
-        )
-    ]
-    
     question_type_name: Annotated[
-        list[str],
-        Field(...,
-            description="List of question type to be used for guidelines and also used as a unique identifier for each mongo db record"
-        )
+        str, Field(..., description="Question type to be used for guidelines and also used as a unique identifier for each mongo db record", min_length=1)
+    ]
+    question_guidelines: Annotated[
+        str, Field(..., description="Guidelines for example question generations", min_length=1)
+    ]
+
+
+class QuestionGuidelinesCompleteSchema(BaseModel):
+    question_guidelines: Annotated[
+        List[QuestionGuidelinesSchema],
+        Field(..., description="List of question guidelines to be used"),
     ]
 
 
@@ -122,4 +122,4 @@ class InputSchema(BaseModel):
     job_description: JobDescriptionSchema
     skill_tree: SkillTreeSchema
     candidate_profile: CandidateProfileSchema
-    question_guidelines: QuestionGuidelinesSchema
+    question_guidelines: QuestionGuidelinesCompleteSchema
