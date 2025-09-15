@@ -317,85 +317,109 @@ class QABlockGenerationAgent:
                 accumulated_errs.append(f"[{topic_name}] {err}")
 
         state.qa_blocks = QASetsSchema(qa_sets=final_sets)
+        print(state.qa_blocks)
         if accumulated_errs:
             state.qa_error = (state.qa_error or "") + ("\n" if state.qa_error else "") + "\n".join(accumulated_errs)
         return state
 
+    # @staticmethod
+    # async def should_regenerate(state: AgentInternalState) -> bool:
+    #     """
+    #     Return True to REGENERATE (invalid), False to END (valid).
+    #     Validates container + exact EMH/EMH/MH combo per QA block and 5 examples per QA.
+    #     """
+    #     # 0) must exist
+    #     if not getattr(state, "qa_blocks", None):
+    #         state.qa_error = (state.qa_error or "") + "\n[QABlockGen] qa_blocks is missing"
+    #         return True
+
+    #     # 1) container validation
+    #     try:
+    #         payload = state.qa_blocks.model_dump() if hasattr(state.qa_blocks, "model_dump") else state.qa_blocks
+    #         QASetsSchema.model_validate(payload)
+    #     except ValidationError as ve:
+    #         state.qa_error = (state.qa_error or "") + f"\n[QABlockGen ValidationError] {ve}"
+    #         return True
+
+    #     # 2) exact combo guard per block
+    #     def to_dict_list(items: Any) -> List[Dict[str, Any]]:
+    #         # normalize list of Pydantic models / dicts to list[dict]
+    #         lst = items or []
+    #         return [
+    #             (i.model_dump() if hasattr(i, "model_dump") else dict(i))
+    #             for i in lst
+    #         ]
+
+    #     def combos_ok(qa_items_raw: Any) -> bool:
+    #         qa_items = to_dict_list(qa_items_raw)
+    #         if len(qa_items) != 8:
+    #             return False
+
+    #         counts = {
+    #             ("First Question", "Easy"): 0,
+    #             ("First Question", "Medium"): 0,
+    #             ("First Question", "Hard"): 0,
+    #             ("New Question", "Easy"): 0,
+    #             ("New Question", "Medium"): 0,
+    #             ("New Question", "Hard"): 0,
+    #             ("Counter Question", "Medium"): 0,
+    #             ("Counter Question", "Hard"): 0,
+    #         }
+    #         for it in qa_items:
+    #             qt = it.get("q_type")
+    #             qd = it.get("q_difficulty")
+    #             key = (qt, qd)
+    #             if key not in counts:
+    #                 # any disallowed pair (e.g., Counter+Easy) → fail
+    #                 return False
+
+    #             # exactly 5 example questions, non-empty strings
+    #             ex = it.get("example_questions") or []
+    #             if not (isinstance(ex, list) and len(ex) == 5 and all(isinstance(s, str) and s.strip() for s in ex)):
+    #                 return False
+
+    #             counts[key] += 1
+
+    #         # require exactly one of each combo
+    #         return all(v == 1 for v in counts.values())
+
+    #     problems = []
+    #     for s in (state.qa_blocks.qa_sets or []):
+    #         blocks = s.qa_blocks if hasattr(s, "qa_blocks") else (s.get("qa_blocks") or [])
+    #         for b in blocks:
+    #             b_dict = b.model_dump() if hasattr(b, "model_dump") else dict(b)
+    #             items = b_dict.get("qa_items")
+    #             if not combos_ok(items):
+    #                 problems.append(f"Bad combo/count in block {b_dict.get('block_id','?')}")
+
+    #     if problems:
+    #         state.qa_error = (state.qa_error or "") + ("\n" if state.qa_error else "") + "\n".join(problems)
+    #         return True
+
+    #     return False
+
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
-        """
-        Return True to REGENERATE (invalid), False to END (valid).
-        Validates container + exact EMH/EMH/MH combo per QA block and 5 examples per QA.
-        """
-        # 0) must exist
+        # --- must exist ---
         if not getattr(state, "qa_blocks", None):
             state.qa_error = (state.qa_error or "") + "\n[QABlockGen] qa_blocks is missing"
             return True
 
-        # 1) container validation
+        # --- container validation ---
         try:
-            payload = state.qa_blocks.model_dump() if hasattr(state.qa_blocks, "model_dump") else state.qa_blocks
-            QASetsSchema.model_validate(payload)
+            payload = (
+                state.qa_blocks.model_dump()
+                if hasattr(state.qa_blocks, "model_dump")
+                else state.qa_blocks
+            )
+            # Use parse_obj instead of model_validate for stricter schema enforcement
+            QASetsSchema.model_validate_json(json.dumps(payload))
         except ValidationError as ve:
             state.qa_error = (state.qa_error or "") + f"\n[QABlockGen ValidationError] {ve}"
             return True
 
-        # 2) exact combo guard per block
-        def to_dict_list(items: Any) -> List[Dict[str, Any]]:
-            # normalize list of Pydantic models / dicts to list[dict]
-            lst = items or []
-            return [
-                (i.model_dump() if hasattr(i, "model_dump") else dict(i))
-                for i in lst
-            ]
-
-        def combos_ok(qa_items_raw: Any) -> bool:
-            qa_items = to_dict_list(qa_items_raw)
-            if len(qa_items) != 8:
-                return False
-
-            counts = {
-                ("First Question", "Easy"): 0,
-                ("First Question", "Medium"): 0,
-                ("First Question", "Hard"): 0,
-                ("New Question", "Easy"): 0,
-                ("New Question", "Medium"): 0,
-                ("New Question", "Hard"): 0,
-                ("Counter Question", "Medium"): 0,
-                ("Counter Question", "Hard"): 0,
-            }
-            for it in qa_items:
-                qt = it.get("q_type")
-                qd = it.get("q_difficulty")
-                key = (qt, qd)
-                if key not in counts:
-                    # any disallowed pair (e.g., Counter+Easy) → fail
-                    return False
-
-                # exactly 5 example questions, non-empty strings
-                ex = it.get("example_questions") or []
-                if not (isinstance(ex, list) and len(ex) == 5 and all(isinstance(s, str) and s.strip() for s in ex)):
-                    return False
-
-                counts[key] += 1
-
-            # require exactly one of each combo
-            return all(v == 1 for v in counts.values())
-
-        problems = []
-        for s in (state.qa_blocks.qa_sets or []):
-            blocks = s.qa_blocks if hasattr(s, "qa_blocks") else (s.get("qa_blocks") or [])
-            for b in blocks:
-                b_dict = b.model_dump() if hasattr(b, "model_dump") else dict(b)
-                items = b_dict.get("qa_items")
-                if not combos_ok(items):
-                    problems.append(f"Bad combo/count in block {b_dict.get('block_id','?')}")
-
-        if problems:
-            state.qa_error = (state.qa_error or "") + ("\n" if state.qa_error else "") + "\n".join(problems)
-            return True
-
         return False
+
 
     @staticmethod
     def get_graph(checkpointer=None):

@@ -363,19 +363,29 @@ HARD CONSTRAINTS (must pass exactly; fix if qa_error is provided):
 - If the previous attempt failed, you will receive `qa_error` below. ONLY fix schema/count/combinations/formatting while keeping the intent.
 
 QA Generation Rules
-- Each QA block must follow this schema:
-  - "block_id": A unique identifier for the block (e.g., B1)
-  - "guideline": One concise instruction on how to probe this topic
-  - "qa_items": Exactly 7 items; each item has:
-      • "qa_id" (QA1..QA7)
-      • "q_type": one of <New Question | Counter Question>
-      • "q_difficulty": one of <Easy | Medium | Hard>
-      • "example_questions": exactly 5 concise, technical questions
-- Questions must be grounded in the candidate/projects where applicable (case-study and project-based first).
-- Prefer “why then how” (design/trade-offs → architecture/algorithms/tooling).
-- Use quantitative metrics when sensible (accuracy, F1, ROC-AUC, BLEU, p95 latency, throughput, memory, FLOPs, cost/query).
+- Each QA block must follow these rules:
+- Per topic, generate EXACTLY 7 QA blocks (no more, no less), one block per combo:
+  1) New Question — Easy
+  2) New Question — Medium
+  3) New Question — Hard
+  4) Counter Question — Twist — Medium
+  5) Counter Question — Twist — Hard
+  6) Counter Question — Interrogatory — Medium
+  7) Counter Question — Interrogatory — Hard
+- No Easy counter questions are allowed anywhere.
+- Each QA block MUST include these fields:
+  - "block_id": unique like "B1", "B2", ...
+  - "guideline": one concise instruction for probing this block's focus
+  - "q_type": "New Question" or "Counter Question"
+  - "q_difficulty": one of "Easy" | "Medium" | "Hard"
+  - "counter_type": REQUIRED and one of "Twist" | "Interrogatory" IFF q_type == "Counter Question"; otherwise omit or null
+  - "qa_items": an array with EXACTLY ONE item:
+      * "qa_id": unique like "QA1"
+      * "example_questions": EXACTLY 5 concise, technical questions (no placeholders)
+- All questions must ground to the node's focus skills verbatim and use project/company IDs when provided (P1, P2, C, E…).
+- Prefer case-study and project-based phrasing. Start with WHY (design/trade-offs) → then HOW (architecture/algorithms/tooling).
+- Use quantitative metrics where sensible (e.g., accuracy/F1/ROC-AUC, p95 latency, throughput, memory, FLOPs, cost/query).
 - You can use database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "{thread_id}"
-
 
 ---
 Inputs:
@@ -389,7 +399,7 @@ Conditional schema related error as feedback for previous wrong generations if a
 \n```{qa_error}```\n
 
 Output Format
-Return ONLY a JSON object grouped by topic → QA blocks → 5 questions per QA item:
+Return ONLY a JSON object grouped by topic -> QA blocks -> 5 questions per QA item:
 
 {{
   "qa_sets": [
@@ -436,7 +446,7 @@ Return ONLY a JSON object grouped by topic → QA blocks → 5 questions per QA 
                 "Under memory cap {{M}} MB, redesign inference to preserve F1; justify trade-offs.",
                 "Model the effect of increasing max sequence length on FLOPs and quality.",
                 "Given domain shift to {{new_domain}}, propose adaptation and expected metric deltas.",
-                "Show how your retrieval changes (BM25→dense) would affect NDCG@10 and cost/query."
+                "Show how your retrieval changes (BM25->dense) would affect NDCG@10 and cost/query."
               ]
             }},
             {{

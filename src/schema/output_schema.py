@@ -219,27 +219,50 @@ class NodesSchema(BaseModel):
 
 
 # QType = Literal["First Question", "New Question", "Counter Question"]
+# QDiff = Literal["Easy", "Medium", "Hard"]
+
+# class QAItem(BaseModel):
+#     qa_id: str = Field(..., description="QA identifier like 'QA1'")
+#     q_type: QType
+#     q_difficulty: QDiff
+#     example_questions: List[str] = Field(..., min_items=5, max_items=5)
+
+# class QABlock(BaseModel):
+#     block_id: str = Field(..., description="Block identifier like 'B1'")
+#     guideline: str = Field(..., min_length=1)
+#     qa_items: List[QAItem] = Field(..., min_items=8, max_items=8)
+
+
+# class QASet(BaseModel):
+#     topic: str = Field(..., min_length=1)
+#     qa_blocks: List[QABlock] = Field(..., min_items=1)
+
+
+# class QASetsSchema(BaseModel):
+#     qa_sets: List[QASet] = Field(..., min_items=1)
+
+
 QType = Literal["New Question", "Counter Question"]
 QDiff = Literal["Easy", "Medium", "Hard"]
 QCountType = Literal["Twist", "Interrogatory"]
 
 class QAItem(BaseModel):
     qa_id: str = Field(..., description="QA identifier like 'QA1'")
-    q_type: QType
-    q_difficulty: QDiff
-    counter_type: Optional[QCountType] = None
     example_questions: List[str] = Field(..., min_items=5, max_items=5)
 
 
 class QABlock(BaseModel):
     block_id: str = Field(..., description="Block identifier like 'B1'")
     guideline: str = Field(..., min_length=1)
-    qa_items: List[QAItem] = Field(..., min_items=7, max_items=7)
+    q_type: QType
+    q_difficulty: QDiff
+    counter_type: Optional[QCountType] = None  # required if q_type == "Counter Question"
+    qa_items: List[QAItem] = Field(..., min_items=1, max_items=1)  # exactly one QA item per block
 
 
 class QASet(BaseModel):
     topic: str = Field(..., min_length=1)
-    qa_blocks: List[QABlock] = Field(..., min_items=1)
+    qa_blocks: List[QABlock] = Field(..., min_items=7, max_items=7)  # exactly 7 blocks per topic
 
 
 class QASetsSchema(BaseModel):
