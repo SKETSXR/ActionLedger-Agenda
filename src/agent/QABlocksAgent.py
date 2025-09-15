@@ -317,7 +317,6 @@ class QABlockGenerationAgent:
                 accumulated_errs.append(f"[{topic_name}] {err}")
 
         state.qa_blocks = QASetsSchema(qa_sets=final_sets)
-        print(state.qa_blocks)
         if accumulated_errs:
             state.qa_error = (state.qa_error or "") + ("\n" if state.qa_error else "") + "\n".join(accumulated_errs)
         return state
