@@ -189,7 +189,6 @@ class AgendaGenerationAgent:
         )
         return output
 
-
     @staticmethod
     def get_graph(checkpointer=None):
 

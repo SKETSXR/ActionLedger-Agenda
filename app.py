@@ -127,7 +127,12 @@ question_guidelines = {"question_guidelines":[{"question_guidelines": '''Broader
 	Minimize questions like what difficulties did you face, how you achieved them etc. Focus on technical aspects of why and how things were done.
 	In projects, try starting with why and then go to how
 	The direct questions or QAs for projects should feel like questions are based on their project. They should be "As per you project details, you used A, why did you do so?"''',
-    "question_type_name": "Project based questions"}]}
+    "question_type_name": "Project based questions"},
+    {"question_guidelines": '''The counter questions should be of the types: 
+    1. Twist- What would happen if you do A instead of B
+    2. Interrogatory- Why did you use A?''',
+    "question_type_name": "Counter questions"}
+    ]}
 # question_guidelines["question_type_name"] = ["Case study type questions", "Project based questions"]
 
 inp = InputSchema(
@@ -187,7 +192,7 @@ for k, v in otpt.items():
     print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
     x += f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n"
 
-with open(r"testing\op6.txt", "a") as f:
+with open(r"testing\op7.txt", "a") as f:
     f.write(x)
 # for i, v in otpt.items():
 #     if hasattr(v, "model_dump_json"):
