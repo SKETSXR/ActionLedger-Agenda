@@ -697,7 +697,7 @@ Node for question generation:
 Conditional schema related error as feedback for previous wrong generations if any:
 \n```{qa_error}```\n
 
-You shall use the mongo db database fetching tools to fetch on data for example question generation guidelines being present in the collection named question_guidelines
+You shall use the mongo db database fetching tools to fetch on data for example question generation guidelines being present in the collection named question_guidelines with each type "Case study type questions" or "Project based questions" being mentioned as _id key of each respective guideline record.
 ---
 
 HARD CONSTRAINTS (must pass exactly; fix if qa_error is provided):

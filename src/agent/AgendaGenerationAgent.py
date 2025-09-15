@@ -111,8 +111,9 @@ class AgendaGenerationAgent:
             # if "question_guidelines" not in collections:
             #     question_guidelines_collection.insert_one(question_guidelines)
         except ServerSelectionTimeoutError as server_error:
-            print(f"Could not communicate with MongoDB server, thus summary was not stored.: {server_error}") # TODO: In production, use logs instead of printing
-                # ----- question_guidelines upsert(s) -----
+            print(f"Could not communicate with MongoDB server, thus summary was not stored.: {server_error}")
+        
+        # ----- question_guidelines upsert(s) -----
         # Pydantic will coerce your dict input; use the INSTANCE on state
         qg_model = state.question_guidelines
         guideline_text = qg_model.question_guidelines  # str
@@ -132,11 +133,12 @@ class AgendaGenerationAgent:
             try:
                 # upsert ensures idempotency
                 question_guidelines_collection.replace_one({"_id": doc["_id"]}, doc, upsert=True)
-                print(f"✅ Upserted guideline for '{name}'")
-            except:
-                print(f"⚠️ Guideline '{name}' already exists with the same _id. Skipping.")
+                # print(f" Upserted guideline for '{name}'")
+            except Exception as e:
+                # print(f" Guideline '{name}' already exists with the same _id. Skipping.")
+                print(f"Error upserting the guidelines into the database {e}")
             # except PyMongoError as e:
-            #     print(f"❌ Failed to upsert guideline '{name}': {e}")
+            #     print(f" Failed to upsert guideline '{name}': {e}")
         client.close()
         return state
 
