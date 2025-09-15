@@ -18,6 +18,10 @@ from ..prompt.topic_generation_agent_prompt import TOPIC_GENERATION_AGENT_PROMPT
 from ..model_handling import llm_tg
 from src.mongo_tools import get_mongo_tools
 from langgraph.prebuilt import ToolNode
+from src.utils import load_config
+
+config = load_config("config.yaml")
+thread_id = config["configurable"]["thread_id"] 
 
 set_llm_cache(InMemoryCache())
 
@@ -40,6 +44,7 @@ class TopicGenerationAgent:
                 SystemMessage(
                     content=TOPIC_GENERATION_AGENT_PROMPT.format(
                         generated_summary=state.generated_summary.model_dump_json(),
+                        thread_id=thread_id
                     )
                 ),
                 state.messages[-1] if len(state.messages) else ""

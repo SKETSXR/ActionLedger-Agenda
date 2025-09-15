@@ -9,6 +9,10 @@ from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
 from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
 from ..model_handling import llm_n
+from src.utils import load_config
+
+config = load_config("config.yaml")
+thread_id = config["configurable"]["thread_id"] 
 
 
 class NodesGenerationAgent:
@@ -57,6 +61,7 @@ class NodesGenerationAgent:
         sys = NODES_AGENT_PROMPT.format(
             per_topic_summary_json=per_topic_summary_json,
             total_no_questions_context=T,
+            thread_id=thread_id,
             nodes_error=nodes_error
         )
         return await NodesGenerationAgent.llm_n_with_tools \

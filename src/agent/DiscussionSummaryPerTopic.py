@@ -241,6 +241,10 @@ from ..prompt.discussion_summary_per_topic_generation_agent_prompt import (
     DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT
 )
 from ..model_handling import llm_dts
+from src.utils import load_config
+
+config = load_config("config.yaml")
+thread_id = config["configurable"]["thread_id"] 
 
 set_llm_cache(InMemoryCache())
 
@@ -260,6 +264,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
                 SystemMessage(
                     content=DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT.format(
                         generated_summary=generated_summary_json,
+                        thread_id=thread_id,
                         interview_topic=json.dumps(topic)
                     )
                 )

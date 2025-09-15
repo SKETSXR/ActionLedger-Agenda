@@ -218,19 +218,23 @@ class NodesSchema(BaseModel):
 #     qa_sets: List[QASet] = Field(..., min_items=1)
 
 
-QType = Literal["First Question", "New Question", "Counter Question"]
+# QType = Literal["First Question", "New Question", "Counter Question"]
+QType = Literal["New Question", "Counter Question"]
 QDiff = Literal["Easy", "Medium", "Hard"]
+QCountType = Literal["Twist", "Interrogatory"]
 
 class QAItem(BaseModel):
     qa_id: str = Field(..., description="QA identifier like 'QA1'")
     q_type: QType
     q_difficulty: QDiff
+    counter_type: Optional[QCountType] = None
     example_questions: List[str] = Field(..., min_items=5, max_items=5)
+
 
 class QABlock(BaseModel):
     block_id: str = Field(..., description="Block identifier like 'B1'")
     guideline: str = Field(..., min_length=1)
-    qa_items: List[QAItem] = Field(..., min_items=8, max_items=8)
+    qa_items: List[QAItem] = Field(..., min_items=7, max_items=7)
 
 
 class QASet(BaseModel):

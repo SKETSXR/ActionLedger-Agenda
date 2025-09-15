@@ -91,6 +91,8 @@ Experience leading technical spikes, POCs, or cross-team integrations.
     
 '''
 jd_json_string = asyncio.run(parse_jd_text_to_json(jd_inp_text))
+if jd_json_string == "JD not contain any text":
+    raise("Open AI API not running")
 jd = json.loads(jd_json_string)
 jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["company_background"], fundamental_knowledge=jd.get("fundamental_knowledge"))
 # print(jdes.model_dump_json(indent=2))
@@ -100,6 +102,8 @@ jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["comp
 
 candidate_profile = asyncio.run(parse_pdf_to_json(r"testing\Ghanshyam - SWE\Resume-Ghanshyam-jangir - GHANSHYAM JANGIR.pdf"))
 # print(candidate_profile)
+if candidate_profile == "CV does not contain proper text":
+    raise("Open AI API not running")
 candidate_profile = json.loads(candidate_profile)
 cp = CandidateProfileSchema(skills=candidate_profile["skills"],
                             projects=candidate_profile["projects"],
@@ -152,6 +156,7 @@ print(inp_skill_tree)
 
 with open("config.yaml", "r") as yamlfile:
     config = yaml.load(yamlfile, Loader=yaml.FullLoader)
+
 graph = AgendaGenerationAgent.get_graph()
 
 # otpt = graph.invoke(inp, config)
@@ -169,7 +174,7 @@ for k, v in otpt.items():
     print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
     x += f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n"
 
-with open(r"testing\op1.txt", "a") as f:
+with open(r"testing\op3.txt", "a") as f:
     f.write(x)
 # for i, v in otpt.items():
 #     if hasattr(v, "model_dump_json"):

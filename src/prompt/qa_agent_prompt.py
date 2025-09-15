@@ -182,23 +182,38 @@
 
 # # New format QAs
 # QA_BLOCK_AGENT_PROMPT = '''
-# You are a question answer block generator for technical interviews.  
-# Your task is to generate example questions for each deep dive QA block across all 3 topics given from a discussion summary as input.  
-# You will be given three inputs: discussion summary, node for a deep dive question in a topic, and guideline+example set for QA blocks.  
+# You are a question answer block generator for technical interviews.
+# Your task is to generate example questions for each deep dive QA block across all 3 topics given from a discussion summary as input.
+# You will be given three inputs: discussion summary, node for a deep dive question in a topic, and guideline+example set for QA blocks.
+
+# HARD CONSTRAINTS (must pass exactly; fix if qa_error is provided):
+# - For each QA block, output EXACTLY 8 QA items covering these combinations (no more, no less, no duplicates):
+#   • First Question  → Easy, Medium, Hard  (3 items)
+#   • New Question    → Easy, Medium, Hard  (3 items)
+#   • Counter Question→ Medium, Hard        (2 items)  ← no Easy counters
+# - Recommended ordering and IDs (strict but you MAY reorder if needed): 
+#   QA1..QA3 = First(E, M, H), QA4..QA6 = New(E, M, H), QA7..QA8 = Counter(M, H).
+# - Every QA item MUST include exactly 5 concise, technical example questions (no placeholders, no empty strings).
+# - Skills referenced MUST come only from the node's `skills` / `focus_area` values (verbatim).
+# - Counter Question styles must be one of:
+#   1) Twist — "What would happen if you do A instead of B?"
+#   2) Interrogatory — "Why did you use A?"
+# - If the previous attempt failed, you will receive `qa_error` below. ONLY fix schema/count/combinations/formatting while keeping the intent.
 
 # QA Generation Rules
-# - Each QA block must follow this schema:  
-#   - "block_id": A unique identifier for the block  
-#   - "qa_id": A unique identifier for the QA within the block (e.g., QA1, QA2, …)  
-#   - "guideline": Short instruction on how to frame the question (summarized from discussion guidelines and focus area)  
-#   - "q_type": Its the question type which should be among <First Question>, <New Question> or <Counter Question> as per the requirements of conducting the interview but make sure all 3 should be covered
-#   - "q_difficulty": Its the question type which should be among <Easy>, <Medium> or <Hard> as per the requirements of conducting the interview but make sure all 3 should be covered
-#   - "example_questions": Exactly 5 short and clear technical questions  
-# - Questions should be diverse in style and difficulty (Easy, Medium, Hard, Interrogatory, Twist).  
-# - Reference the candidate's actual projects, skills, or summary text if provided.  
-# - Skills must be drawn only from the associated respective skills/focus_area field values.  
-# - Do not skip any of the 5 questions for each block.  
-# - You can use database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T)
+# - Each QA block must follow this schema:
+#   - "block_id": A unique identifier for the block (e.g., B1)
+#   - "guideline": One concise instruction on how to probe this topic
+#   - "qa_items": Exactly 8 items; each item has:
+#       • "qa_id" (QA1..QA8)
+#       • "q_type": one of <First Question | New Question | Counter Question>
+#       • "q_difficulty": one of <Easy | Medium | Hard>
+#       • "example_questions": exactly 5 concise, technical questions
+# - Questions must be grounded in the candidate/projects where applicable (case-study and project-based first).
+# - Prefer “why then how” (design/trade-offs → architecture/algorithms/tooling).
+# - Use quantitative metrics when sensible (accuracy, F1, ROC-AUC, BLEU, p95 latency, throughput, memory, FLOPs, cost/query).
+# - You can use database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "{thread_id}"
+
 
 # ---
 # Inputs:
@@ -211,23 +226,8 @@
 # Conditional schema related error as feedback for previous wrong generations if any:
 # \n```{qa_error}```\n
 
-# Guideline Rules
-# - Broader formats first: (1) Case-study style, (2) Project-based. All questions should feel grounded in the candidate's projects.
-# - Minimize vague "what difficulties did you face / how did you achieve" phrasing. Start with <why> (design/trade-offs), then <how> (architecture/algorithms/tooling).
-# - Incorporate <mathematical/quantitative metrics> where sensible (e.g., accuracy, F1, ROC-AUC, BLEU, latency p95, throughput, memory, FLOPs, cost/query).
-# - Skills must come <only> from the node's `skills` / `focus_area` values (verbatim).
-# - Each QA block produces:
-#   • <First Question> — Easy, Medium, Hard (3 items)
-#   • <New Question> — Easy, Medium, Hard (3 items)
-#   • <Counter Question> — Medium, Hard (2 items)  - no Easy counters
-# - <Counter Question styles must be one of>:
-#   1) <Twist> — "What would happen if you do A instead of B?"
-#   2) <Interrogatory> — "Why did you use A?"
-# - Every QA item must include <exactly 5 concise, technical example questions>. No placeholders.
-
-
 # Output Format
-# Output must be grouped by topic → QA blocks → 5 questions each, like this:
+# Return ONLY a JSON object grouped by topic → QA blocks → 5 questions per QA item:
 
 # {{
 #   "qa_sets": [
@@ -342,8 +342,6 @@
 # }}
 # '''
 
-
-
 # New format QAs 2
 QA_BLOCK_AGENT_PROMPT = '''
 You are a question answer block generator for technical interviews.
@@ -351,12 +349,12 @@ Your task is to generate example questions for each deep dive QA block across al
 You will be given three inputs: discussion summary, node for a deep dive question in a topic, and guideline+example set for QA blocks.
 
 HARD CONSTRAINTS (must pass exactly; fix if qa_error is provided):
-- For each QA block, output EXACTLY 8 QA items covering these combinations (no more, no less, no duplicates):
-  • First Question  → Easy, Medium, Hard  (3 items)
-  • New Question    → Easy, Medium, Hard  (3 items)
-  • Counter Question→ Medium, Hard        (2 items)  ← no Easy counters
+- For each QA block, output EXACTLY 7 QA items covering these combinations (no more, no less, no duplicates):
+  • New Question    - Easy, Medium, Hard  (3 items)
+  • Counter Question - Twist - Medium, Hard        (2 items)  ← no Easy counters
+  • Counter Question - Interrogatory - Medium, Hard        (2 items)  ← no Easy counters
 - Recommended ordering and IDs (strict but you MAY reorder if needed): 
-  QA1..QA3 = First(E, M, H), QA4..QA6 = New(E, M, H), QA7..QA8 = Counter(M, H).
+  QA1..QA3 = New(E, M, H), QA4..QA5 = Counter(Twist + M, Twist + H), QA6..QA7 = Counter(Interrogatory + M, Interrogatory + H)
 - Every QA item MUST include exactly 5 concise, technical example questions (no placeholders, no empty strings).
 - Skills referenced MUST come only from the node's `skills` / `focus_area` values (verbatim).
 - Counter Question styles must be one of:
@@ -368,9 +366,9 @@ QA Generation Rules
 - Each QA block must follow this schema:
   - "block_id": A unique identifier for the block (e.g., B1)
   - "guideline": One concise instruction on how to probe this topic
-  - "qa_items": Exactly 8 items; each item has:
-      • "qa_id" (QA1..QA8)
-      • "q_type": one of <First Question | New Question | Counter Question>
+  - "qa_items": Exactly 7 items; each item has:
+      • "qa_id" (QA1..QA7)
+      • "q_type": one of <New Question | Counter Question>
       • "q_difficulty": one of <Easy | Medium | Hard>
       • "example_questions": exactly 5 concise, technical questions
 - Questions must be grounded in the candidate/projects where applicable (case-study and project-based first).
@@ -404,44 +402,9 @@ Return ONLY a JSON object grouped by topic → QA blocks → 5 questions per QA 
           "qa_items": [
             {{
               "qa_id": "QA1",
-              "q_type": "First Question",
-              "q_difficulty": "Easy",
-              "example_questions": [
-                "As per your project {{project_id}}, why did you choose {{tech}} for {{focus_skill}}?",
-                "Which baseline did you begin with and why was it appropriate for {{focus_skill}}?",
-                "What metric did you first track (e.g., accuracy/MAE) and why?",
-                "What was your primary objective for {{focus_skill}} in {{project_id}}?",
-                "Briefly describe your data split for an initial sanity check and why it was sufficient."
-              ]
-            }},
-            {{
-              "qa_id": "QA2",
-              "q_type": "First Question",
-              "q_difficulty": "Medium",
-              "example_questions": [
-                "Explain the trade-off you considered when selecting {{model/approach}} vs. an alternative in terms of F1 and p95 latency.",
-                "How did your evaluation protocol avoid leakage (train/val/test or CV)?",
-                "Which preprocessing step most influenced early F1/ROC-AUC, and why?",
-                "How did you decide threshold(s) and how did that affect precision/recall?",
-                "What was your hyperparameter search budget and metric for selection?"
-              ]
-            }},
-            {{
-              "qa_id": "QA3",
-              "q_type": "First Question",
-              "q_difficulty": "Hard",
-              "example_questions": [
-                "Derive how your loss choice impacted gradient behavior and final ROC-AUC.",
-                "Quantify the cost-latency trade-off at 2x load (token/s, p95, cost/query).",
-                "Predict metric drift under a 10% shift in feature {{X}}; justify mitigation.",
-                "Compare LoRA vs. full fine-tuning (trainable params, FLOPs) and quality impact.",
-                "Design an ablation to isolate {{component}}; state expected metric deltas."
-              ]
-            }},
-            {{
-              "qa_id": "QA4",
               "q_type": "New Question",
               "q_difficulty": "Easy",
+              "counter_type": null,
               "example_questions": [
                 "What role did {{focus_skill}} play in {{project_id}} and why?",
                 "Which dataset or source did you use and how was it prepared at a high level?",
@@ -451,9 +414,10 @@ Return ONLY a JSON object grouped by topic → QA blocks → 5 questions per QA 
               ]
             }},
             {{
-              "qa_id": "QA5",
+              "qa_id": "QA2",
               "q_type": "New Question",
               "q_difficulty": "Medium",
+              "counter_type": null,
               "example_questions": [
                 "How did {{algorithm/component}} improve F1 vs. baseline? Include dataset size and thresholds.",
                 "Why choose {{architecture}} over {{alt}} regarding memory footprint and p95 latency?",
@@ -463,9 +427,10 @@ Return ONLY a JSON object grouped by topic → QA blocks → 5 questions per QA 
               ]
             }},
             {{
-              "qa_id": "QA6",
+              "qa_id": "QA3",
               "q_type": "New Question",
               "q_difficulty": "Hard",
+              "counter_type": null,
               "example_questions": [
                 "If you quantize to INT4 and double batch size, estimate p95 change and quality loss.",
                 "Under memory cap {{M}} MB, redesign inference to preserve F1; justify trade-offs.",
@@ -475,27 +440,55 @@ Return ONLY a JSON object grouped by topic → QA blocks → 5 questions per QA 
               ]
             }},
             {{
-              "qa_id": "QA7",
+              "qa_id": "QA4",
               "q_type": "Counter Question",
+              "counter_type": "Twist",
               "q_difficulty": "Medium",
               "example_questions": [
-                "[Twist] If you replace {{component B}} with {{component A}}, how do latency and throughput change?",
-                "[Interrogatory] Why did you use {{optimizer/technique}} over {{alternative}} for {{focus_skill}}?",
-                "[Twist] If you raise the decision threshold by 0.1, what happens to precision/recall and F1?",
-                "[Interrogatory] Why cosine LR schedule instead of step decay; impact on convergence?",
-                "[Twist] If you switch retriever to dense, how do NDCG and cost/query move?"
+                "If you replace {{component B}} with {{component A}}, how do latency and throughput change?",
+                "Why did you use {{optimizer/technique}} over {{alternative}} for {{focus_skill}}?",
+                "If you raise the decision threshold by 0.1, what happens to precision/recall and F1?",
+                "Why cosine LR schedule instead of step decay; impact on convergence?",
+                "If you switch retriever to dense, how do NDCG and cost/query move?"
               ]
             }},
             {{
-              "qa_id": "QA8",
+              "qa_id": "QA5",
               "q_type": "Counter Question",
+              "counter_type": "Twist",
               "q_difficulty": "Hard",
               "example_questions": [
-                "[Twist] Replace cross-entropy with focal loss: predict gradient dynamics and minority-class F1 shift.",
-                "[Interrogatory] Why RAG over fine-tuning for {{topic}}; compare hit-rate vs. generation quality.",
-                "[Twist] If you add temperature scaling, how will calibration (ECE) affect top-k accuracy?",
-                "[Interrogatory] Why cap max seq length at {{N}}; model attention FLOPs and quality impact.",
-                "[Twist] If you shard the index, quantify recall@k vs. latency trade-offs."
+                "Replace cross-entropy with focal loss: predict gradient dynamics and minority-class F1 shift.",
+                "Why RAG over fine-tuning for {{topic}}; compare hit-rate vs. generation quality.",
+                "If you add temperature scaling, how will calibration (ECE) affect top-k accuracy?",
+                "Why cap max seq length at {{N}}; model attention FLOPs and quality impact.",
+                "If you shard the index, quantify recall@k vs. latency trade-offs."
+              ]
+            }}
+            {{
+              "qa_id": "QA6",
+              "q_type": "Counter Question",
+              "q_difficulty": "Medium",
+              "counter_type": "Interrogatory",
+              "example_questions": [
+                "If you replace {{component B}} with {{component A}}, how do latency and throughput change?",
+                "Why did you use {{optimizer/technique}} over {{alternative}} for {{focus_skill}}?",
+                "If you raise the decision threshold by 0.1, what happens to precision/recall and F1?",
+                "Why cosine LR schedule instead of step decay; impact on convergence?",
+                "If you switch retriever to dense, how do NDCG and cost/query move?"
+              ]
+            }},
+            {{
+              "qa_id": "QA7",
+              "q_type": "Counter Question",
+              "q_difficulty": "Hard",
+              "counter_type": "Interrogatory",
+              "example_questions": [
+                "Replace cross-entropy with focal loss: predict gradient dynamics and minority-class F1 shift.",
+                "Why RAG over fine-tuning for {{topic}}; compare hit-rate vs. generation quality.",
+                "If you add temperature scaling, how will calibration (ECE) affect top-k accuracy?",
+                "Why cap max seq length at {{N}}; model attention FLOPs and quality impact.",
+                "If you shard the index, quantify recall@k vs. latency trade-offs."
               ]
             }}
           ]
