@@ -4,7 +4,7 @@ import yaml
 import time
 import asyncio
 from src.agent.AgendaGenerationAgent import AgendaGenerationAgent
-from src.schema.input_schema import JobDescriptionSchema, CandidateProfileSchema, SkillTreeSchema, InputSchema
+from src.schema.input_schema import JobDescriptionSchema, CandidateProfileSchema, SkillTreeSchema, InputSchema, QuestionGuidelinesSchema
 # from src.schema.output_schema import OutputSchema
 from src.tools.jd_extraction import parse_jd_text_to_json
 from src.tools.cv_extraction import parse_pdf_to_json
@@ -118,10 +118,17 @@ with open(r"testing\Ghanshyam - SWE\skill_tree.json", "r") as f:
     tree_data = json.load(f)
 
 root = load_skill_tree(tree_data)
+question_guidelines = {"question_guidelines": '''Broader Question Formats:
+	Minimize questions like what difficulties did you face, how you achieved them etc. Focus on technical aspects of why and how things were done.
+	In projects, try starting with why and then go to how
+	The direct questions or QAs for projects should feel like questions are based on their project. They should be "As per you project details, you used A, why did you do so?"'''}
+question_guidelines["question_type_name"] = ["Case study type questions", "Project based questions"]
+
 inp = InputSchema(
     job_description=jdes,
     skill_tree=root,
-    candidate_profile=cp
+    candidate_profile=cp,
+    question_guidelines=question_guidelines
 )
 
 # with open("config.yaml", "r") as yamlfile:
@@ -174,7 +181,7 @@ for k, v in otpt.items():
     print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
     x += f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n"
 
-with open(r"testing\op3.txt", "a") as f:
+with open(r"testing\op4.txt", "a") as f:
     f.write(x)
 # for i, v in otpt.items():
 #     if hasattr(v, "model_dump_json"):

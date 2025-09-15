@@ -37,6 +37,7 @@ class AgendaGenerationAgent:
             job_description=state.job_description,
             skill_tree=state.skill_tree,
             candidate_profile=state.candidate_profile,
+            question_guidelines=state.question_guidelines,
             mongo_client=AgendaGenerationAgent.env_vars['MONGO_CLIENT'],
             mongo_db=AgendaGenerationAgent.env_vars['MONGO_DB'],
             # mongo_inferred_topics_collection=AgendaGenerationAgent.env_vars['MONGO_INFERRED_TOPICS_COLLECTION'],
@@ -44,6 +45,7 @@ class AgendaGenerationAgent:
             mongo_jd_collection=AgendaGenerationAgent.env_vars['MONGO_JD_COLLECTION'],
             mongo_cv_collection=AgendaGenerationAgent.env_vars['MONGO_CV_COLLECTION'],
             mongo_skill_tree_collection=AgendaGenerationAgent.env_vars['MONGO_SKILL_TREE_COLLECTION'],
+            mongo_question_guidelines_collection=AgendaGenerationAgent.env_vars['MONGO_QUESTION_GENERATION_COLLECTION'],
 
             id=config['configurable']['thread_id']
         )
@@ -77,6 +79,7 @@ class AgendaGenerationAgent:
         cv_collection = client[state.mongo_db][state.mongo_cv_collection]
         skill_tree_collection = client[state.mongo_db][state.mongo_skill_tree_collection]
         summary_collection = client[state.mongo_db][state.mongo_summary_collection]
+        question_guidelines_collection=client[state.mongo_db][state.mongo_question_guidelines_collection]
 
         if not state.candidate_profile:
             raise ValueError("`candidate profile` cannot be null")
@@ -91,6 +94,7 @@ class AgendaGenerationAgent:
         cv = state.candidate_profile.model_dump()
         skill_tree = state.skill_tree.model_dump()
         summary = state.generated_summary.model_dump()
+        # question_guidelines = state.question_guidelines.model_dump()
         jd['_id'] = state.id
         cv['_id'] = state.id
         skill_tree['_id'] = state.id
@@ -102,9 +106,37 @@ class AgendaGenerationAgent:
             cv_collection.insert_one(cv)
             skill_tree_collection.insert_one(skill_tree)
             summary_collection.insert_one(summary)
+            # db = client[state.mongo_db]
+            # collections = db.list_collection_names()
+            # if "question_guidelines" not in collections:
+            #     question_guidelines_collection.insert_one(question_guidelines)
         except ServerSelectionTimeoutError as server_error:
             print(f"Could not communicate with MongoDB server, thus summary was not stored.: {server_error}") # TODO: In production, use logs instead of printing
+                # ----- question_guidelines upsert(s) -----
+        # Pydantic will coerce your dict input; use the INSTANCE on state
+        qg_model = state.question_guidelines
+        guideline_text = qg_model.question_guidelines  # str
+        type_names = qg_model.question_type_name       # list[str]
 
+        # Optional: make sure we have a unique index on _id (implicit) or on question_type_name if you prefer that field.
+        # qg_collection.create_index("question_type_name", unique=True)  # only if you use that as key instead of _id
+
+        for name in type_names:
+            # one document per question type
+            doc = {
+                "_id": str(name),  # using the type name as the stable primary key
+                "question_type_name": name,
+                "question_guidelines": guideline_text
+                # "updated_at": datetime.utcnow()
+            }
+            try:
+                # upsert ensures idempotency
+                question_guidelines_collection.replace_one({"_id": doc["_id"]}, doc, upsert=True)
+                print(f"✅ Upserted guideline for '{name}'")
+            except:
+                print(f"⚠️ Guideline '{name}' already exists with the same _id. Skipping.")
+            # except PyMongoError as e:
+            #     print(f"❌ Failed to upsert guideline '{name}': {e}")
         client.close()
         return state
 

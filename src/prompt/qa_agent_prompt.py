@@ -342,11 +342,363 @@
 # }}
 # '''
 
-# New format QAs 2
+# # New format QAs 2
+# QA_BLOCK_AGENT_PROMPT = '''
+# You are a question answer block generator for technical interviews.
+# Your task is to generate example questions for each deep dive QA block across all 3 topics given from a discussion summary as input.
+# You will be given three inputs: discussion summary, node for a deep dive question in a topic, and guideline+example set for QA blocks.
+
+# HARD CONSTRAINTS (must pass exactly; fix if qa_error is provided):
+# - For each QA block, output EXACTLY 7 QA items covering these combinations (no more, no less, no duplicates):
+#   • New Question    - Easy, Medium, Hard  (3 items)
+#   • Counter Question - Twist - Medium, Hard        (2 items)  ← no Easy counters
+#   • Counter Question - Interrogatory - Medium, Hard        (2 items)  ← no Easy counters
+# - Recommended ordering and IDs (strict but you MAY reorder if needed): 
+#   QA1..QA3 = New(E, M, H), QA4..QA5 = Counter(Twist + M, Twist + H), QA6..QA7 = Counter(Interrogatory + M, Interrogatory + H)
+# - Every QA item MUST include exactly 5 concise, technical example questions (no placeholders, no empty strings).
+# - Skills referenced MUST come only from the node's `skills` / `focus_area` values (verbatim).
+# - You should use the mongo db database fetching tools to fetch on data for example question generation guidelines being present in the collection named question_guidelines
+
+# - Counter Question styles must be one of:
+#   1) Twist — "What would happen if you do A instead of B?"
+#   2) Interrogatory — "Why did you use A?"
+# - If the previous attempt failed, you will receive `qa_error` below. ONLY fix schema/count/combinations/formatting while keeping the intent.
+
+# QA Generation Rules
+# - Each QA block must follow these rules:
+# - Per topic, generate EXACTLY 7 QA blocks (no more, no less), one block per combo:
+#   1) New Question — Easy
+#   2) New Question — Medium
+#   3) New Question — Hard
+#   4) Counter Question — Twist — Medium
+#   5) Counter Question — Twist — Hard
+#   6) Counter Question — Interrogatory — Medium
+#   7) Counter Question — Interrogatory — Hard
+# - No Easy counter questions are allowed anywhere.
+# - Each QA block MUST include these fields:
+#   - "block_id": unique like "B1", "B2", ...
+#   - "guideline": one concise instruction for probing this block's focus
+#   - "q_type": "New Question" or "Counter Question"
+#   - "q_difficulty": one of "Easy" | "Medium" | "Hard"
+#   - "counter_type": REQUIRED and one of "Twist" | "Interrogatory" IFF q_type == "Counter Question"; otherwise omit or null
+#   - "qa_items": an array with EXACTLY ONE item:
+#       * "qa_id": unique like "QA1"
+#       * "example_questions": EXACTLY 5 concise, technical questions (no placeholders)
+# - All questions must ground to the node's focus skills verbatim and use project/company IDs when provided (P1, P2, C, E…).
+# - Prefer case-study and project-based phrasing. Start with WHY (design/trade-offs) → then HOW (architecture/algorithms/tooling).
+# - Use quantitative metrics where sensible (e.g., accuracy/F1/ROC-AUC, p95 latency, throughput, memory, FLOPs, cost/query).
+# - You can use database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "{thread_id}"
+
+# ---
+# Inputs:
+# Discussion Topic Summary:
+# \n```{discussion_summary}```\n
+
+# Node for question generation:
+# \n```{node}```\n
+
+# Conditional schema related error as feedback for previous wrong generations if any:
+# \n```{qa_error}```\n
+
+# Output Format
+# Return ONLY a JSON object grouped by topic -> QA blocks -> 5 questions per QA item:
+
+# {{
+#   "qa_sets": [
+#     {{
+#       "topic": "short name",
+#       "qa_blocks": [
+#         {{
+#           "block_id": "B1",
+#           "guideline": "One sentence on how to probe this topic using its focus skills and metrics.",
+#           "qa_items": [
+#             {{
+#               "qa_id": "QA1",
+#               "q_type": "New Question",
+#               "q_difficulty": "Easy",
+#               "counter_type": null,
+#               "example_questions": [
+#                 "What role did {{focus_skill}} play in {{project_id}} and why?",
+#                 "Which dataset or source did you use and how was it prepared at a high level?",
+#                 "Name the first model or library you tried and why it fit {{focus_skill}}.",
+#                 "State the primary success metric and why it matched your objective.",
+#                 "What was the simplest baseline and what result did it deliver?"
+#               ]
+#             }},
+#             {{
+#               "qa_id": "QA2",
+#               "q_type": "New Question",
+#               "q_difficulty": "Medium",
+#               "counter_type": null,
+#               "example_questions": [
+#                 "How did {{algorithm/component}} improve F1 vs. baseline? Include dataset size and thresholds.",
+#                 "Why choose {{architecture}} over {{alt}} regarding memory footprint and p95 latency?",
+#                 "Walk through your error analysis and one measurable fix that improved NDCG.",
+#                 "Describe your HP tuning search space and metric used for selection.",
+#                 "How did you validate generalization (e.g., CV, holdout from unseen distribution)?"
+#               ]
+#             }},
+#             {{
+#               "qa_id": "QA3",
+#               "q_type": "New Question",
+#               "q_difficulty": "Hard",
+#               "counter_type": null,
+#               "example_questions": [
+#                 "If you quantize to INT4 and double batch size, estimate p95 change and quality loss.",
+#                 "Under memory cap {{M}} MB, redesign inference to preserve F1; justify trade-offs.",
+#                 "Model the effect of increasing max sequence length on FLOPs and quality.",
+#                 "Given domain shift to {{new_domain}}, propose adaptation and expected metric deltas.",
+#                 "Show how your retrieval changes (BM25->dense) would affect NDCG@10 and cost/query."
+#               ]
+#             }},
+#             {{
+#               "qa_id": "QA4",
+#               "q_type": "Counter Question",
+#               "counter_type": "Twist",
+#               "q_difficulty": "Medium",
+#               "example_questions": [
+#                 "If you replace {{component B}} with {{component A}}, how do latency and throughput change?",
+#                 "Why did you use {{optimizer/technique}} over {{alternative}} for {{focus_skill}}?",
+#                 "If you raise the decision threshold by 0.1, what happens to precision/recall and F1?",
+#                 "Why cosine LR schedule instead of step decay; impact on convergence?",
+#                 "If you switch retriever to dense, how do NDCG and cost/query move?"
+#               ]
+#             }},
+#             {{
+#               "qa_id": "QA5",
+#               "q_type": "Counter Question",
+#               "counter_type": "Twist",
+#               "q_difficulty": "Hard",
+#               "example_questions": [
+#                 "Replace cross-entropy with focal loss: predict gradient dynamics and minority-class F1 shift.",
+#                 "Why RAG over fine-tuning for {{topic}}; compare hit-rate vs. generation quality.",
+#                 "If you add temperature scaling, how will calibration (ECE) affect top-k accuracy?",
+#                 "Why cap max seq length at {{N}}; model attention FLOPs and quality impact.",
+#                 "If you shard the index, quantify recall@k vs. latency trade-offs."
+#               ]
+#             }}
+#             {{
+#               "qa_id": "QA6",
+#               "q_type": "Counter Question",
+#               "q_difficulty": "Medium",
+#               "counter_type": "Interrogatory",
+#               "example_questions": [
+#                 "If you replace {{component B}} with {{component A}}, how do latency and throughput change?",
+#                 "Why did you use {{optimizer/technique}} over {{alternative}} for {{focus_skill}}?",
+#                 "If you raise the decision threshold by 0.1, what happens to precision/recall and F1?",
+#                 "Why cosine LR schedule instead of step decay; impact on convergence?",
+#                 "If you switch retriever to dense, how do NDCG and cost/query move?"
+#               ]
+#             }},
+#             {{
+#               "qa_id": "QA7",
+#               "q_type": "Counter Question",
+#               "q_difficulty": "Hard",
+#               "counter_type": "Interrogatory",
+#               "example_questions": [
+#                 "Replace cross-entropy with focal loss: predict gradient dynamics and minority-class F1 shift.",
+#                 "Why RAG over fine-tuning for {{topic}}; compare hit-rate vs. generation quality.",
+#                 "If you add temperature scaling, how will calibration (ECE) affect top-k accuracy?",
+#                 "Why cap max seq length at {{N}}; model attention FLOPs and quality impact.",
+#                 "If you shard the index, quantify recall@k vs. latency trade-offs."
+#               ]
+#             }}
+#           ]
+#         }}
+#       ]
+#     }}
+#   ]
+# }}
+# '''
+# # New format QAs 3
+# QA_BLOCK_AGENT_PROMPT = '''
+# You are a question answer block generator for technical interviews.
+# Your task is to generate example questions for each deep dive QA block across all 3 topics given from a discussion summary as input.
+# You will be given three inputs: discussion summary, node for a deep dive question in a topic, and guideline+example set for QA blocks.
+
+# HARD CONSTRAINTS (must pass exactly; fix if qa_error is provided):
+# - For each QA block, output EXACTLY 7 QA items covering these combinations (no more, no less, no duplicates):
+#   • New Question    - Easy, Medium, Hard  (3 items)
+#   • Counter Question - Twist - Medium, Hard        (2 items)  ← no Easy counters
+#   • Counter Question - Interrogatory - Medium, Hard        (2 items)  ← no Easy counters
+# - Recommended ordering and IDs (strict but you MAY reorder if needed): 
+#   QA1..QA3 = New(E, M, H), QA4..QA5 = Counter(Twist + M, Twist + H), QA6..QA7 = Counter(Interrogatory + M, Interrogatory + H)
+# - Every QA item MUST include exactly 5 concise, technical example questions (no placeholders, no empty strings).
+# - Skills referenced MUST come only from the node's `skills` / `focus_area` values (verbatim).
+# - You should use the mongo db database fetching tools to fetch on data for example question generation guidelines being present in the collection named question_guidelines
+
+# - Counter Question styles must be one of:
+#   1) Twist — "What would happen if you do A instead of B?"
+#   2) Interrogatory — "Why did you use A?"
+# - If the previous attempt failed, you will receive `qa_error` below. ONLY fix schema/count/combinations/formatting while keeping the intent.
+
+# QA Generation Rules
+# - Each QA block must follow these rules:
+# - Per topic, generate EXACTLY 7 QA blocks (no more, no less), one block per combo:
+#   1) New Question — Easy
+#   2) New Question — Medium
+#   3) New Question — Hard
+#   4) Counter Question — Twist — Medium
+#   5) Counter Question — Twist — Hard
+#   6) Counter Question — Interrogatory — Medium
+#   7) Counter Question — Interrogatory — Hard
+# - No Easy counter questions are allowed anywhere.
+# - Each QA block MUST include these fields:
+#   - "block_id": unique like "B1", "B2", ...
+#   - "guideline": one concise instruction for probing this block's focus
+#   - "q_type": "New Question" or "Counter Question"
+#   - "q_difficulty": one of "Easy" | "Medium" | "Hard"
+#   - "counter_type": REQUIRED and one of "Twist" | "Interrogatory" IFF q_type == "Counter Question"; otherwise omit or null
+#   - "qa_items": an array with EXACTLY ONE item:
+#       * "qa_id": unique like "QA1"
+#       * "example_questions": EXACTLY 5 concise, technical questions (no placeholders)
+# - All questions must ground to the node's focus skills verbatim and use project/company IDs when provided (P1, P2, C, E…).
+# - Prefer case-study and project-based phrasing. Start with WHY (design/trade-offs) → then HOW (architecture/algorithms/tooling).
+# - Use quantitative metrics where sensible (e.g., accuracy/F1/ROC-AUC, p95 latency, throughput, memory, FLOPs, cost/query).
+# - You can use database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "{thread_id}"
+
+# ---
+# Inputs:
+# Discussion Topic Summary:
+# \n```{discussion_summary}```\n
+
+# Node for question generation:
+# \n```{node}```\n
+
+# Conditional schema related error as feedback for previous wrong generations if any:
+# \n```{qa_error}```\n
+
+# Output Format
+# Return ONLY a JSON object grouped by topic -> QA blocks -> 5 questions per QA item:
+
+# {{
+#   "qa_sets": [
+#     {{
+#       "topic": "short name",
+#       "qa_blocks": [
+#         {{
+#           "block_id": "B1",
+#           "guideline": "One sentence on how to probe this topic using its focus skills and metrics.",
+#           "qa_items": [
+#             {{
+#               "qa_id": "QA1",
+#               "q_type": "New Question",
+#               "q_difficulty": "Easy",
+#               "counter_type": null,
+#               "example_questions": [
+#                 "What role did {{focus_skill}} play in {{project_id}} and why?",
+#                 "Which dataset or source did you use and how was it prepared at a high level?",
+#                 "Name the first model or library you tried and why it fit {{focus_skill}}.",
+#                 "State the primary success metric and why it matched your objective.",
+#                 "What was the simplest baseline and what result did it deliver?"
+#               ]
+#             }},
+#             {{
+#               "qa_id": "QA2",
+#               "q_type": "New Question",
+#               "q_difficulty": "Medium",
+#               "counter_type": null,
+#               "example_questions": [
+#                 "How did {{algorithm/component}} improve F1 vs. baseline? Include dataset size and thresholds.",
+#                 "Why choose {{architecture}} over {{alt}} regarding memory footprint and p95 latency?",
+#                 "Walk through your error analysis and one measurable fix that improved NDCG.",
+#                 "Describe your HP tuning search space and metric used for selection.",
+#                 "How did you validate generalization (e.g., CV, holdout from unseen distribution)?"
+#               ]
+#             }},
+#             {{
+#               "qa_id": "QA3",
+#               "q_type": "New Question",
+#               "q_difficulty": "Hard",
+#               "counter_type": null,
+#               "example_questions": [
+#                 "If you quantize to INT4 and double batch size, estimate p95 change and quality loss.",
+#                 "Under memory cap {{M}} MB, redesign inference to preserve F1; justify trade-offs.",
+#                 "Model the effect of increasing max sequence length on FLOPs and quality.",
+#                 "Given domain shift to {{new_domain}}, propose adaptation and expected metric deltas.",
+#                 "Show how your retrieval changes (BM25->dense) would affect NDCG@10 and cost/query."
+#               ]
+#             }},
+#             {{
+#               "qa_id": "QA4",
+#               "q_type": "Counter Question",
+#               "counter_type": "Twist",
+#               "q_difficulty": "Medium",
+#               "example_questions": [
+#                 "If you replace {{component B}} with {{component A}}, how do latency and throughput change?",
+#                 "Why did you use {{optimizer/technique}} over {{alternative}} for {{focus_skill}}?",
+#                 "If you raise the decision threshold by 0.1, what happens to precision/recall and F1?",
+#                 "Why cosine LR schedule instead of step decay; impact on convergence?",
+#                 "If you switch retriever to dense, how do NDCG and cost/query move?"
+#               ]
+#             }},
+#             {{
+#               "qa_id": "QA5",
+#               "q_type": "Counter Question",
+#               "counter_type": "Twist",
+#               "q_difficulty": "Hard",
+#               "example_questions": [
+#                 "Replace cross-entropy with focal loss: predict gradient dynamics and minority-class F1 shift.",
+#                 "Why RAG over fine-tuning for {{topic}}; compare hit-rate vs. generation quality.",
+#                 "If you add temperature scaling, how will calibration (ECE) affect top-k accuracy?",
+#                 "Why cap max seq length at {{N}}; model attention FLOPs and quality impact.",
+#                 "If you shard the index, quantify recall@k vs. latency trade-offs."
+#               ]
+#             }}
+#             {{
+#               "qa_id": "QA6",
+#               "q_type": "Counter Question",
+#               "q_difficulty": "Medium",
+#               "counter_type": "Interrogatory",
+#               "example_questions": [
+#                 "If you replace {{component B}} with {{component A}}, how do latency and throughput change?",
+#                 "Why did you use {{optimizer/technique}} over {{alternative}} for {{focus_skill}}?",
+#                 "If you raise the decision threshold by 0.1, what happens to precision/recall and F1?",
+#                 "Why cosine LR schedule instead of step decay; impact on convergence?",
+#                 "If you switch retriever to dense, how do NDCG and cost/query move?"
+#               ]
+#             }},
+#             {{
+#               "qa_id": "QA7",
+#               "q_type": "Counter Question",
+#               "q_difficulty": "Hard",
+#               "counter_type": "Interrogatory",
+#               "example_questions": [
+#                 "Replace cross-entropy with focal loss: predict gradient dynamics and minority-class F1 shift.",
+#                 "Why RAG over fine-tuning for {{topic}}; compare hit-rate vs. generation quality.",
+#                 "If you add temperature scaling, how will calibration (ECE) affect top-k accuracy?",
+#                 "Why cap max seq length at {{N}}; model attention FLOPs and quality impact.",
+#                 "If you shard the index, quantify recall@k vs. latency trade-offs."
+#               ]
+#             }}
+#           ]
+#         }}
+#       ]
+#     }}
+#   ]
+# }}
+# '''
+
+# New format QAs 4
 QA_BLOCK_AGENT_PROMPT = '''
 You are a question answer block generator for technical interviews.
 Your task is to generate example questions for each deep dive QA block across all 3 topics given from a discussion summary as input.
-You will be given three inputs: discussion summary, node for a deep dive question in a topic, and guideline+example set for QA blocks.
+
+---
+You will be given three inputs: discussion summary, node for a deep dive question in a topic, and some guideline set for QA blocks.
+
+Inputs:
+Discussion Topic Summary:
+\n```{discussion_summary}```\n
+
+Node for question generation:
+\n```{node}```\n
+
+Conditional schema related error as feedback for previous wrong generations if any:
+\n```{qa_error}```\n
+
+You shall use the mongo db database fetching tools to fetch on data for example question generation guidelines being present in the collection named question_guidelines
+---
 
 HARD CONSTRAINTS (must pass exactly; fix if qa_error is provided):
 - For each QA block, output EXACTLY 7 QA items covering these combinations (no more, no less, no duplicates):
@@ -357,9 +709,7 @@ HARD CONSTRAINTS (must pass exactly; fix if qa_error is provided):
   QA1..QA3 = New(E, M, H), QA4..QA5 = Counter(Twist + M, Twist + H), QA6..QA7 = Counter(Interrogatory + M, Interrogatory + H)
 - Every QA item MUST include exactly 5 concise, technical example questions (no placeholders, no empty strings).
 - Skills referenced MUST come only from the node's `skills` / `focus_area` values (verbatim).
-- Counter Question styles must be one of:
-  1) Twist — "What would happen if you do A instead of B?"
-  2) Interrogatory — "Why did you use A?"
+
 - If the previous attempt failed, you will receive `qa_error` below. ONLY fix schema/count/combinations/formatting while keeping the intent.
 
 QA Generation Rules
@@ -378,25 +728,14 @@ QA Generation Rules
   - "guideline": one concise instruction for probing this block's focus
   - "q_type": "New Question" or "Counter Question"
   - "q_difficulty": one of "Easy" | "Medium" | "Hard"
-  - "counter_type": REQUIRED and one of "Twist" | "Interrogatory" IFF q_type == "Counter Question"; otherwise omit or null
+  - "counter_type": REQUIRED and one of "Twist" | "Interrogatory" ```If q_type == "Counter Question"; otherwise omit or null```
   - "qa_items": an array with EXACTLY ONE item:
       * "qa_id": unique like "QA1"
       * "example_questions": EXACTLY 5 concise, technical questions (no placeholders)
 - All questions must ground to the node's focus skills verbatim and use project/company IDs when provided (P1, P2, C, E…).
-- Prefer case-study and project-based phrasing. Start with WHY (design/trade-offs) → then HOW (architecture/algorithms/tooling).
-- Use quantitative metrics where sensible (e.g., accuracy/F1/ROC-AUC, p95 latency, throughput, memory, FLOPs, cost/query).
-- You can use database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "{thread_id}"
+- You can also use the mongo db database fetching tools again to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "{thread_id}" as per requirements.
 
 ---
-Inputs:
-Discussion Topic Summary:
-\n```{discussion_summary}```\n
-
-Node for question generation:
-\n```{node}```\n
-
-Conditional schema related error as feedback for previous wrong generations if any:
-\n```{qa_error}```\n
 
 Output Format
 Return ONLY a JSON object grouped by topic -> QA blocks -> 5 questions per QA item:

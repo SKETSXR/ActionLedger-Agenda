@@ -4,7 +4,7 @@ from langchain_core.messages import AnyMessage, RemoveMessage
 from langgraph.graph import add_messages
 
 from .output_schema import GeneratedSummarySchema, CollectiveInterviewTopicSchema, DiscussionSummaryPerTopicSchema, NodesSchema, QASetsSchema
-from .input_schema import JobDescriptionSchema, SkillTreeSchema, CandidateProfileSchema
+from .input_schema import JobDescriptionSchema, SkillTreeSchema, CandidateProfileSchema, QuestionGuidelinesSchema
 
 
 class AgentInternalState(BaseModel):
@@ -19,6 +19,7 @@ class AgentInternalState(BaseModel):
     mongo_cv_collection: str
     mongo_skill_tree_collection: str
     mongo_summary_collection: str
+    mongo_question_guidelines_collection: str
     # mongo_inferred_topics_collection: str
     id: str
 
@@ -27,6 +28,7 @@ class AgentInternalState(BaseModel):
     job_description: JobDescriptionSchema
     skill_tree: SkillTreeSchema
     candidate_profile: CandidateProfileSchema
+    question_guidelines: QuestionGuidelinesSchema
 
     generated_summary: GeneratedSummarySchema | None = None
     interview_topics: CollectiveInterviewTopicSchema | None = None

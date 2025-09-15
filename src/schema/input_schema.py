@@ -102,7 +102,24 @@ class JobDescriptionSchema(BaseModel):
     ]
 
 
+class QuestionGuidelinesSchema(BaseModel):
+    question_guidelines: Annotated[
+        str,
+        Field(...,
+            description="Guidelines for example question generations"
+        )
+    ]
+    
+    question_type_name: Annotated[
+        list[str],
+        Field(...,
+            description="List of question type to be used for guidelines and also used as a unique identifier for each mongo db record"
+        )
+    ]
+
+
 class InputSchema(BaseModel):
     job_description: JobDescriptionSchema
     skill_tree: SkillTreeSchema
     candidate_profile: CandidateProfileSchema
+    question_guidelines: QuestionGuidelinesSchema
