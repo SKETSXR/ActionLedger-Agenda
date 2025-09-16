@@ -11,6 +11,7 @@ from src.tools.cv_extraction import parse_pdf_to_json
 from dotenv import load_dotenv
 # from src.db_fetch import read_start
 
+start = time.time_ns()
 load_dotenv()
 
 # with open(r"new_jd.json", "r", encoding='utf-8') as j:
@@ -170,7 +171,7 @@ for k, v in otpt.items():
     print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
     x += f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n"
 
-with open(r"testing\op3.txt", "a") as f:
+with open(r"testing\op7.txt", "a") as f:
     f.write(x)
 # for i, v in otpt.items():
 #     if hasattr(v, "model_dump_json"):
@@ -179,3 +180,5 @@ with open(r"testing\op3.txt", "a") as f:
 #         print(json.dumps(v.model_dump(), indent=2))
 #     else:
 #         pprint.pprint(v, indent=2)
+end = time.time_ns()
+print(f"\nTime taken: {(end - start) / 60000000000} mins")
