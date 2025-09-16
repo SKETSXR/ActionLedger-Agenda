@@ -9,7 +9,7 @@ from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import GeneratedSummarySchema
 from ..model_handling import llm_sg
 
-set_llm_cache(InMemoryCache())
+# set_llm_cache(InMemoryCache())
 
 
 class SummaryGenerationAgent:

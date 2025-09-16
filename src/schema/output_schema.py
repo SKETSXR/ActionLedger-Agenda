@@ -33,17 +33,24 @@ class JobRequirementsSummarySchema(BaseModel):
         )
     ]
 
+class ProjectReasoningSummarySchema(BaseModel):
+    what_done: Annotated[str, Field(..., description="What was built/achieved")]
+    how_done: Annotated[str, Field(..., description="How it was implemented (approach/architecture)")]
+    why_decisions: Annotated[str, Field(..., description="Key decisions and reasons during the project")]
+    tech_stack: Annotated[str, Field(..., min_items=1, description="Technologies used")]
+    walkthrough: Annotated[str, Field(..., description="Brief step-by-step of how stack was used")]
 
 class CandidateProjectSummarySchema(BaseModel):
-    projectwise_summary: Annotated[
-        list[str],
-        Field(...,
-            description="Project-wise Summaries",
-            examples=["AI Applications Engineer at Jewelers Mutual Group: Developed generative AI applications using LLMs from Azure OpenAI to enhance automation and decision-making workflows. Integrated AI-driven document processing solutions using LangChain, Python, and cloud-native architectures.", 
-                      "AI Engineer at PeritusHub (Stealth Start-Up): Implemented a scalable multi-agent system using Langchain and AWS Bedrock for conversational AI tasks. Managed CI/CD pipeline using GitHub Actions and engineered a Document Management System incorporating RAG with OpenAI LLMs.",
-                      "Data Scientist Intern at H-E-B Groceries: Developed a system for extracting product entities and attributes from images using Azure OpenAI LLM and computer vision techniques. Created a web-based user interface for the extraction system using HTML, JavaScript, and Flask."]
-        )
-    ]
+    # projectwise_summary: Annotated[
+    #     list[str],
+    #     Field(...,
+    #         description="Project-wise Summaries",
+    #         examples=["AI Applications Engineer at Jewelers Mutual Group: Developed generative AI applications using LLMs from Azure OpenAI to enhance automation and decision-making workflows. Integrated AI-driven document processing solutions using LangChain, Python, and cloud-native architectures.", 
+    #                   "AI Engineer at PeritusHub (Stealth Start-Up): Implemented a scalable multi-agent system using Langchain and AWS Bedrock for conversational AI tasks. Managed CI/CD pipeline using GitHub Actions and engineered a Document Management System incorporating RAG with OpenAI LLMs.",
+    #                   "Data Scientist Intern at H-E-B Groceries: Developed a system for extracting product entities and attributes from images using Azure OpenAI LLM and computer vision techniques. Created a web-based user interface for the extraction system using HTML, JavaScript, and Flask."]
+    #     )
+    # ]
+    projectwise_summary: List[ProjectReasoningSummarySchema] = Field(..., description="List of project wise summary")   
 
 
 class AnnotatedSkillTreeSummarySchema(BaseModel):

@@ -246,7 +246,7 @@ from src.utils import load_config
 config = load_config("config.yaml")
 thread_id = config["configurable"]["thread_id"] 
 
-set_llm_cache(InMemoryCache())
+# set_llm_cache(InMemoryCache())
 
 
 class PerTopicDiscussionSummaryGenerationAgent:        
