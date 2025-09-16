@@ -1,11 +1,3 @@
-import pymongo
-import json
-from dotenv import dotenv_values
-from langchain_mongodb.agent_toolkit import (
-    MONGODB_AGENT_SYSTEM_PROMPT,
-    MongoDBDatabase,
-    MongoDBDatabaseToolkit,
-)
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage
 from langchain.globals import set_llm_cache
@@ -17,7 +9,6 @@ from ..schema.input_schema import SkillTreeSchema
 from ..prompt.topic_generation_agent_prompt import TOPIC_GENERATION_AGENT_PROMPT
 from ..model_handling import llm_tg
 from src.mongo_tools import get_mongo_tools
-from langgraph.prebuilt import ToolNode
 from src.utils import load_config
 
 config = load_config("config.yaml")
@@ -91,13 +82,6 @@ class TopicGenerationAgent:
                 return False
         return True
 
-    
-    # @staticmethod
-    # async def fetch_user_data(state):
-    #     user_id = state["user_id"]
-    #     user_profile = mongo_collection.find_one({"_id": user_id})
-    #     state["profile"] = user_profile
-    #     return state
     @staticmethod
     def get_graph(checkpointer=None):
 
