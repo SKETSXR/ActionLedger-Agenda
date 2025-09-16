@@ -241,7 +241,7 @@ class QABlockGenerationAgent:
         """
         sys = QA_BLOCK_AGENT_PROMPT.format(
             discussion_summary=discussion_summary_json,
-            node=deep_dive_nodes_json,
+            deep_dive_nodes=deep_dive_nodes_json,
             qa_error=qa_error or "",
             thread_id=thread_id
         )
@@ -283,6 +283,91 @@ class QABlockGenerationAgent:
         else:
             raise ValueError("discussion_summary_per_topic has no 'discussion_topics' field")
 
+        # final_sets: List[Dict[str, Any]] = []
+        # accumulated_errs: List[str] = []
+
+        # for topic_entry in state.nodes.topics_with_nodes:
+        #     topic_dict = topic_entry.model_dump() if hasattr(topic_entry, "model_dump") else dict(topic_entry)
+        #     topic_name = topic_dict.get("topic") or QABlockGenerationAgent._get_topic_name(topic_entry)
+
+        #     # summary_obj = QABlockGenerationAgent._find_summary_for_topic(topic_name, summaries_list)
+        #     # if summary_obj is None:
+        #     #     print(f"[QABlocks] No discussion summary found for topic: {topic_name}; skipping.")
+        #     #     final_sets.append({"topic": topic_name, "qa_blocks": []})
+        #     #     continue
+        #     summary_obj = QABlockGenerationAgent._find_summary_for_topic(topic_name, summaries_list)
+        #     if summary_obj is None:
+        #         msg = f"[QABlocks] No discussion summary found for topic: {topic_name}; skipping."
+        #         print(msg)
+        #         accumulated_errs.append(msg)
+        #         continue
+
+        #     # collect deep-dive nodes
+        #     deep_dive_nodes: List[dict] = []
+        #     for node in (topic_dict.get("nodes") or []):
+        #         qtype = str(node.get("question_type", "")).strip().lower()
+        #         if qtype == "deep dive":
+        #             deep_dive_nodes.append(node)
+
+        #     # if not deep_dive_nodes:
+        #     #     final_sets.append({"topic": topic_name, "qa_blocks": []})
+        #     #     continue
+
+        #     if not deep_dive_nodes:
+        #         msg = f"[QABlocks] No deep-dive nodes for topic: {topic_name}; skipping."
+        #         print(msg)
+        #         accumulated_errs.append(msg)
+        #         continue
+
+        #     # JSON strings for the LLM
+        #     summary_json = json.dumps(
+        #         summary_obj.model_dump() if hasattr(summary_obj, "model_dump") else summary_obj
+        #     )
+        #     deep_dive_nodes_json = json.dumps(copy.deepcopy(deep_dive_nodes))
+
+        # #     # generate for this topic
+        # #     one_set, err = await QABlockGenerationAgent._gen_for_topic(
+        # #         topic_name=topic_name,
+        # #         discussion_summary_json=summary_json,
+        # #         deep_dive_nodes_json=deep_dive_nodes_json,
+        # #         qa_error=getattr(state, "qa_error", "") or ""
+        # #     )
+        # #     final_sets.append(one_set)
+        # #     if err:
+        # #         accumulated_errs.append(f"[{topic_name}] {err}")
+
+        # # state.qa_blocks = QASetsSchema(qa_sets=final_sets)
+        # # if accumulated_errs:
+        # #     state.qa_error = (state.qa_error or "") + ("\n" if state.qa_error else "") + "\n".join(accumulated_errs)
+        # # generate for this topic
+        # one_set, err = await QABlockGenerationAgent._gen_for_topic(
+        #     topic_name=topic_name,
+        #     discussion_summary_json=summary_json,
+        #     deep_dive_nodes_json=deep_dive_nodes_json,
+        #     qa_error=getattr(state, "qa_error", "") or ""
+        # )
+
+        # qa_blocks = one_set.get("qa_blocks", [])
+        # if qa_blocks:  # require at least something before keeping the topic
+        #     final_sets.append(one_set)
+        # else:
+        #     accumulated_errs.append(f"[{topic_name}] generated 0 blocks — skipping topic")
+
+        # if err:
+        #     accumulated_errs.append(f"[{topic_name}] {err}")
+
+        # # ---- after the loop, finalize state ----
+        # if final_sets:
+        #     state.qa_blocks = QASetsSchema(qa_sets=final_sets)
+        # else:
+        #     # No valid topics produced blocks; record and END gracefully.
+        #     state.qa_blocks = None  # leave unset so should_regenerate ends
+        #     accumulated_errs.append("[QABlocks] No topics produced QA blocks; ending without validation.")
+
+        # if accumulated_errs:
+        #     state.qa_error = (state.qa_error or "") + ("\n" if state.qa_error else "") + "\n".join(accumulated_errs)
+
+        # return state
         final_sets: List[Dict[str, Any]] = []
         accumulated_errs: List[str] = []
 
@@ -290,11 +375,6 @@ class QABlockGenerationAgent:
             topic_dict = topic_entry.model_dump() if hasattr(topic_entry, "model_dump") else dict(topic_entry)
             topic_name = topic_dict.get("topic") or QABlockGenerationAgent._get_topic_name(topic_entry)
 
-            # summary_obj = QABlockGenerationAgent._find_summary_for_topic(topic_name, summaries_list)
-            # if summary_obj is None:
-            #     print(f"[QABlocks] No discussion summary found for topic: {topic_name}; skipping.")
-            #     final_sets.append({"topic": topic_name, "qa_blocks": []})
-            #     continue
             summary_obj = QABlockGenerationAgent._find_summary_for_topic(topic_name, summaries_list)
             if summary_obj is None:
                 msg = f"[QABlocks] No discussion summary found for topic: {topic_name}; skipping."
@@ -309,10 +389,6 @@ class QABlockGenerationAgent:
                 if qtype == "deep dive":
                     deep_dive_nodes.append(node)
 
-            # if not deep_dive_nodes:
-            #     final_sets.append({"topic": topic_name, "qa_blocks": []})
-            #     continue
-
             if not deep_dive_nodes:
                 msg = f"[QABlocks] No deep-dive nodes for topic: {topic_name}; skipping."
                 print(msg)
@@ -325,43 +401,28 @@ class QABlockGenerationAgent:
             )
             deep_dive_nodes_json = json.dumps(copy.deepcopy(deep_dive_nodes))
 
-        #     # generate for this topic
-        #     one_set, err = await QABlockGenerationAgent._gen_for_topic(
-        #         topic_name=topic_name,
-        #         discussion_summary_json=summary_json,
-        #         deep_dive_nodes_json=deep_dive_nodes_json,
-        #         qa_error=getattr(state, "qa_error", "") or ""
-        #     )
-        #     final_sets.append(one_set)
-        #     if err:
-        #         accumulated_errs.append(f"[{topic_name}] {err}")
+            # >>> generate for THIS topic (moved inside the loop) <<<
+            one_set, err = await QABlockGenerationAgent._gen_for_topic(
+                topic_name=topic_name,
+                discussion_summary_json=summary_json,
+                deep_dive_nodes_json=deep_dive_nodes_json,
+                qa_error=getattr(state, "qa_error", "") or ""
+            )
 
-        # state.qa_blocks = QASetsSchema(qa_sets=final_sets)
-        # if accumulated_errs:
-        #     state.qa_error = (state.qa_error or "") + ("\n" if state.qa_error else "") + "\n".join(accumulated_errs)
-        # generate for this topic
-        one_set, err = await QABlockGenerationAgent._gen_for_topic(
-            topic_name=topic_name,
-            discussion_summary_json=summary_json,
-            deep_dive_nodes_json=deep_dive_nodes_json,
-            qa_error=getattr(state, "qa_error", "") or ""
-        )
+            qa_blocks = one_set.get("qa_blocks", [])
+            if qa_blocks:
+                final_sets.append(one_set)
+            else:
+                accumulated_errs.append(f"[{topic_name}] generated 0 blocks — skipping topic")
 
-        qa_blocks = one_set.get("qa_blocks", [])
-        if qa_blocks:  # require at least something before keeping the topic
-            final_sets.append(one_set)
-        else:
-            accumulated_errs.append(f"[{topic_name}] generated 0 blocks — skipping topic")
-
-        if err:
-            accumulated_errs.append(f"[{topic_name}] {err}")
+            if err:
+                accumulated_errs.append(f"[{topic_name}] {err}")
 
         # ---- after the loop, finalize state ----
         if final_sets:
             state.qa_blocks = QASetsSchema(qa_sets=final_sets)
         else:
-            # No valid topics produced blocks; record and END gracefully.
-            state.qa_blocks = None  # leave unset so should_regenerate ends
+            state.qa_blocks = None
             accumulated_errs.append("[QABlocks] No topics produced QA blocks; ending without validation.")
 
         if accumulated_errs:
@@ -469,19 +530,18 @@ class QABlockGenerationAgent:
     # --- should_regenerate: schema-only, but END if there's nothing to validate ---
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
-        # If generator intentionally produced nothing, END (don't recurse)
-        if not getattr(state, "qa_blocks", None):
-            # optional: keep a breadcrumb
-            if (state.qa_error or "").find("[QABlocks] No topics") == -1:
-                state.qa_error = (state.qa_error or "") + "\n[QABlockGen] No qa_blocks to validate; ending."
-            return False  # <- IMPORTANT: stop the graph
+        # # If generator intentionally produced nothing, END (don't recurse)
+        # if not getattr(state, "qa_blocks", None):
+        #     state.qa_error += "\n[QABlockGen] No qa_blocks generated so re-generate again for validation"
+        #     return False
 
         # Strict container validation only (as you asked)
         try:
-            payload = state.qa_blocks.model_dump() if hasattr(state.qa_blocks, "model_dump") else state.qa_blocks
-            QASetsSchema.model_validate_json(json.dumps(payload))
+            QASetsSchema.model_validate(
+                state.qa_blocks.model_dump() if hasattr(state.qa_blocks, "model_dump") else state.qa_blocks
+            )
         except ValidationError as ve:
-            state.qa_error = (state.qa_error or "") + f"\n[QABlockGen ValidationError] {ve}"
+            state.qa_error += f"The previous generated o/p did not follow the given schema as it got following errors:\n[QABlockGen ValidationError]\n {ve}"
             return True  # try again
         return False  # valid -> END
 
