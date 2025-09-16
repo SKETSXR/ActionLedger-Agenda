@@ -832,8 +832,8 @@ QA Generation Rules
   - "qa_items": an array with EXACTLY ONE item:
       * "qa_id": unique like "QA1"
       * "example_questions": EXACTLY 5 concise, technical questions (no placeholders)
-- All questions must ground to the node's focus skills verbatim and use project/company IDs when provided (P1, P2, C, E…).
 - You can also use the mongo db database fetching tools again to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "{thread_id}" as per requirements.
+- All questions must ground to the node's focus skills verbatim and use project, experience, summary etc keys when provided (P1, P2, E1, T). But make sure to not make questions from the projects where the respective project's projectwise summary has no such evidence mentioned in any its field.
 
 ---
 
