@@ -1,6 +1,5 @@
-import re
-from pydantic import BaseModel, Field, model_validator
-from typing import Annotated, Optional, Dict, List, Union, Literal, Tuple
+from pydantic import BaseModel, Field
+from typing import Annotated, Optional, Dict, List, Union, Literal
 
 __all__ = [
     "GeneratedSummarySchema",
@@ -41,15 +40,6 @@ class ProjectReasoningSummarySchema(BaseModel):
     walkthrough: Annotated[str, Field(..., description="Brief step-by-step of how each particular tech stack was used")]
 
 class CandidateProjectSummarySchema(BaseModel):
-    # projectwise_summary: Annotated[
-    #     list[str],
-    #     Field(...,
-    #         description="Project-wise Summaries",
-    #         examples=["AI Applications Engineer at Jewelers Mutual Group: Developed generative AI applications using LLMs from Azure OpenAI to enhance automation and decision-making workflows. Integrated AI-driven document processing solutions using LangChain, Python, and cloud-native architectures.", 
-    #                   "AI Engineer at PeritusHub (Stealth Start-Up): Implemented a scalable multi-agent system using Langchain and AWS Bedrock for conversational AI tasks. Managed CI/CD pipeline using GitHub Actions and engineered a Document Management System incorporating RAG with OpenAI LLMs.",
-    #                   "Data Scientist Intern at H-E-B Groceries: Developed a system for extracting product entities and attributes from images using Azure OpenAI LLM and computer vision techniques. Created a web-based user interface for the extraction system using HTML, JavaScript, and Flask."]
-    #     )
-    # ]
     projectwise_summary: List[ProjectReasoningSummarySchema] = Field(..., description="List of project wise summary")   
 
 
@@ -126,11 +116,6 @@ class CollectiveInterviewTopicSchema(BaseModel):
     interview_topics: List[TopicSchema] = Field(..., description="List of interview topics")
 
 
-# class DiscussionSummaryPerTopicSchema(BaseModel):
-#     listoftopics_discussion_summary: list = Field(..., description="Topic name")
-#     summary: list[str] = Field(..., description="Summary of the discussion for this topic")
-
-
 class DiscussionSummaryPerTopicSchema(BaseModel):
     class Opening(BaseModel):
         type: str
@@ -191,62 +176,6 @@ class TopicWithNodesSchema(BaseModel):
 
 class NodesSchema(BaseModel):
     topics_with_nodes: List[TopicWithNodesSchema] = Field(..., min_items=1)
-
-
-# BLOCK_ID_RE = re.compile(r"^B[1-9]\d*$")   # B1, B2, ...
-# QA_ID_RE    = re.compile(r"^QA[1-9]\d*$")  # QA1, QA2, ...
-
-
-# class QABlock(BaseModel):
-#     block_id: str = Field(..., description="Block identifier like 'B1'")
-#     qa_id: str = Field(..., description="QA identifier like 'QA1'")
-#     guideline: str = Field(..., min_length=1)
-#     q_type: Literal["First Question", "New Question", "Counter Question"]
-#     q_difficulty: Literal["Easy", "Medium", "Hard"]
-#     example_questions: List[str] = Field(
-#         ..., min_items=1,
-#         description="A set of deep dive QA sample questions",
-#         examples=[
-#             "Can you describe a project where you applied prompt engineering to improve LLM outputs, and what specific techniques did you use?",
-#             "What challenges did you face when fine-tuning LLM outputs using prompt engineering, and how did you overcome them?",
-#             "How do you determine the effectiveness of prompt engineering techniques in enhancing LLM performance?",
-#             "In your experience, what are the key factors to consider when applying prompt engineering to LLMs for specific tasks?",
-#             "Can you provide an example of how you optimized a prompt to achieve better results in an LLM application?"
-#           ]
-#     )
-
-
-# class QASet(BaseModel):
-#     topic: str = Field(..., min_length=1, description="Readable topic name")
-#     qa_blocks: List[QABlock] = Field(..., min_items=1)
-
-
-# class QASetsSchema(BaseModel):
-#     qa_sets: List[QASet] = Field(..., min_items=1)
-
-
-# QType = Literal["First Question", "New Question", "Counter Question"]
-# QDiff = Literal["Easy", "Medium", "Hard"]
-
-# class QAItem(BaseModel):
-#     qa_id: str = Field(..., description="QA identifier like 'QA1'")
-#     q_type: QType
-#     q_difficulty: QDiff
-#     example_questions: List[str] = Field(..., min_items=5, max_items=5)
-
-# class QABlock(BaseModel):
-#     block_id: str = Field(..., description="Block identifier like 'B1'")
-#     guideline: str = Field(..., min_length=1)
-#     qa_items: List[QAItem] = Field(..., min_items=8, max_items=8)
-
-
-# class QASet(BaseModel):
-#     topic: str = Field(..., min_length=1)
-#     qa_blocks: List[QABlock] = Field(..., min_items=1)
-
-
-# class QASetsSchema(BaseModel):
-#     qa_sets: List[QASet] = Field(..., min_items=1)
 
 
 QType = Literal["New Question", "Counter Question"]
