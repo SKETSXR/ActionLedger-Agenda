@@ -125,7 +125,7 @@ Here are following headings
            "how_done": "...", <How it was implemented (approach/architecture)>
            "why_decisions": "...", <Key decisions and reasons during the project>
            "tech_stack": "...", <Technologies used>
-           "walkthrough": "..." <Brief step-by-step of how stack was used>
+           "walkthrough": "..." <Brief step-by-step of how each particular tech stack was used>
          }},
          ...
          {{
