@@ -28,8 +28,8 @@ class TopicGenerationAgent:
         if not state.generated_summary:
             raise ValueError("Summary cannot be null.")
 
-        interview_topics_feedback = state.interview_topics_feedback.model_dump_json() if state.interview_topics_feedback is not None else "",
-        state.interview_topics_feedbacks += str(interview_topics_feedback)
+        interview_topics_feedback = state.interview_topics_feedback.model_dump_json() if state.interview_topics_feedback is not None else ""
+        state.interview_topics_feedbacks += interview_topics_feedback
         response = await TopicGenerationAgent.llm_tg_with_tools \
         .with_structured_output(CollectiveInterviewTopicSchema, method="function_calling") \
         .ainvoke(
