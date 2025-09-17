@@ -1,3 +1,4 @@
+import json
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage
 from langchain.globals import set_llm_cache
@@ -28,8 +29,9 @@ class TopicGenerationAgent:
         if not state.generated_summary:
             raise ValueError("Summary cannot be null.")
 
-        interview_topics_feedback = state.interview_topics_feedback.model_dump_json() if state.interview_topics_feedback is not None else ""
-        state.interview_topics_feedbacks += interview_topics_feedback
+        interview_topics_feedback = state.interview_topics_feedback.feedback if state.interview_topics_feedback is not None else ""
+        state.interview_topics_feedbacks += "\n" + interview_topics_feedback + "\n"
+
         response = await TopicGenerationAgent.llm_tg_with_tools \
         .with_structured_output(CollectiveInterviewTopicSchema, method="function_calling") \
         .ainvoke(
@@ -97,7 +99,7 @@ class TopicGenerationAgent:
             ]
         )
         state.interview_topics_feedback = response
-        # print(response)
+        print(response)
         if not state.interview_topics_feedback.satisfied:
             return False
         else:

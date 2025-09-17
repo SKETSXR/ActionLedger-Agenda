@@ -118,7 +118,7 @@ class CollectiveInterviewTopicSchema(BaseModel):
 
 class CollectiveInterviewTopicFeedbackSchema(BaseModel):
     satisfied: bool
-    updated_topics: CollectiveInterviewTopicSchema
+    # updated_topics: CollectiveInterviewTopicSchema
     feedback: str
 
 
