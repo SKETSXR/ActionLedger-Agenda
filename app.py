@@ -97,21 +97,68 @@ with open(r"testing\Sreelal\skill_tree.json", "r") as f:
     tree_data = json.load(f)
 
 root = load_skill_tree(tree_data)
-question_guidelines = {"question_guidelines":[{"question_guidelines": '''Broader Question Formats:
-	Minimize questions like what difficulties did you face, how you achieved them etc. Focus on technical aspects of why and how things were done.
-	In projects, try starting with why and then go to how
-	The direct questions or QAs for projects should feel like questions are based on their project. They should be "As per you project details, you used A, why did you do so?"''',
+# question_guidelines = {"question_guidelines":[{"question_guidelines": '''
+# 	Minimize questions like what difficulties did you face, how you achieved them etc. Focus on technical aspects of why and how things were done.
+# 	In projects, try starting with why and then go to how
+# 	The direct questions or QAs for projects should feel like questions are based on their project. They should be "As per you project details, you used A, why did you do so?"''',
+#     "question_type_name": "Case study type questions"},
+#     {"question_guidelines": '''Minimize questions like what difficulties did you face, how you achieved them etc. Focus on technical aspects of why and how things were done.
+# 	In projects, try starting with why and then go to how
+# 	The direct questions or QAs for projects should feel like questions are based on their project. They should be "As per you project details, you used A, why did you do so?"''',
+#     "question_type_name": "Project based questions"},
+#     {"question_guidelines": '''The counter questions should be of the types: 
+#     1. Twist- What would happen if you do A instead of B
+#     2. Interrogatory- Why did you use A?''',
+#     "question_type_name": "Counter questions"}
+#     ]}
+question_guidelines = {"question_guidelines":[{"question_guidelines": '''
+	Guidelines:
+
+Design the case as a realistic situation that requires decision-making, not abstract hypotheticals.
+
+Questions should encourage the candidate to analyze trade-offs (performance vs cost, scalability vs maintainability, etc.).
+
+Probe on approach and reasoning, not only on the final outcome.
+
+Ask about metrics, evaluation criteria, and constraints the candidate would consider.
+
+Avoid generic "tell me about a challenge" prompts — instead, anchor the case in technical detail relevant to the candidate's skill set or the job role.
+
+Example frames:
+
+"If you were designing a [system/problem] under [constraints], how would you decide between option A and option B?"
+
+"What bottlenecks could appear in [situation], and how would you measure and mitigate them?"
+
+"How would you adapt your solution if the scale increased by 10x?"''',
     "question_type_name": "Case study type questions"},
-    {"question_guidelines": '''Broader Question Formats:
-	Minimize questions like what difficulties did you face, how you achieved them etc. Focus on technical aspects of why and how things were done.
-	In projects, try starting with why and then go to how
-	The direct questions or QAs for projects should feel like questions are based on their project. They should be "As per you project details, you used A, why did you do so?"''',
+    {"question_guidelines": '''Guidelines:
+
+Start with "why" (motivation, design choice, architecture decision), then follow with "how" (implementation, tools, processes).
+
+Frame questions so they feel grounded in the candidate's project details (P1, P2, etc.).
+
+Avoid repetitive or generic prompts like "What challenges did you face?" or "How did you solve them?" unless expanded into technical reasoning.
+
+Direct QAs should resemble peer-to-peer technical reviews, e.g., "In your project where you implemented X, why did you choose Y approach?"
+
+Encourage the candidate to explain trade-offs, alternatives considered, and design impact.
+
+Keep the phrasing specific and contextualized to avoid vague storytelling answers.
+
+Example frames:
+
+"In [Project], you mentioned using [technology/tool]. Why was it chosen over alternatives?"
+
+"During [Project], how did you ensure performance/scalability/security in the design?"
+
+"If you had to extend [Project] today to handle [new requirement], what architectural changes would you propose?"''',
     "question_type_name": "Project based questions"},
     {"question_guidelines": '''The counter questions should be of the types: 
     1. Twist- What would happen if you do A instead of B
     2. Interrogatory- Why did you use A?''',
     "question_type_name": "Counter questions"}
-    ]}
+]}
 # question_guidelines["question_type_name"] = ["Case study type questions", "Project based questions"]
 
 inp = InputSchema(
@@ -171,7 +218,7 @@ for k, v in otpt.items():
     print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
     x += f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n"
 
-with open(r"testing\op7.txt", "a") as f:
+with open(r"testing\op10.txt", "a") as f:
     f.write(x)
 # for i, v in otpt.items():
 #     if hasattr(v, "model_dump_json"):

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from langchain_core.messages import AnyMessage, RemoveMessage
 from langgraph.graph import add_messages
 
-from .output_schema import GeneratedSummarySchema, CollectiveInterviewTopicSchema, DiscussionSummaryPerTopicSchema, NodesSchema, QASetsSchema
+from .output_schema import GeneratedSummarySchema, CollectiveInterviewTopicSchema, DiscussionSummaryPerTopicSchema, NodesSchema, QASetsSchema, CollectiveInterviewTopicFeedbackSchema
 from .input_schema import JobDescriptionSchema, SkillTreeSchema, CandidateProfileSchema, QuestionGuidelinesCompleteSchema
 
 
@@ -37,3 +37,5 @@ class AgentInternalState(BaseModel):
     nodes_error: str = ""  # To capture any errors during node generation
     qa_blocks: QASetsSchema | None = None
     qa_error: str = ""
+    interview_topics_feedback: CollectiveInterviewTopicFeedbackSchema | None = None
+    interview_topics_feedbacks: str = ""

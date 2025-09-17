@@ -4,9 +4,9 @@ from langchain.globals import set_llm_cache
 from langchain_community.cache import InMemoryCache
 from langchain_core.tools import tool
 from ..schema.agent_schema import AgentInternalState
-from ..schema.output_schema import CollectiveInterviewTopicSchema
+from ..schema.output_schema import CollectiveInterviewTopicSchema, CollectiveInterviewTopicFeedbackSchema
 from ..schema.input_schema import SkillTreeSchema
-from ..prompt.topic_generation_agent_prompt import TOPIC_GENERATION_AGENT_PROMPT
+from ..prompt.topic_generation_agent_prompt import TOPIC_GENERATION_AGENT_PROMPT, TOPIC_GENERATION_SELF_REFLECTION_PROMPT
 from ..model_handling import llm_tg
 from src.mongo_tools import get_mongo_tools
 from src.utils import load_config
@@ -28,6 +28,8 @@ class TopicGenerationAgent:
         if not state.generated_summary:
             raise ValueError("Summary cannot be null.")
 
+        interview_topics_feedback = state.interview_topics_feedback.model_dump_json() if state.interview_topics_feedback is not None else "",
+        state.interview_topics_feedbacks += str(interview_topics_feedback)
         response = await TopicGenerationAgent.llm_tg_with_tools \
         .with_structured_output(CollectiveInterviewTopicSchema, method="function_calling") \
         .ainvoke(
@@ -35,6 +37,7 @@ class TopicGenerationAgent:
                 SystemMessage(
                     content=TOPIC_GENERATION_AGENT_PROMPT.format(
                         generated_summary=state.generated_summary.model_dump_json(),
+                        interview_topics_feedbacks=state.interview_topics_feedbacks,
                         thread_id=thread_id
                     )
                 ),
@@ -80,7 +83,25 @@ class TopicGenerationAgent:
         for i in focus_area_list:
             if i not in all_skill_leaves:
                 return False
-        return True
+        response = await TopicGenerationAgent.llm_tg_with_tools \
+        .with_structured_output(CollectiveInterviewTopicFeedbackSchema, method="function_calling") \
+        .ainvoke(
+            [
+                SystemMessage(
+                    content=TOPIC_GENERATION_SELF_REFLECTION_PROMPT.format(
+                        generated_summary=state.generated_summary.model_dump_json(),
+                        interview_topics=state.interview_topics.model_dump_json(),
+                        thread_id=thread_id
+                    )
+                )
+            ]
+        )
+        state.interview_topics_feedback = response
+        print(response)
+        if not state.interview_topics_feedback.satisfied:
+            return False
+        else:
+            return True
 
     @staticmethod
     def get_graph(checkpointer=None):

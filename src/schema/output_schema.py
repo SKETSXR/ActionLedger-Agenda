@@ -116,6 +116,12 @@ class CollectiveInterviewTopicSchema(BaseModel):
     interview_topics: List[TopicSchema] = Field(..., description="List of interview topics")
 
 
+class CollectiveInterviewTopicFeedbackSchema(BaseModel):
+    satisfied: bool
+    updated_topics: CollectiveInterviewTopicSchema
+    feedback: str
+
+
 class DiscussionSummaryPerTopicSchema(BaseModel):
     class Opening(BaseModel):
         type: str
