@@ -198,9 +198,6 @@ Your task is to generate exactly three mutually exclusive and concrete interview
 Given input  
 Summary:  
 \n```{generated_summary}```\n 
-
-Previous feedbacks if any (use it to generate better focus areas of your topics and satisfy all these requirements as well for the focus areas only):
-\n```{interview_topics_feedbacks}```\n
  
 <annotated skill tree explanation> This skill tree will be a three-level tree, and the root is considered as level one,  
 the domains are at level two, and the skills are at level three (which are also the leaf nodes of the skill tree).  
@@ -210,6 +207,9 @@ It has the following rules:
 - The weight of the domain is the sum of the weights of all its children (skills), always 1.0.  
 - The sum of weights of the root node's children (domains) is also always 1.0.  
 </annotated skill tree explanation>  
+
+Previous feedbacks if any <use it to generate better entire topic set>:
+\n```{interview_topics_feedbacks}```\n
 
 ---  
 Topic Generation Instructions and Constraints:  
@@ -254,7 +254,11 @@ class CollectiveInterviewTopicSchema(BaseModel):
 - Every skill must be included once across the three topics.  
 - Topics must be concrete, evaluable, and realistic for a timed technical interview.
 - You can use the mongo db database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "{thread_id}"
-- Don't make up any skill in the focus area unless present evidently in the annotated skill tree or project wise summary.
+- ```Don't make up any skill in the focus area unless written in the candidate_project_summary inside its projectwise_summary or in the detailed description of P1, P2 etc if not then don't write that, say for example, \
+If any project just mentions: <Fine-tuned models using pytorch> then possible focus areas should be fine tuning or pytorch only <If it is also satisfying the annotated skill tree constraint> but ML or Deep Learning or Evaluation should not be in the focus area even if they are present in the annotated skill tree. \
+Also another example, If a project mentions only about Machine Learning techniques like XGBoost, Naive Bayes etc then its focus areas should not have fine tuning as its not mentioned at all in the provided description, so rather use other skills as a focus area like Naive Bayes but that too only if it is present in the provided annotated skill tree. \
+So don't make any assumptions by yourself for the focus areas and use only the things provided in the given inputs or provided references.```
+
 '''
 
 # TOPIC_GENERATION_SELF_REFLECTION_PROMPT = '''
@@ -374,7 +378,7 @@ class CollectiveInterviewTopicSchema(BaseModel):
 
 TOPIC_GENERATION_SELF_REFLECTION_PROMPT = '''
 You are a pragmatic technical interviewer.  
-Your task is to review the three proposed interview topics and refine their focus areas so they are justified, without unnecessary over-correction and just keep it less strict.
+Your task is to review the three proposed interview topics and refine their focus areas so they are justified, without unnecessary over-corrections.
 
 ---
 Inputs
@@ -388,8 +392,13 @@ Interview Topics:
 — Review policy
 HARD rules (must always enforce):
 - Exactly 3 topics in total.
-- Each topic's focus_area MUST NOT be empty. If you want a skill to be removed, suggest it with another skill (which is present as an evidenced skill in the given annotated skill tree) which can be used for a normal interview discussion.
+- Each topic's focus_area MUST NOT be empty. If you want a skill to be removed, suggest it to generate another topic with different focus area and not generate the same topic by mentionioning that topic's name.
 -  Make sure skills in focus_area must be verbatim leaf skills from the annotated skill tree in the summary.
+- ```It should not make up any skill in the focus area unless written in the candidate_project_summary inside its projectwise_summary or in the detailed description of P1, P2 etc if not then don't write that, say for example, \
+If any project just mentions: <Fine-tuned models using pytorch> then possible focus areas should be fine tuning or pytorch only <If it is also satisfying the annotated skill tree constraint> but ML or Deep Learning or Evaluation should not be in the focus area even if they are present in the annotated skill tree. \
+Also another example, If a project mentions only about Machine Learning techniques like XGBoost, Naive Bayes etc then its focus areas should not have fine tuning as its not mentioned at all in the provided description, so rather use other skills as a focus area like Naive Bayes but that too only if it is present in the provided annotated skill tree. \
+So don't make any assumptions by yourself for the focus areas and use only the things provided in the given inputs or provided references.```
+
 - Output must strictly follow the JSON schema/structure as given below and return EXACTLY one JSON object:
 
 {{
@@ -398,8 +407,7 @@ HARD rules (must always enforce):
 }}
 
 Reference usage (optional):
-- You may fetch evidence from mongo db collections (cv: P*/E*, summary: D/S/T) using thread_id "{thread_id}" for getting more details if required.
-- Do not add any of the reference tokens that are not present in the provided context.
+- You may fetch evidence from mongo db collections (cv: P*/E*, summary: D/S/T) using thread_id "{thread_id}" as a reference for getting more details if required.
 
 — Decision guidance
 - satisfied=true if all hard rules are met. Small overlaps or stylistic issues may still remain.
