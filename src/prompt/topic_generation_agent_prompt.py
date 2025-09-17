@@ -193,38 +193,93 @@ class CollectiveInterviewTopicSchema(BaseModel):
 - You can use the MongoDB database fetching tools to fetch reference data for keys like P1, P2 (cv collection), E1, E2 (cv collection), D (domains_assess_D from summary), S (entire summary collection), and T (annotated_skill_tree_T from summary), with `_id` = "{thread_id}".
 '''
 
-TOPIC_GENERATION_SELF_REFLECTION_PROMPT = '''
-You are a pragmatic reviewer. Your job: lightly validate the three proposed topics and make MINIMAL edits only to fix hard issues. Prefer passing outputs rather than over-correcting.
+# TOPIC_GENERATION_SELF_REFLECTION_PROMPT = '''
+# You are a pragmatic reviewer. Your job: lightly validate the three proposed topics and make MINIMAL edits only to fix hard issues. Prefer passing outputs rather than over-correcting.
 
-INPUT
+# INPUT
+# Summary:
+# ```{generated_summary}```
+
+# Interview Topics:
+# ```{interview_topics}```
+
+# REFERENCE (optional)
+# You MAY fetch from MongoDB (cv: P*/E*, summary: D/S/T) using thread_id "{thread_id}" to verify tokens, but do not add new types of tokens.
+
+# HARD RULES (fix if violated)
+# - Exactly 3 topics.
+# - Each topic's focus_area is NON-EMPTY and contains 2-3 skills.
+# - Each skill is a verbatim leaf from the annotated skill tree in the Summary.
+# - Each skill has a short, concrete probe guideline.
+# - Total sum of total_questions across topics equals Summary.total_questions.
+# - necessary_reference_material is one of P*/E*/S/T/D (reuse is OK).
+
+# SOFT GUIDELINES (only if easy to improve)
+# - Prefer fewer duplicates of skills across topics (but duplicates are ALLOWED).
+# - Prefer a mix of topic types (project, case/scenario, coding/general) — not required.
+# - Prefer distributing references across topics — not required.
+
+# EDITING POLICY
+# - Make the smallest possible changes to achieve all HARD RULES.
+# - Keep topic names, why_this_topic, references, and total_questions UNCHANGED unless a HARD RULE forces a change.
+# - If a skill is not evidenced or not a valid leaf, replace it with a valid evidenced leaf; if no evidence, use the highest-weighted available leaf.
+
+# OUTPUT (JSON ONLY)
+# {{
+#   "satisfied": true | false,
+#   "updated_topics": {{
+#     "interview_topics": [
+#       {{
+#         "topic": "...",
+#         "why_this_topic": "...",
+#         "focus_area": {{ "Leaf Skill A": "Short probe guideline", "Leaf Skill B": "..." }},
+#         "necessary_reference_material": "P*/E*/S/T/D",
+#         "total_questions": 6
+#       }},
+#       {{ ... }},
+#       {{ ... }}
+#     ]
+#   }},
+#   "feedback": "1-3 short actionable notes max."
+# }}
+
+# DECISION
+# - satisfied=true if all HARD RULES are met after your minimal edits.
+# - satisfied=false only if you cannot fix HARD RULES without major changes; still return your best corrected attempt.
+# '''
+
+TOPIC_GENERATION_SELF_REFLECTION_PROMPT = '''
+You are a meticulous yet pragmatic technical interviewer.  
+Your task is to review the three proposed interview topics and refine their focus areas so they are accurate, justified, and mutually distinct without unnecessary over-correction.
+
+Input
 Summary:
-```{generated_summary}```
+\n```{generated_summary}```\n
 
 Interview Topics:
-```{interview_topics}```
+\n```{interview_topics}```\n
 
-REFERENCE (optional)
-You MAY fetch from MongoDB (cv: P*/E*, summary: D/S/T) using thread_id "{thread_id}" to verify tokens, but do not add new types of tokens.
+— Review policy
 
-HARD RULES (fix if violated)
-- Exactly 3 topics.
-- Each topic's focus_area is NON-EMPTY and contains 2-3 skills.
-- Each skill is a verbatim leaf from the annotated skill tree in the Summary.
-- Each skill has a short, concrete probe guideline.
-- Total sum of total_questions across topics equals Summary.total_questions.
-- necessary_reference_material is one of P*/E*/S/T/D (reuse is OK).
+HARD rules (must always enforce):
+- Exactly 3 topics in total.
+- Each topic's focus_area MUST NOT be empty. If a skill is removed, replace it with at least one evidenced leaf skill from the summary/skill tree.
+- Skills in focus_area must be verbatim leaf skills from the annotated skill tree in the summary. If a skill is not evidenced, replace with a valid alternative; do not invent.
+- No more than one duplicate skill across all topics. If ≥2 duplicates exist, you must redistribute or replace them to enforce stronger exclusivity.
+- Output must strictly follow the JSON schema below (no Python repr, no comments, no trailing commas).
 
-SOFT GUIDELINES (only if easy to improve)
-- Prefer fewer duplicates of skills across topics (but duplicates are ALLOWED).
-- Prefer a mix of topic types (project, case/scenario, coding/general) — not required.
-- Prefer distributing references across topics — not required.
+SOFT rules (apply if possible, but small deviations are acceptable):
+- Prefer mutual exclusivity across all three topics. One overlap is tolerable, but avoid it if a justified alternative exists.
+- Keep topic names, why_this_topic, references, and total_questions unchanged unless a hard rule forces a change.
+- Edits should be minimal and directly tied to evidence in the summary/skill tree.
 
-EDITING POLICY
-- Make the smallest possible changes to achieve all HARD RULES.
-- Keep topic names, why_this_topic, references, and total_questions UNCHANGED unless a HARD RULE forces a change.
-- If a skill is not evidenced or not a valid leaf, replace it with a valid evidenced leaf; if no evidence, use the highest-weighted available leaf.
+Reference usage (optional):
+- You MAY fetch evidence from mongo db collections (cv: P*/E*, summary: D/S/T) using thread_id "{thread_id}".
+- Do not add reference tokens that are not present in the provided context.
 
-OUTPUT (JSON ONLY)
+— Output contract (JSON ONLY)
+Return EXACTLY one JSON object with this structure:
+
 {{
   "satisfied": true | false,
   "updated_topics": {{
@@ -233,17 +288,20 @@ OUTPUT (JSON ONLY)
         "topic": "...",
         "why_this_topic": "...",
         "focus_area": {{ "Leaf Skill A": "Short probe guideline", "Leaf Skill B": "..." }},
-        "necessary_reference_material": "P*/E*/S/T/D",
+        "necessary_reference_material": "P*/E*/S/T/D token if present",
         "total_questions": 6
       }},
       {{ ... }},
       {{ ... }}
     ]
   }},
-  "feedback": "1-3 short actionable notes max."
+  "feedback": "Short, actionable notes (1-3 sentences)."
 }}
 
-DECISION
-- satisfied=true if all HARD RULES are met after your minimal edits.
-- satisfied=false only if you cannot fix HARD RULES without major changes; still return your best corrected attempt.
+— Decision guidance
+- satisfied=true if all hard rules are met. Small overlaps or stylistic issues may remain, with a note in feedback.
+- satisfied=false if any hard rule fails (e.g., empty focus_area, non-evidenced skill, too many duplicates, invalid count of topics). In that case, correct minimally and return the revised topics.
+- Always output valid JSON only — no strings, Python objects, or comments.
+
+Keep answers concise.
 '''
