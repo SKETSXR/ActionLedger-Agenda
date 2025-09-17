@@ -37,14 +37,14 @@ class QABlockGenerationAgent:
                 return v.strip()
         return "Unknown"
 
-    @staticmethod
-    def _find_summary_for_topic(topic_name: str, summaries_list: List[Any]) -> Optional[Any]:
-        want = (topic_name or "").strip().lower()
-        for s in summaries_list:
-            nm = (QABlockGenerationAgent._get_topic_name(s) or "").strip().lower()
-            if nm == want:
-                return s
-        return None
+    # @staticmethod
+    # def _find_summary_for_topic(topic_name: str, summaries_list: List[Any]) -> Optional[Any]:
+    #     want = (topic_name or "").strip().lower()
+    #     for s in summaries_list:
+    #         nm = (QABlockGenerationAgent._get_topic_name(s) or "").strip().lower()
+    #         if nm == want:
+    #             return s
+    #     return None
 
     @staticmethod
     async def _gen_for_topic(
