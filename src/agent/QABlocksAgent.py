@@ -10,10 +10,7 @@ from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import QASetsSchema
 from ..prompt.qa_agent_prompt import QA_BLOCK_AGENT_PROMPT
 from ..model_handling import llm_qa
-from src.utils import load_config
 
-config = load_config("config.yaml")
-thread_id = config["configurable"]["thread_id"] 
 
 class QABlockGenerationAgent:
     llm_qa = llm_qa
@@ -51,6 +48,7 @@ class QABlockGenerationAgent:
         topic_name: str,
         discussion_summary_json: str,
         deep_dive_nodes_json: str,
+        thread_id:str,
         qa_error: str = ""
     ) -> Tuple[Dict[str, Any], str]:
         """
@@ -60,8 +58,8 @@ class QABlockGenerationAgent:
         sys = QA_BLOCK_AGENT_PROMPT.format(
             discussion_summary=discussion_summary_json,
             deep_dive_nodes=deep_dive_nodes_json,
-            qa_error=qa_error or "",
-            thread_id=thread_id
+            thread_id=thread_id,
+            qa_error=qa_error or ""
         )
 
         try:
@@ -259,6 +257,7 @@ class QABlockGenerationAgent:
                 topic_name=topic_name,
                 discussion_summary_json=summary_json,
                 deep_dive_nodes_json=deep_dive_nodes_json,
+                thread_id=state.id,
                 qa_error=getattr(state, "qa_error", "") or ""
             )
 
@@ -285,6 +284,7 @@ class QABlockGenerationAgent:
                 topic_name=s_name,
                 discussion_summary_json=summary_json,
                 deep_dive_nodes_json=deep_dive_nodes_json,
+                thread_id=state.id,
                 qa_error=getattr(state, "qa_error", "") or ""
             )
 

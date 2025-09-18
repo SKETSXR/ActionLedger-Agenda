@@ -378,7 +378,7 @@ class CollectiveInterviewTopicSchema(BaseModel):
 
 TOPIC_GENERATION_SELF_REFLECTION_PROMPT = '''
 You are a pragmatic technical interviewer.  
-Your task is to review the three proposed interview topics and refine their topics or the current topic with new focus areas, so that focus areas so they are justified as evident in the generated summary, \
+Your task is to review the three proposed interview topics and refine their topics or the any topic with a respective new focus areas, so that focus areas so they are justified as evident in the generated summary, \
 without unnecessary over-corrections and don't be that much strict.
 
 ---

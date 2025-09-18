@@ -202,6 +202,10 @@ with open("config.yaml", "r") as yamlfile:
     config = yaml.load(yamlfile, Loader=yaml.FullLoader)
 
 graph = AgendaGenerationAgent.get_graph()
+# config["configurable"]["thread_id"]= "thread_12"
+
+# with open('config.yaml', 'w') as file:
+#     yaml.safe_dump(config, file)
 
 # otpt = graph.invoke(inp, config)
 otpt = asyncio.run(graph.ainvoke(inp, config))
@@ -218,7 +222,7 @@ for k, v in otpt.items():
     print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
     x += f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n"
 
-with open(r"testing\op1.txt", "a") as f:
+with open(r"testing\op9.txt", "a") as f:
     f.write(x)
 # for i, v in otpt.items():
 #     if hasattr(v, "model_dump_json"):

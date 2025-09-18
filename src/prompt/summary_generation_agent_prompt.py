@@ -124,8 +124,8 @@ Here are following headings
            "what_done": "...", <What was built/achieved i.e describe in 1-2 lines what the person did in each project and what the project was about (only technical) but each line should begin with the project id like P1 - "the 1-2 line description", P2 - "the 1-2 line description" and so on from the input candidate profile>
            "how_done": "...", <How it was implemented (approach/architecture)>
            "why_decisions": "...", <Key decisions and reasons during the project>
-           "tech_stack": "...", <Technologies used>
-           "walkthrough": "..." <Brief step-by-step of how each particular tech stack was used>
+           "tech_stack": "...", <Technologies used (if written/mentioned any)>
+           "walkthrough": "..." <Brief step-by-step of how each particular tech stack was used (if mentioned/written any)>
          }},
          ...
          {{

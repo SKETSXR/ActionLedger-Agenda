@@ -14,10 +14,6 @@ from ..prompt.discussion_summary_per_topic_generation_agent_prompt import (
     DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT
 )
 from ..model_handling import llm_dts
-from src.utils import load_config
-
-config = load_config("config.yaml")
-thread_id = config["configurable"]["thread_id"] 
 
 # set_llm_cache(InMemoryCache())
 
@@ -28,7 +24,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
     llm_dts_with_tools = llm_dts.bind_tools(MONGO_TOOLS) 
 
     @staticmethod
-    async def _one_topic_call(generated_summary_json: str, topic: Dict[str, Any]):
+    async def _one_topic_call(generated_summary_json: str, topic: Dict[str, Any], thread_id):
         """Call LLM once for a single topic and return a structured DiscussionTopic."""
         TopicEntry = DiscussionSummaryPerTopicSchema.DiscussionTopic
         resp = await PerTopicDiscussionSummaryGenerationAgent.llm_dts_with_tools \
@@ -79,7 +75,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
 
         # Run all topic calls concurrently
         tasks = [
-            asyncio.create_task(PerTopicDiscussionSummaryGenerationAgent._one_topic_call(generated_summary_json, topic))
+            asyncio.create_task(PerTopicDiscussionSummaryGenerationAgent._one_topic_call(generated_summary_json, topic, state.id))
             for topic in topics_list
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)

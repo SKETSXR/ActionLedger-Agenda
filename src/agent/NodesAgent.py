@@ -9,10 +9,6 @@ from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
 from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
 from ..model_handling import llm_n
-from src.utils import load_config
-
-config = load_config("config.yaml")
-thread_id = config["configurable"]["thread_id"] 
 
 
 class NodesGenerationAgent:
@@ -57,7 +53,7 @@ class NodesGenerationAgent:
         raise ValueError("total_questions must be >= 2 for each topic")
 
     @staticmethod
-    async def _gen_once(per_topic_summary_json: str, T, nodes_error) -> TopicWithNodesSchema:
+    async def _gen_once(per_topic_summary_json: str, T, nodes_error, thread_id) -> TopicWithNodesSchema:
         sys = NODES_AGENT_PROMPT.format(
             per_topic_summary_json=per_topic_summary_json,
             total_no_questions_context=T,
@@ -151,7 +147,7 @@ class NodesGenerationAgent:
             T = NodesGenerationAgent._get_total_questions(topic_obj, dspt_obj)
             per_topic_summary_json = NodesGenerationAgent._to_json_one(dspt_obj)
 
-            resp = await NodesGenerationAgent._gen_once(per_topic_summary_json, T, state.nodes_error)
+            resp = await NodesGenerationAgent._gen_once(per_topic_summary_json, T, state.id, state.nodes_error)
             out.append(resp)
 
         # Verify upstream summary wasn’t mutated

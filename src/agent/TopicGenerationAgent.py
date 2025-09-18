@@ -10,10 +10,6 @@ from ..schema.input_schema import SkillTreeSchema
 from ..prompt.topic_generation_agent_prompt import TOPIC_GENERATION_AGENT_PROMPT, TOPIC_GENERATION_SELF_REFLECTION_PROMPT
 from ..model_handling import llm_tg
 from src.mongo_tools import get_mongo_tools
-from src.utils import load_config
-
-config = load_config("config.yaml")
-thread_id = config["configurable"]["thread_id"] 
 
 # set_llm_cache(InMemoryCache())
 
@@ -40,7 +36,7 @@ class TopicGenerationAgent:
                     content=TOPIC_GENERATION_AGENT_PROMPT.format(
                         generated_summary=state.generated_summary.model_dump_json(),
                         interview_topics_feedbacks=state.interview_topics_feedbacks,
-                        thread_id=thread_id
+                        thread_id=state.id
                     )
                 ),
                 state.messages[-1] if len(state.messages) else ""
@@ -93,7 +89,7 @@ class TopicGenerationAgent:
                     content=TOPIC_GENERATION_SELF_REFLECTION_PROMPT.format(
                         generated_summary=state.generated_summary.model_dump_json(),
                         interview_topics=state.interview_topics.model_dump_json(),
-                        thread_id=thread_id
+                        thread_id=state.id
                     )
                 )
             ]
