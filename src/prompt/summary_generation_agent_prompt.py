@@ -117,7 +117,7 @@ Here are following headings
 
 3. Project-wise Summaries 
    - Write <separate project-wise summaries within this heading>.  
-   - <Output a structured JSON block for each project that matches our schema> that exactly matches the schema below and is based <only> on evidence from the candidate profile's project section:
+   - <Output a structured JSON block for each project that matches our schema> that exactly matches the schema below and is based <only> on a mentioned/written (not assumed) evidence from the candidate profile's project section:
      {{
        "projectwise_summary": [
          {{
@@ -138,7 +138,7 @@ Here are following headings
        ]
      }}
    Some guidelines for this JSON:
-   - If any field cannot be evidenced from the given candidate profile, write `"no such evidence"`.
+   - If any field can be evidenced <means it is mentioned/written and not just assumed> from the given candidate profile's project section (and not any other section) in that otherwise if not mentioned then, write `"no such evidence"`.
 
 4. Experience-wise Summaries 
    - Write separate experience-wise summaries with this heading.  
@@ -158,7 +158,7 @@ Here are following headings
 8. Annotated Skill Tree (T) 
    - Reproduce the skill tree exactly as given (keep names and weights only).  
    - Add a new key `"comment"` for each leaf (skill).  
-   - The `"comment"` must state the <exact evidence from the candidate profile in this format evidence - ... > if available, otherwise `"no such evidence"`.  
+   - If an exact evidence from the candidate profile's project section (not any other section) is written/mentioned (not as per your assumptions) there then only the `"comment"` must state this in a format <evidence - ... >, otherwise `"no such evidence"`.  
 
 9. Domains to assess (D)
    - Reproduce the annotated skill tree but all the domains from the annotated skill tree.  
