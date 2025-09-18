@@ -17,58 +17,85 @@ load_dotenv()
 # with open(r"new_jd.json", "r", encoding='utf-8') as j:
 #     jd = json.load(j)
 # jd_inp_text = """We are looking for a skilled Data Scientist to join our team at Tech Innovators Inc. The ideal candidate will have a strong background in statistical analysis, machine learning, and data visualization. Responsibilities include analyzing large datasets to extract insights, building predictive models, and collaborating with cross-functional teams to implement data-driven solutions. A bachelor's degree in Computer Science, Statistics, or a related field is required, with a preference for candidates holding a master's degree or higher. Experience with Python, R, SQL, and cloud platforms such as AWS or Azure is essential. Familiarity with big data technologies like Hadoop and Spark is a plus. Join us at Tech Innovators Inc., a leading company in the tech industry known for its innovative solutions and dynamic work environment."""
-jd_inp_text = '''
-AI/ML Engineer - L2 (Engineer I) 
+# jd_inp_text = '''
+# Software Engineer - L3 (Software Engineer II) 
 
-Location & Type: Delhi, Full-time 
+# Location & Type: Delhi , Full – Time 
 
-Role Overview 
+# Role Overview 
 
-Own ML features and  end-to-end  data prep, training, evaluation, and production inference with clear SLOs for latency, throughput, and model quality. . 
+# As a Software Engineer II, you will own and deliver larger cross-cutting modules and systems end-to-end across backend and frontend. You’ll write design docs, mentor junior engineers, lead technical discussions, and ensure reliability of critical features. This role expects strong skills in backend services, APIs, databases, and modern frontend frameworks (React/Next.js). 
 
-What You’ll Do 
+# What You’ll Do 
 
-Design and ship E2E ML features. 
+# Own and deliver larger modules/systems that span backend services and frontend applications. 
 
-Build and operate model-serving APIs (REST/GraphQL/gRPC), implement batching, retries, and circuit breakers. 
+# Author and present detailed design docs, drive technical discussions and trade-off decisions. 
 
-Optimize inference via model/graph optimizations (e.g., quantization, distillation, ONNX/TensorRT or equivalents). 
+# Build production-grade services in Node.js and integrate AI systems in Python. 
 
-Implement drift detection (data/label/embedding) and schedule versioned retraining. 
+# Architect high-performance REST/GraphQL APIs, ensure versioning, security, and backward compatibility. 
 
-Ensure reproducibility with experiment and data/model versioning, maintain clean runbooks. 
+# Design and optimize schemas in Postgres and MongoDB for scale and availability. 
 
-Collaborate on data contracts and reliable feature pipelines with product/data/platform teams. 
+# Lead development of frontend features in React/Next.js with focus on performance, accessibility, and maintainability. 
 
-Contribute to on-call for ML services you own,write postmortems and harden guardrails. 
+# Enforce CI/CD best practices: test automation, deployment readiness, and rollback strategies. 
 
-Technical Qualifications 
+# Define and monitor observability standards (metrics, logs, alerts) and lead incidents. 
 
-2–3 years in ML engineering - strong Python and one major DL framework (PyTorch or TensorFlow). 
+# Mentor and coach junior engineers through reviews, pair programming, and knowledge sharing. 
 
-Solid data manipulation (NumPy/Pandas or equivalent) and evaluation design (precision/recall, ROC-AUC, calibration). 
+# Design and roll out multi-layer caching for high-traffic paths, define hit-rate/latency SLOs. 
 
-Production serving experience , API design understanding. 
+# Establish cache governance: keys/namespaces, TTL policies, invalidation playbooks, and observability (hit/miss dashboards). 
 
-Comfortable with relational and NoSQL data stores, can design efficient schemas/queries for features and logs. 
+# Technical Qualifications 
 
-Containers + CI/CD basics (Docker/Kubernetes or managed equivalents), can ship, roll back, and instrument services. 
+# 3–4 years of professional software engineering experience. 
 
-Monitoring/observability (logs, metrics, traces) for both system and model quality signals. 
+# Advanced proficiency in Node.js services and Python integrations. 
 
-Working knowledge of caching and when not to cache. 
+# Strong experience in REST/GraphQL API design and scaling. 
 
-Nice to Have 
+# Deep knowledge of Postgres schema design, indexing, and query optimization. 
 
-Experience with LLM adapters , embeddings + vector stores , and RAG patterns. 
+# Hands-on with MongoDB aggregation pipelines and sharding strategies. 
 
-Orchestration/ETL tools , experiment tracking, and data versioning. 
+# Proficiency with React/Next.js (or equivalent) for building production UIs. 
 
-Practical cost/performance tuning (GPU utilization, mixed precision). 
+# Experience with AWS ECS/ECR and scaling containerized workloads. 
+
+# Strong CI/CD practices and release automation experience. 
+
+# Skilled in diagnosing and fixing production issues using logs, metrics, and traces. 
+
+# Solid system design skills: concurrency, fault tolerance, latency vs. throughput trade-offs. 
+
+# Hands-on with Redis at scale (pipelines, Lua scripts, locks), CDN edge caching, and GraphQL/REST response caching. 
+
+# Deep understanding of consistency vs. freshness trade-offs, idempotency, and rate limiting around cached flows. 
+
+# Nice to Have 
+
+# TypeScript proficiency in both frontend and backend. 
+
+# Kubernetes (EKS) and service mesh (Istio/Linkerd). 
+
+# Infrastructure-as-Code (Terraform/CDK/CloudFormation). 
+
+# Distributed systems patterns (event-driven, CQRS, async messaging). 
+
+# Advanced monitoring/alerting (Prometheus, Grafana, ELK, OpenTelemetry). 
+
+# Experience leading technical spikes, POCs, or cross-team integrations. 
 
  
     
-'''
+# '''
+
+with open(r"testing\Ayam\jd.txt", "r", encoding="utf-8") as f:
+    jd_inp_text = f.read()
 jd_json_string = asyncio.run(parse_jd_text_to_json(jd_inp_text))
 if jd_json_string == "JD not contain any text":
     raise("Open AI API not running")
@@ -79,7 +106,7 @@ jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["comp
 # with open(r"parsed_cv7.json", "r", encoding='utf-8') as c:
 #     candidate_profile = json.load(c)
 
-candidate_profile = asyncio.run(parse_pdf_to_json(r"testing\Sreelal\Sreelal_H_Resume (5) - Sreelal H.pdf"))
+candidate_profile = asyncio.run(parse_pdf_to_json(r"testing\Ayam\AyamHeniberMeitei_2025L - ayam heniber.pdf"))
 # print(candidate_profile)
 if candidate_profile == "CV does not contain proper text":
     raise("Open AI API not running")
@@ -93,7 +120,7 @@ cp = CandidateProfileSchema(skills=candidate_profile["skills"],
 def load_skill_tree(tree_json: dict) -> SkillTreeSchema:
     return SkillTreeSchema(**tree_json)
 
-with open(r"testing\Sreelal\skill_tree.json", "r") as f:
+with open(r"testing\Ayam\skill_tree.json", "r", encoding="utf-8") as f:
     tree_data = json.load(f)
 
 root = load_skill_tree(tree_data)
@@ -222,7 +249,7 @@ for k, v in otpt.items():
     print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
     x += f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n"
 
-with open(r"testing\op11.txt", "a") as f:
+with open(r"testing\op15.txt", "a", encoding="utf-8") as f:
     f.write(x)
 # for i, v in otpt.items():
 #     if hasattr(v, "model_dump_json"):

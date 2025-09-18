@@ -29,7 +29,7 @@ Now extract structured data and return only in a JSON format in this given forma
     {{
       "id": "...", <Assign a unique id to each project like P1, P2, etc>
       "title": "...",
-      "description": "..."
+      "description": "..." <If a proper description is not there but only skills or any related and relevant text is there for the respective project then write that as it should not be blank> 
     }}
   ]
 }}

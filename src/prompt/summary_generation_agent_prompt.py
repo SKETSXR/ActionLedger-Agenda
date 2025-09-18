@@ -117,15 +117,22 @@ Here are following headings
 
 3. Project-wise Summaries 
    - Write <separate project-wise summaries within this heading>.  
-   - <Output a structured JSON block for each project that matches our schema> that exactly matches the schema below and is based <only> on a mentioned/written (not assumed) evidence from the candidate profile's project section:
+   - <Output the structured JSON block which exactly matches the schema below and this JSON block will be having different JSON blocks for each respective project in the projectwise_summary key's value which being a list> and ```it is based <only> on a mentioned/written (not assumed) evidence from the candidate profile's project section```:
      {{
        "projectwise_summary": [
          {{
-           "what_done": "...", <What was built/achieved i.e describe in 1-2 lines what the person did in each project and what the project was about (only technical) but each line should begin with the project id like P1 - "the 1-2 line description", P2 - "the 1-2 line description" and so on from the input candidate profile>
+           "what_done": "...", <What was built/achieved i.e describe in 1-2 lines what the person did in each project and what the project was about (only technical) but each line should begin with the project id like P1 - "the 1-2 line description">
            "how_done": "...", <How it was implemented (approach/architecture)>
            "why_decisions": "...", <Key decisions and reasons during the project>
            "tech_stack": "...", <Technologies used (if written/mentioned any)>
            "walkthrough": "..." <Brief step-by-step of how each particular tech stack was used (if mentioned/written any)>
+         }},
+         {{
+           "what_done": "...", <Eg. P2 - "the 1-2 line description" and so on from the input candidate profile>
+           "how_done": "...", 
+           "why_decisions": "...",
+           "tech_stack": "...",
+           "walkthrough": "..."
          }},
          ...
          {{
