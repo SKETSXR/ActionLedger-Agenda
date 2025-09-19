@@ -11,7 +11,10 @@ async def parse_jd_text_to_json(jd_text):
     {{
         "job_role":"actual job role name - ...",
         "fundamental_knowledge": "...",  <If it is not mentioned then it should be null always>
-        "company_background":"actual company name - ..."
+        "company_background":"actual company name - ...",
+        "cannot_skip_skills: [...], <List of skills that the job description does not want them to be skipped>
+        "optional_topics_high_priority": [...], <List of skills that the job description says as optional or nice to have or of simillar kind/ilk but are mentioned or required at a high priority; if they aren't present then keep them as null>
+        "optional_topics_low_priority": [...] <List of skills that the job description says as optional or nice to have or of simillar kind/ilk but are mentioned or required at a low priority; if they aren't present then keep them as null>
     }}
     Job Description Text:
     \"\"\"{jd_text}\"\"\"'''

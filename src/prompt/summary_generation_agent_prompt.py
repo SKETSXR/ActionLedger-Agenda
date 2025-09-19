@@ -162,7 +162,7 @@ Here are following headings
 8. Annotated Skill Tree (T) 
    - Reproduce the skill tree exactly as given (keep names and weights only).  
    - Add a new key `"comment"` for each leaf (skill).  
-   - If an exact evidence from the candidate profile's project section (not any other section) is written/mentioned (not as per your assumptions) there then only the `"comment"` must state this in a format <evidence - ... >, otherwise `"no such evidence"`.  
+   - If an exact evidence from the candidate profile is written/mentioned (not as per your assumptions) there then only the `"comment"` must state this in a format <evidence - ... >, otherwise `"no such evidence"`.  
 
 9. Domains to assess (D)
    - Reproduce the annotated skill tree but all the domains from the annotated skill tree.  

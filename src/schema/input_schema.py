@@ -100,6 +100,29 @@ class JobDescriptionSchema(BaseModel):
             examples=["B.Tech or M.Tech in any field"]
         )
     ]
+    cannot_skip_skills: Annotated[
+        list[str],
+        Field(
+            description="Educational qualifications if required",
+            examples=["B.Tech or M.Tech in any field"]
+        )
+    ]
+    optional_topics_high_priority: Annotated[
+        Optional[list[str]],
+        Field(
+            default=None,
+            description="Educational qualifications if required",
+            examples=["B.Tech or M.Tech in any field"]
+        )
+    ]
+    optional_topics_low_priority: Annotated[
+        Optional[list[str]],
+        Field(
+            default=None,
+            description="Educational qualifications if required",
+            examples=["B.Tech or M.Tech in any field"]
+        )
+    ]
 
 
 class QuestionGuidelinesSchema(BaseModel):
