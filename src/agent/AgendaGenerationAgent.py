@@ -102,10 +102,14 @@ class AgendaGenerationAgent:
 
         try:
 
-            jd_collection.insert_one(jd)
-            cv_collection.insert_one(cv)
-            skill_tree_collection.insert_one(skill_tree)
-            summary_collection.insert_one(summary)
+            # jd_collection.insert_one(jd)
+            # cv_collection.insert_one(cv)
+            # skill_tree_collection.insert_one(skill_tree)
+            # summary_collection.insert_one(summary)
+            jd_collection.replace_one({"_id": state.id}, jd, upsert=True)
+            cv_collection.replace_one({"_id": state.id}, cv, upsert=True)
+            skill_tree_collection.replace_one({"_id": state.id}, skill_tree, upsert=True)
+            summary_collection.replace_one({"_id": state.id}, summary, upsert=True)
             # db = client[state.mongo_db]
             # collections = db.list_collection_names()
             # if "question_guidelines" not in collections:

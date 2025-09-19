@@ -156,10 +156,11 @@ Topic Generation Instructions and Constraints:
    - Case study based on company's profile
    - Coding question  
    - General skill assessment  
+
 - Within each discussion topic, you must clearly include:  
    1. `topic` - a short, concise name (3-5 words). 
    2. `why_this_topic` - A short reason for why this discussion topic has been chosen. 
-   3. `focus_area` - a set of skills (taken only from the summary which got selected from leaves/last level of the annotated skill tree) that will be tested in this topic write a guideline for each of the respective focus area saying that you have to focus on this respective skill, but those skills must have some evidence present in project wise summary also.  
+   3. `focus_area` - a set of skills (taken only from the summary which got selected from leaves/last level of the annotated skill tree) that will be tested in this topic write a guideline for each of the respective focus area saying that you have to focus on this respective skill, but prioritise those skills that have any evidence present in project wise summary otherwise go with others.  
    4. `necessary_reference_material` - placeholder for reference purpose based on what discussion will happen with the candidate also if a project is written here as reference then use exact given project id (P1 or P2 etc), experience id (E1 or E2 etc), summary key (S), skill tree (T) and domains (D) and nothing else etc only use the references that are mentioned and don't consider non mentioned or null as references for your topics.  
    5. `total_questions` - total number of questions to be asked in each topic can be random and need not be same.
 
