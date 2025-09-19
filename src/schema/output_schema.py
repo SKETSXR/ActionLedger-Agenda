@@ -35,7 +35,6 @@ class JobRequirementsSummarySchema(BaseModel):
 class ProjectReasoningSummarySchema(BaseModel):
     what_done: Annotated[str, Field(..., description="What was built/achieved")]
     how_done: Annotated[str, Field(..., description="How it was implemented (approach/architecture)")]
-    why_decisions: Annotated[str, Field(..., description="Key decisions and reasons during the project")]
     tech_stack: Annotated[str, Field(..., min_items=1, description="Technologies used")]
     walkthrough: Annotated[str, Field(..., description="Brief step-by-step of how each particular tech stack was used")]
 

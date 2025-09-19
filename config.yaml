@@ -50,7 +50,7 @@ configurable:
   # reasoning_effort_qa: minimal
   temperature_qa: 0
 
-  thread_id: thread_41
+  thread_id: thread_1
   
   
   # # Open AI models

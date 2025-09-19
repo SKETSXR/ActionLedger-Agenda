@@ -123,14 +123,12 @@ Here are following headings
          {{
            "what_done": "...", <What was built/achieved i.e describe in 1-2 lines what the person did in each project and what the project was about (only technical) but each line should begin with the project id like P1 - "the 1-2 line description">
            "how_done": "...", <How it was implemented (approach/architecture)>
-           "why_decisions": "...", <Key decisions and reasons during the project>
            "tech_stack": "...", <Technologies used (if written/mentioned any)>
            "walkthrough": "..." <Brief step-by-step of how each particular tech stack was used (if mentioned/written any)>
          }},
          {{
            "what_done": "...", <Here comes 2nd project being P2 and it should be like, P2 - "the 1-2 line description" from the input candidate profile>
-           "how_done": "...", 
-           "why_decisions": "...",
+           "how_done": "...",
            "tech_stack": "...",
            "walkthrough": "..."
          }},
@@ -138,7 +136,6 @@ Here are following headings
          {{
            "what_done": "...", <Here comes nth project being PN and it should be like, PN - "the 1-2 line description" from the input candidate profile>
            "how_done": "...", 
-           "why_decisions": "...",
            "tech_stack": "...",
            "walkthrough": "..."
          }}
