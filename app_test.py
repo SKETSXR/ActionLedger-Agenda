@@ -14,8 +14,8 @@ from dotenv import load_dotenv
 start = time.time_ns()
 load_dotenv()
 
-# with open(r"new_jd.json", "r", encoding='utf-8') as j:
-#     jd = json.load(j)
+with open(r"jd2.json", "r", encoding='utf-8') as j:
+    jd = json.load(j)
 # jd_inp_text = """We are looking for a skilled Data Scientist to join our team at Tech Innovators Inc. The ideal candidate will have a strong background in statistical analysis, machine learning, and data visualization. Responsibilities include analyzing large datasets to extract insights, building predictive models, and collaborating with cross-functional teams to implement data-driven solutions. A bachelor's degree in Computer Science, Statistics, or a related field is required, with a preference for candidates holding a master's degree or higher. Experience with Python, R, SQL, and cloud platforms such as AWS or Azure is essential. Familiarity with big data technologies like Hadoop and Spark is a plus. Join us at Tech Innovators Inc., a leading company in the tech industry known for its innovative solutions and dynamic work environment."""
 # jd_inp_text = '''
 # Software Engineer - L3 (Software Engineer II) 
@@ -94,23 +94,24 @@ load_dotenv()
     
 # '''
 
-with open(r"testing\Nitish\jd.txt", "r", encoding="utf-8") as f:
-    jd_inp_text = f.read()
-jd_json_string = asyncio.run(parse_jd_text_to_json(jd_inp_text))
-if jd_json_string == "JD not contain any text":
-    raise("Open AI API not running")
-jd = json.loads(jd_json_string)
+# with open(r"testing\Nitish\jd.txt", "r", encoding="utf-8") as f:
+#     jd_inp_text = f.read()
+# jd_json_string = asyncio.run(parse_jd_text_to_json(jd_inp_text))
+# if jd_json_string == "JD not contain any text":
+#     raise("Open AI API not running")
+# jd = json.loads(jd_json_string)
+
 jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["company_background"], fundamental_knowledge=jd.get("fundamental_knowledge"))
 # print(jdes.model_dump_json(indent=2))
 
-# with open(r"parsed_cv7.json", "r", encoding='utf-8') as c:
-#     candidate_profile = json.load(c)
+with open(r"parsed_cv18.json", "r", encoding='utf-8') as c:
+    candidate_profile = json.load(c)
 
-candidate_profile = asyncio.run(parse_pdf_to_json(r"testing\Nitish\nitish_resume-8 - Nitish Pratap Yadav.pdf"))
-# print(candidate_profile)
-if candidate_profile == "CV does not contain proper text":
-    raise("Open AI API not running")
-candidate_profile = json.loads(candidate_profile)
+# candidate_profile = asyncio.run(parse_pdf_to_json(r"testing\Nitish\nitish_resume-8 - Nitish Pratap Yadav.pdf"))
+# # print(candidate_profile)
+# if candidate_profile == "CV does not contain proper text":
+#     raise("Open AI API not running")
+# candidate_profile = json.loads(candidate_profile)
 cp = CandidateProfileSchema(skills=candidate_profile["skills"],
                             projects=candidate_profile["projects"],
                             experience=candidate_profile["experience"])
@@ -120,7 +121,7 @@ cp = CandidateProfileSchema(skills=candidate_profile["skills"],
 def load_skill_tree(tree_json: dict) -> SkillTreeSchema:
     return SkillTreeSchema(**tree_json)
 
-with open(r"testing\Nitish\skill_tree.json", "r", encoding="utf-8") as f:
+with open(r"skilltree2.json", "r", encoding="utf-8") as f:
     tree_data = json.load(f)
 
 root = load_skill_tree(tree_data)
