@@ -326,7 +326,8 @@ Suggested output format
 
 
 Optional reference
-If useful, you can consult MongoDB (cv: P*/E*, summary: D/S/T) with thread_id "{thread_id}".
+If useful, you can consult to a mongo db database for a data of question generation guidelines which will help you in giving out your output and they are being present in the collection named question_guidelines with each type "Case study type questions", "Project based questions" and "Counter questions" being mentioned as _id key of each respective guideline record.
+You can also consult to a mongo db database for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "{thread_id}"
 
 Decision notes
 
