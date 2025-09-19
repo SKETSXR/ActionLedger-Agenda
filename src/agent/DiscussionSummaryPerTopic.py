@@ -81,15 +81,41 @@ class PerTopicDiscussionSummaryGenerationAgent:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Collect successful DiscussionTopic entries
+        # discussion_topics = []
+        # for idx, r in enumerate(results):
+        #     if isinstance(r, Exception):
+        #         continue
+        #     # r is already a structured DiscussionSummaryPerTopicSchema.DiscussionTopic
+        #     try:
+        #         discussion_topics.append(r)
+        #     except Exception as e:
+        #         print("Topic %d: could not append structured response (%s)", idx, e)
+
+        # Collect successful DiscussionTopic entries
         discussion_topics = []
         for idx, r in enumerate(results):
             if isinstance(r, Exception):
                 continue
-            # r is already a structured DiscussionSummaryPerTopicSchema.DiscussionTopic
+
+            # force exact topic name from the corresponding input
+            in_topic = (
+                topics_list[idx].get("topic")
+                or topics_list[idx].get("name")
+                or topics_list[idx].get("title")
+                or "Unknown"
+            )
             try:
+                if hasattr(r, "model_copy"):           # pydantic v2
+                    r = r.model_copy(update={"topic": in_topic})
+                elif hasattr(r, "copy"):               # pydantic v1
+                    r = r.copy(update={"topic": in_topic})
+                elif isinstance(r, dict):
+                    r["topic"] = in_topic
+                else:
+                    setattr(r, "topic", in_topic)
                 discussion_topics.append(r)
             except Exception as e:
-                print("Topic %d: could not append structured response (%s)", idx, e)
+                print(f"Topic {idx}: could not append structured response ({e})")
 
         state.discussion_summary_per_topic = DiscussionSummaryPerTopicSchema(
             discussion_topics=discussion_topics
