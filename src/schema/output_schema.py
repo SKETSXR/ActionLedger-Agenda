@@ -63,6 +63,8 @@ class AnnotatedSkillTreeSummarySchema(BaseModel):
             examples=[0.2]
         )
     ]
+    priority: Literal["must", "high", "low"] = Field(..., description="Priority of the skill or domain", examples=["must", "high", "low"])
+    
     comment: Annotated[
         Optional[str],
         Field(
@@ -79,6 +81,7 @@ class AnnotatedSkillTreeSummarySchema(BaseModel):
 class DomainToAssessSchema(BaseModel):
     name: str = Field(..., description="Domain name, e.g., 'Machine Learning'")
     weight: float = Field(..., description="Normalized importance in [0, 1]")
+    priority: Literal["must", "high", "low"] = Field(..., description="Priority of the skill or domain", examples=["must", "high", "low"])
 
 
 class DomainsToAssessListSchema(BaseModel):
@@ -103,10 +106,29 @@ class GeneratedSummarySchema(TotalQuestionsSchema):
     domains_assess_D: DomainsToAssessListSchema
 
 
+class FocusAreaSchema(BaseModel):
+    skill: str = Field(..., description="Verbatim leaf skill from annotated skill tree")
+    guideline: str = Field(..., description="Brief guideline on what to focus on for this skill")
+
+
 class TopicSchema(BaseModel):
     topic: Annotated[str, Field(..., description="Short name of the discussion topic")]
     why_this_topic: Annotated[str, Field(..., description="A short reason for why this discussion topic has been chosen")]
-    focus_area: Annotated[Dict[str, str], Field(..., description="skill -> focus description")]
+    # focus_area: Annotated[Dict[str, str], Field(..., description="skill -> focus on this area")]
+    focus_area: List[FocusAreaSchema] = Field(
+        ...,
+        description="List of focus skills with guidelines (each item is {skill, guideline})",
+        examples=[[
+            {"skill": "System design (throughput, latency, fault tolerance)",
+             "guideline": "Probe trade-offs in throughput/latency/fault tolerance for the candidate's context."},
+            {"skill": "Node.js (advanced services, concurrency, resilience)",
+             "guideline": "Discuss patterns for concurrency, resilience, retries, and graceful degradation."},
+            {"skill": "GraphQL & REST (scaling & governance)",
+             "guideline": "Check versioning, schema governance, backward compatibility, and rate limiting."},
+            {"skill": "Postgres: indexing, query tuning, partitioning",
+             "guideline": "Evaluate indexing choices, query plans, and partitioning strategies."}
+        ]]
+    )
     necessary_reference_material: Annotated[str, Field(..., description="Reference material for this topic")]
     total_questions: Annotated[int, Field(..., description="Planned question count")]
 

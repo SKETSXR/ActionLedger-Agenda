@@ -160,13 +160,13 @@ Here are following headings
    - List the skills required by the company as per the Skill Tree but not known to the candidate.  
 
 8. Annotated Skill Tree (T) 
-   - Reproduce the skill tree exactly as given (keep names and weights only).  
+   - Reproduce the skill tree exactly as given (keep names, priority and weights only).  
    - Add a new key `"comment"` for each leaf (skill).  
    - If an exact evidence from the candidate profile is written/mentioned (not as per your assumptions) there then only the `"comment"` must state this in a format <evidence - ... >, otherwise `"no such evidence"`.  
 
 9. Domains to assess (D)
    - Reproduce the annotated skill tree but all the domains from the annotated skill tree.  
-   - Just write the name and weight keys on this generated Json and not write others and just write domains with name and weight and not root etc.
+   - Just write the name, priority and weight keys on this generated Json and not write others and just write domains with name, priority and weight and not root etc.
 
 10. Total questions in entire interview
    - Should be a less than or equal to a maximum 18 as per feasiblity in a real interview.
