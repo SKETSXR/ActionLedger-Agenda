@@ -114,8 +114,12 @@ class TopicGenerationAgent:
             if i not in set(focus_area_list):
                 skill_list += ", " + i
 
+        feedback = ""
         if skill_list != "":
-            state.interview_topics_feedback = {"satisfied": False, "feedback": f"Add the list of missing `must` priority skills: {skill_list} to the topic which is related to the General Skill Assessment"}
+            if state.interview_topics_feedback is not None:
+                feedback = state.interview_topics_feedback.feedback
+            feedback += f"Add the list of missing `must` priority skills: {skill_list} to the topic which is related to the General Skill Assessment"
+            state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
             # state.interview_topics_feedback.feedback += f"Add the list of missing `must` priority skills: {skill_list} to the topic which is related to the General Skill Assessment"
             # state.interview_topics_feedback.satisfied = False
             return False
