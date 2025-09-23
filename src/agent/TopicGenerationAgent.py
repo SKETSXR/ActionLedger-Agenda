@@ -69,7 +69,7 @@ class TopicGenerationAgent:
         # print(skills_priority_must)
         # print(all_skill_leaves)
 
-        print(state.interview_topics.model_dump())
+        # print(state.interview_topics.model_dump())
         focus_area_list = []
         for t in state.interview_topics.interview_topics:
             for i in t.focus_area:
