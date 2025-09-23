@@ -39,8 +39,8 @@ class TopicGenerationAgent:
                         interview_topics_feedbacks=state.interview_topics_feedbacks,
                         thread_id=state.id
                     )
-                ),
-                state.messages[-1] if len(state.messages) else ""
+                )
+                # state.messages[-1] if len(state.messages) else ""
             ]
         )
         state.interview_topics = response
@@ -50,22 +50,31 @@ class TopicGenerationAgent:
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
 
-        def level3_leaves(root: SkillTreeSchema) -> list[SkillTreeSchema]:
+        def level3_leavesp(root: SkillTreeSchema) -> list[SkillTreeSchema]:
             if not root.children:
                 return []
-            leaves: list[SkillTreeSchema] = []
             skills_priority_must: list[SkillTreeSchema] = []
             for domain in root.children:                 
                 for leaf in (domain.children or []):
                     if not leaf.children:  # only pick true leaves
                         if leaf.priority == "must":
                             skills_priority_must.append(leaf)
-                        leaves.append(leaf)
-            # return leaves
+
             return skills_priority_must
 
-        # all_skill_leaves = [leaf.name for leaf in level3_leaves(state.skill_tree)]
-        skills_priority_must = [leaf.name for leaf in level3_leaves(state.skill_tree)]
+        def level3_leaves(root: SkillTreeSchema) -> list[SkillTreeSchema]:
+            if not root.children:
+                return []
+            leaves: list[SkillTreeSchema] = []
+            for domain in root.children:                 
+                for leaf in (domain.children or []):
+                    if not leaf.children:  # only pick true leaves
+                        leaves.append(leaf)
+            return leaves
+
+
+        all_skill_leaves = [leaf.name for leaf in level3_leaves(state.skill_tree)]
+        skills_priority_must = [leaf.name for leaf in level3_leavesp(state.skill_tree)]
         # print(skills_priority_must)
         # print(all_skill_leaves)
 
@@ -91,9 +100,9 @@ class TopicGenerationAgent:
         # print(f"Skill Tree List {all_skill_leaves}")
 
         # print(f"\nFocus Area List {focus_area_list}")
-        # for i in focus_area_list:
-        #     if i not in all_skill_leaves:
-        #         return False
+        for i in focus_area_list:
+            if i not in all_skill_leaves:
+                return False
 
         # response = await TopicGenerationAgent.llm_tg_with_tools \
         # .with_structured_output(CollectiveInterviewTopicFeedbackSchema, method="function_calling") \
@@ -118,7 +127,7 @@ class TopicGenerationAgent:
         if skill_list != "":
             if state.interview_topics_feedback is not None:
                 feedback = state.interview_topics_feedback.feedback
-            feedback += f"Add the list of missing `must` priority skills: {skill_list} to the topic which is related to the General Skill Assessment"
+            feedback += f"Please keep the topic set as it is irresepective of below instructions: ```\n{state.interview_topics.model_dump()}```\n But add the list of missing `must` priority skills: \n{skill_list}\n to the focus areas of the last topic which being General Skill Assessment"
             state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
             # state.interview_topics_feedback.feedback += f"Add the list of missing `must` priority skills: {skill_list} to the topic which is related to the General Skill Assessment"
             # state.interview_topics_feedback.satisfied = False

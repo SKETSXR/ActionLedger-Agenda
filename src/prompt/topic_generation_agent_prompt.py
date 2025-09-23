@@ -88,7 +88,7 @@ Previous feedbacks if any <use it to generate better entire topic set>:
 Topic Generation Instructions and Constraints:  
 - Output must contain exactly three discussion topics.  
 - Each topic should be one of the following types <try to cover all of these types if possible>:  
-   - Project-related discussion  
+   - Project-related discussion  <This topic should mention the given project's name as mentioned and don't use keys like P1 or P2 or P3 etc.>
    - Case study based on company's profile  
    - Coding question  
    - General skill assessment  <This type of topic should always be there as a last topic and all the skills/leaves from the annotated skill tree having a must priority that were left out in any of your other topics should be written in this topic's focus area>
@@ -139,7 +139,7 @@ class CollectiveInterviewTopicSchema(BaseModel):
 - Topics must be concrete, evaluable, and realistic for a timed technical interview.  
 - You shall use the mongo db database fetching tools to fetch on data of question generation guidelines which will help you in giving out your output and they are being present in the collection named question_guidelines with each type "Case study type questions", "Project based questions" and "Counter questions" being mentioned as _id key of each respective guideline record.  
 - You shall also use the mongo db database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "{thread_id}"  
-- <Do not write P1, P2, E3, T, D, S etc anywhere except inside `necessary_reference_material`>  
+- <Do not write keys like P1, P2, E3, T, D, S etc anywhere except inside `necessary_reference_material`>  
 '''
 
 
