@@ -1,11 +1,10 @@
-import json
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage
 from langchain.globals import set_llm_cache
 from langchain_community.cache import InMemoryCache
 from langchain_core.tools import tool
 from ..schema.agent_schema import AgentInternalState
-from ..schema.output_schema import CollectiveInterviewTopicSchema, CollectiveInterviewTopicFeedbackSchema
+from ..schema.output_schema import CollectiveInterviewTopicSchema
 from ..schema.input_schema import SkillTreeSchema
 from ..prompt.topic_generation_agent_prompt import TOPIC_GENERATION_AGENT_PROMPT
 # from ..prompt.topic_generation_agent_prompt import TOPIC_GENERATION_SELF_REFLECTION_PROMPT
