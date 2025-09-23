@@ -995,7 +995,10 @@ HARD CONSTRAINTS (must need this exactly; fix if any schema related issues with 
 - Recommended ordering and IDs (strict but you MAY reorder if needed): 
   QA1..QA3 = New(E, M, H), QA4..QA5 = Counter(Twist + M, Twist + H), QA6..QA7 = Counter(Interrogatory + M, Interrogatory + H)
 - For each topic every QA item MUST include exactly 5 concise, technical example questions (no placeholders, no empty strings).
-- Use all skills/focus areas only that appear in the combination of all node's `skills` / `focus_area` lists and make sure none of them is left out, also try to use combination of as much skills as much as possible in making your example questions but they should still make sense.
+- For any QA try to use combination of as much skills as much as possible in making your example questions but they should still make sense. So make sure to do the following things:
+  1. Use all skills/focus areas only that appear in the combination of all node's `skills` / `focus_area` lists of the Deep dive Nodes and make sure none of them is left out,
+  2. Ensure none of the skills present in the `focus_areas` of the Deep Dive type sequence of each respective topic of the discussion summary is not left out and is used completely
+ also 
 - If any previous attempts failed, you will receive `qa_error` for the schema below as a feedback if having any then you can use it to fix your generated schema while keeping the intent.
 
 QA Generation Rules
