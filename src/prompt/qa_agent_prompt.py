@@ -781,7 +781,192 @@
 #   ]
 # }}
 # '''
-# New format QAs 5
+# # New format QAs 5
+# QA_BLOCK_AGENT_PROMPT = '''
+# You are a question answer block generator for technical interviews.
+# Your task is to generate example questions for each deep dive QA block across all 3 topics given from a discussion summary as input.
+
+# ---
+# You will be given three inputs: discussion summary, node for a deep dive question in each topic, and some guideline set for QA blocks.
+
+# Inputs:
+# Discussion Topic Summary:
+# \n```{discussion_summary}```\n
+
+# Deep-dive nodes for question generation:
+# \n````{deep_dive_nodes}```\n
+
+# Conditional schema related error as feedback for previous wrong generations if any:
+# \n```{qa_error}```\n
+
+# You shall use the mongo db database fetching tools to fetch on data for example question generation guidelines being present in the collection named question_guidelines with each type "Case study type questions", "Project based questions" and "Counter questions" being mentioned as _id key of each respective guideline record.
+# ---
+
+# HARD CONSTRAINTS (must need this exactly; fix if any schema related issues with the feedback provided through the qa_error):
+# - For each QA block per topic, output EXACTLY 7 QA items covering these combinations (no more, no less, no duplicates):
+#   • New Question    - Easy, Medium, Hard  (3 items)
+#   • Counter Question - Twist - Medium, Hard        (2 items)  <no Easy counters>
+#   • Counter Question - Interrogatory - Medium, Hard        (2 items)  <no Easy counters>
+# - Recommended ordering and IDs (strict but you MAY reorder if needed): 
+#   QA1..QA3 = New(E, M, H), QA4..QA5 = Counter(Twist + M, Twist + H), QA6..QA7 = Counter(Interrogatory + M, Interrogatory + H)
+# - For each topic every QA item MUST include exactly 5 concise, technical example questions (no placeholders, no empty strings).
+# - Use only skills/focus areas that appear verbatim in the union of all nodes' `skills` / `focus_area`.
+# - If any previous attempts failed, you will receive `qa_error` for the schema below as a feedback if having any then you can use it to fix your generated schema while keeping the intent.
+
+# QA Generation Rules
+# - Per topic, generate EXACTLY 7 QA blocks (no more, no less), one block per combo, with each QA block following these rules:
+#   1) New Question — Easy
+#   2) New Question — Medium
+#   3) New Question — Hard
+#   4) Counter Question — Twist — Medium
+#   5) Counter Question — Twist — Hard
+#   6) Counter Question — Interrogatory — Medium
+#   7) Counter Question — Interrogatory — Hard
+# - No Easy counter questions are allowed anywhere.
+# - Each QA block MUST include these fields:
+#   - "block_id": unique like "B1", "B2", ...
+#   - "guideline": one concise instruction for probing this block's focus
+#   - "q_type": "New Question" or "Counter Question"
+#   - "q_difficulty": It can be "Easy" | "Medium" | "Hard"
+#   - "counter_type": ```If q_type == "Counter Question" then it required with its value being one from "Twist" | "Interrogatory"; otherwise omit or null```
+#   - "qa_items": an array with EXACTLY ONE item:
+#       * "qa_id": unique like "QA1"
+#       * "example_questions": EXACTLY 5 concise, technical questions (no placeholders)
+# - You can also use the mongo db database fetching tools again to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "{thread_id}" as per requirements.
+# - All questions must ground to the node's focus skills verbatim and use project, experience, summary etc keys when provided (P1, P2, E1, T). But make sure to not make questions from the projects where the respective project's projectwise summary has no such evidence mentioned in any its field.
+
+# ---
+
+# Output Format
+# Return ONLY a JSON object grouped by topic with each topic having QA blocks with each having 5 questions per QA item:
+
+# {{
+#   "qa_sets": [
+#     {{
+#       "topic": "short name",
+#       "qa_blocks": [
+#         {{
+#           "block_id": "B1",
+#           "guideline": "One sentence on how to probe this topic using its focus skills and metrics.",
+#           "qa_items": [
+#             {{
+#               "qa_id": "QA1",
+#               "q_type": "New Question",
+#               "q_difficulty": "Easy",
+#               "counter_type": null,
+#               "example_questions": [...]
+#             }},
+#             {{
+#               "qa_id": "QA2",
+#               "q_type": "New Question",
+#               "q_difficulty": "Medium",
+#               "counter_type": null,
+#               "example_questions": [...]
+#             }},
+#             {{
+#               "qa_id": "QA3",
+#               "q_type": "New Question",
+#               "q_difficulty": "Hard",
+#               "counter_type": null,
+#               "example_questions": [...]
+#             }},
+#             {{
+#               "qa_id": "QA4",
+#               "q_type": "Counter Question",
+#               "counter_type": "Twist",
+#               "q_difficulty": "Medium",
+#               "example_questions": [...]
+#             }},
+#             {{
+#               "qa_id": "QA5",
+#               "q_type": "Counter Question",
+#               "counter_type": "Twist",
+#               "q_difficulty": "Hard",
+#               "example_questions": [...]
+#             }}
+#             {{
+#               "qa_id": "QA6",
+#               "q_type": "Counter Question",
+#               "q_difficulty": "Medium",
+#               "counter_type": "Interrogatory",
+#               "example_questions": [...]
+#             }},
+#             {{
+#               "qa_id": "QA7",
+#               "q_type": "Counter Question",
+#               "q_difficulty": "Hard",
+#               "counter_type": "Interrogatory",
+#               "example_questions": [...]
+#             }}
+#           ]
+#         }}
+#       ]
+#     }},
+#     ...
+#     {{
+#       "topic": "short name",
+#       "qa_blocks": [
+#         {{
+#           "block_id": "B1",
+#           "guideline": "One sentence on how to probe this topic using its focus skills and metrics.",
+#           "qa_items": [
+#             {{
+#               "qa_id": "QA1",
+#               "q_type": "New Question",
+#               "q_difficulty": "Easy",
+#               "counter_type": null,
+#               "example_questions": [...]
+#             }},
+#             {{
+#               "qa_id": "QA2",
+#               "q_type": "New Question",
+#               "q_difficulty": "Medium",
+#               "counter_type": null,
+#               "example_questions": [...]
+#             }},
+#             {{
+#               "qa_id": "QA3",
+#               "q_type": "New Question",
+#               "q_difficulty": "Hard",
+#               "counter_type": null,
+#               "example_questions": [...]
+#             }},
+#             {{
+#               "qa_id": "QA4",
+#               "q_type": "Counter Question",
+#               "counter_type": "Twist",
+#               "q_difficulty": "Medium",
+#               "example_questions": [...]
+#             }},
+#             {{
+#               "qa_id": "QA5",
+#               "q_type": "Counter Question",
+#               "counter_type": "Twist",
+#               "q_difficulty": "Hard",
+#               "example_questions": [...]
+#             }}
+#             {{
+#               "qa_id": "QA6",
+#               "q_type": "Counter Question",
+#               "q_difficulty": "Medium",
+#               "counter_type": "Interrogatory",
+#               "example_questions": [...]
+#             }},
+#             {{
+#               "qa_id": "QA7",
+#               "q_type": "Counter Question",
+#               "q_difficulty": "Hard",
+#               "counter_type": "Interrogatory",
+#               "example_questions": [...]
+#             }}
+#           ]
+#         }}
+#       ]
+#     }}
+#   ]
+# }}
+# '''
+# New format QAs 6
 QA_BLOCK_AGENT_PROMPT = '''
 You are a question answer block generator for technical interviews.
 Your task is to generate example questions for each deep dive QA block across all 3 topics given from a discussion summary as input.
@@ -810,7 +995,7 @@ HARD CONSTRAINTS (must need this exactly; fix if any schema related issues with 
 - Recommended ordering and IDs (strict but you MAY reorder if needed): 
   QA1..QA3 = New(E, M, H), QA4..QA5 = Counter(Twist + M, Twist + H), QA6..QA7 = Counter(Interrogatory + M, Interrogatory + H)
 - For each topic every QA item MUST include exactly 5 concise, technical example questions (no placeholders, no empty strings).
-- Use only skills/focus areas that appear verbatim in the union of all nodes' `skills` / `focus_area`.
+- Use all skills/focus areas only that appear in the combination of all node's `skills` / `focus_area` lists and make sure none of them is left out, also try to use combination of as much skills as much as possible in making your example questions but they should still make sense.
 - If any previous attempts failed, you will receive `qa_error` for the schema below as a feedback if having any then you can use it to fix your generated schema while keeping the intent.
 
 QA Generation Rules
