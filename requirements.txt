@@ -3,3 +3,5 @@ pydantic==2.11.7
 langchain-openai==0.3.27
 langgraph==0.5.1
 pymongo==4.13.0
+langchain
+langchain_community

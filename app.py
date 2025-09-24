@@ -100,7 +100,7 @@ jd_json_string = asyncio.run(parse_jd_text_to_json(jd_inp_text))
 if jd_json_string == "JD not contain any text":
     raise("Open AI API not running")
 jd = json.loads(jd_json_string)
-jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["company_background"], fundamental_knowledge=jd.get("fundamental_knowledge"), cannot_skip_skills=jd.get("cannot_skip_skills"), optional_topics_high_priority=jd.get("optional_topics_high_priority"), optional_topics_low_priority=jd.get("optional_topics_low_priority"))
+jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["company_background"], fundamental_knowledge=jd.get("fundamental_knowledge"))
 # print(jdes.model_dump_json(indent=2))
 
 # with open(r"parsed_cv7.json", "r", encoding='utf-8') as c:
@@ -249,7 +249,7 @@ for k, v in otpt.items():
     print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
     x += f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n"
 
-with open(r"testing\op36.txt", "w", encoding="utf-8") as f:
+with open(r"testing\op38.txt", "w", encoding="utf-8") as f:
     f.write(x)
 # for i, v in otpt.items():
 #     if hasattr(v, "model_dump_json"):

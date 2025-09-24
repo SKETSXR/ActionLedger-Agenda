@@ -1,5 +1,5 @@
 
-# # Best running
+# # As per new focus areas
 # NODES_AGENT_PROMPT = '''
 # You are a structured technical interview designer.  
 # Your task is to convert a set of <a given input summary of discussion walkthrough for a topic> into <nodes>.  
@@ -44,14 +44,14 @@
 # - `graded`: true/false
 # - `next_node`: ID of the next node and for last node this should always be null
 # - `context`: Short description of what this particular node covers
-# - `skills`: List of skills to test in that particular node (taken verbatim from focus areas)
+# - `skills`: List of skills to test in that particular node (taken verbatim from `focus areas` lists of each sequence) can include as many number of skills as possible, <but make sure that none of the skills in the `focus_areas_covered` list are left out>.
 # - `question_guidelines`: It is only required for Deep Dive or QA blocks and should not be null but null for others
 # - `total_question_threshold`: A threshold number of questions only for Deep dive or QA blocks but the maximum number of these deep dive questions but it should follow a constraint that it should accommodate the fact that 1 opening question of each topic will be always there and also that there shall be some 2-3 direct questions for each topic for sure and also it shall follow another given constraint that overall the total no. of questions which is actually the sum of opening question, direct question(s) & deep dive questions should be equal to per total no of questions per topic and this is given as an input to you. Also for non Deep Dive / QA Blocks it shall be null. 
 
 # Rules
 # - Sequence must follow a walkthrough order for each topic.  
 # - Each topic must produce its own ordered set of nodes.  
-# - Every focus area mentioned in a topic must appear in its nodes.  
+# - Every skill mentioned in a topic's discussion summary inside the `focus_areas_covered` list must appear in the respective nodes and none of them should be left out.
 # - QA Blocks are used only for deep dives.  
 # - Each node for respective question type should have a graded or non-graded flag.  
 # - Direct Questions are those which are related to respective topic only and Deep Dive(s) (QA Block) mean those that dive deep into the respective particular topic.  
@@ -66,18 +66,18 @@
 #     {{
 #       "topic": "short name",
 #       "nodes": [
-#         {{"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
-#         {{"id": 2, "question_type": "Direct", "question": "...", "graded": true, "next_node": 3, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
-#         {{"id": 3, "question_type": "Deep Dive", "graded": true, "next_node": 4, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
+#         {{"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillX"], "question_guidelines": null, "total_question_threshold": null}},
+#         {{"id": 2, "question_type": "Direct", "question": "...", "graded": true, "next_node": 3, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillY"], "question_guidelines": null, "total_question_threshold": null}},
+#         {{"id": 3, "question_type": "Deep Dive", "graded": true, "next_node": 4, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillZ"], "question_guidelines": null, "total_question_threshold": null}},
 #         ...
 #       ]
 #     }},
 #   {{
 #       "topic": "short name",
 #       "nodes": [
-#         {{"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
-#         {{"id": 2, "question_type": "Deep Dive", "graded": false, "next_node": 3, "context": "...", "skills": [...], "question_guidelines": "This deep diving question should", "total_question_threshold": 2}},
-#         {{"id": 3, "question_type": "Deep Dive", "graded": true, "next_node": 4, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": 2}},
+#         {{"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillX"], "question_guidelines": null, "total_question_threshold": null}},
+#         {{"id": 2, "question_type": "Deep Dive", "graded": false, "next_node": 3, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillY"], "question_guidelines": "This deep diving question should", "total_question_threshold": 2}},
+#         {{"id": 3, "question_type": "Deep Dive", "graded": true, "next_node": 4, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillZ"], "question_guidelines": null, "total_question_threshold": 2}},
 #         ...
 #       ]
 #     }}
@@ -85,8 +85,7 @@
 #   ]
 # }}
 # '''
-
-# test 2 as per new focus areas
+# Opening inclusion test
 NODES_AGENT_PROMPT = '''
 You are a structured technical interview designer.  
 Your task is to convert a set of <a given input summary of discussion walkthrough for a topic> into <nodes>.  
@@ -133,16 +132,16 @@ Each node must contain:
 - `context`: Short description of what this particular node covers
 - `skills`: List of skills to test in that particular node (taken verbatim from `focus areas` lists of each sequence) can include as many number of skills as possible, <but make sure that none of the skills in the `focus_areas_covered` list are left out>.
 - `question_guidelines`: It is only required for Deep Dive or QA blocks and should not be null but null for others
-- `total_question_threshold`: A threshold number of questions only for Deep dive or QA blocks but the maximum number of these deep dive questions but it should follow a constraint that it should accommodate the fact that 1 opening question of each topic will be always there and also that there shall be some 2-3 direct questions for each topic for sure and also it shall follow another given constraint that overall the total no. of questions which is actually the sum of opening question, direct question(s) & deep dive questions should be equal to per total no of questions per topic and this is given as an input to you. Also for non Deep Dive / QA Blocks it shall be null. 
+- `total_question_threshold`: A threshold number of questions only for Deep dive or QA blocks questions but it should follow a constraint that it should accommodate the fact that 1 opening question of each topic will be always there and also that there will be 1 direct question in each topic for sure and also it shall follow another given constraint that overall the total no. of questions for each topic which is actually the sum of opening question, direct question & deep dive question(s) should be equal to per total no of questions per topic and this is given as an input to you. Also for non Deep Dive / QA Blocks it shall be null. 
 
 Rules
 - Sequence must follow a walkthrough order for each topic.  
 - Each topic must produce its own ordered set of nodes.  
 - Every skill mentioned in a topic's discussion summary inside the `focus_areas_covered` list must appear in the respective nodes and none of them should be left out.
 - QA Blocks are used only for deep dives.  
-- Each node for respective question type should have a graded or non-graded flag.  
+- Each node for respective question type should have a graded flag being `true` or `false`.  
 - Direct Questions are those which are related to respective topic only and Deep Dive(s) (QA Block) mean those that dive deep into the respective particular topic.  
-- Be Consistent and also don't make any node for opening
+- Be Consistent
 - Total number of nodes should be same as the total number of questions for a given topic as provided
 - You shall use the mongo db database fetching tools to fetch on data of question generation guidelines which will help you in giving out your output and they are being present in the collection named question_guidelines with each type "Case study type questions", "Project based questions" and "Counter questions" being mentioned as _id key of each respective guideline record.
 - You shall also use the mongo db database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "{thread_id}"
@@ -153,18 +152,20 @@ Output must be a JSON object grouped by topic:
     {{
       "topic": "short name",
       "nodes": [
-        {{"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillX"], "question_guidelines": null, "total_question_threshold": null}},
-        {{"id": 2, "question_type": "Direct", "question": "...", "graded": true, "next_node": 3, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillY"], "question_guidelines": null, "total_question_threshold": null}},
-        {{"id": 3, "question_type": "Deep Dive", "graded": true, "next_node": 4, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillZ"], "question_guidelines": null, "total_question_threshold": null}},
+        {{"id": 1, "question_type": "Opening", "question": "...", "graded": true/false, "next_node": 2, "context": "...", "skills": [...] // Any proper combination of various skills for example: ["Skill2", "Skill3", "Skill5", ... , "SkillN"], "question_guidelines": null, "total_question_threshold": null}},
+        {{"id": 2, "question_type": "Direct", "question": "...", "graded": true/false, "next_node": 3, "context": "...", "skills": [...] // Any proper combination of various skills for example: ["Skill1", "Skill2", "Skill3", ... , "SkillX"], "question_guidelines": null, "total_question_threshold": null}},
+        {{"id": 3, "question_type": "Deep Dive", "question": "...", "graded": true/false, "next_node": 4, "context": "...", "skills": [...] // Any proper combination of various skills for example: ["Skill5", "Skill6", "Skill9", ... , "SkillY"], "question_guidelines": "...", "total_question_threshold": "..."}},
+        {{"id": 4, "question_type": "Deep Dive", "graded": true/false, "next_node": 5, "context": "...", "skills": [...] // Any proper combination of various skills for example: ["Skill2", "Skill4", "Skill9", ... , "SkillZ"], "question_guidelines": "...", "total_question_threshold": "..."}},
         ...
       ]
     }},
   {{
       "topic": "short name",
       "nodes": [
-        {{"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillX"], "question_guidelines": null, "total_question_threshold": null}},
-        {{"id": 2, "question_type": "Deep Dive", "graded": false, "next_node": 3, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillY"], "question_guidelines": "This deep diving question should", "total_question_threshold": 2}},
-        {{"id": 3, "question_type": "Deep Dive", "graded": true, "next_node": 4, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillZ"], "question_guidelines": null, "total_question_threshold": 2}},
+        {{"id": 1, "question_type": "Opening", "question": "...", "graded": true/false, "next_node": 2, "context": "...", "skills": [...] // Any proper combination of various skills for example: ["Skill1", "Skill2", "Skill3", ... , "SkillN"], "question_guidelines": null, "total_question_threshold": null}},
+        {{"id": 2, "question_type": "Direct", "question": "...", "graded": true/false, "next_node": 2, "context": "...", "skills": [...] // Any proper combination of various skills for example: ["Skill1", "Skill3", "Skill4", ... , "SkillX"], "question_guidelines": null, "total_question_threshold": null}},
+        {{"id": 3, "question_type": "Deep Dive", "graded": true/false, "next_node": 3, "context": "...", "skills": [...] // Any proper combination of various skills for example: ["Skill1", "Skill3", "Skill4", ... , "SkillY"], "question_guidelines": "This deep diving question should...", "total_question_threshold": "..."}},
+        {{"id": 4, "question_type": "Deep Dive", "graded": true/false, "next_node": 4, "context": "...", "skills": [...] // Any proper combination of various skills for example: ["Skill1", "Skill3", "Skill4", ... , "SkillZ"], "question_guidelines": "This deep diving question should...", "total_question_threshold": "..."}},
         ...
       ]
     }}
@@ -172,230 +173,3 @@ Output must be a JSON object grouped by topic:
   ]
 }}
 '''
-
-# # test 1 as per new focus areas:
-# NODES_AGENT_PROMPT = '''
-# You are a structured technical interview designer.
-# Your task is to convert a single topic's structured walkthrough (summary) into executable interview nodes.
-# These nodes will drive the flow of a technical interview.
-
-# ---
-# Inputs:
-# Constraint on total no of questions to generate for each topic:
-# \n```{total_no_questions_context}```\n
-
-# Discussion Summary for a topic (already expanded from the topic and may include an Opening step):
-# \n```{per_topic_summary_json}```\n
-# Here in this opening means starting questions related to the background of the candidate, Direct Questions are those which are related to respective topic only and Deep Dive(s) mean those that dive deep into the respective particular topic rest other things are self-explanatory.
-
-# Use the errors from all the previous node generations (if any) related to schema validation given below as a feedback to you to fix your generated outputs:
-# \n```{nodes_error}```\n
-
-# QA Block Instruction Templates:
-# Direct / New Question QA block:
-# ```Generate a Question Answer (QA) Pair as per the instructions below: 
-# - Do not ask multiple questions in a single question. Ask maximum 1 question in a single question statement. Do not ask questions in which the candidate has to give a walkthrough of implementation. 
-# - The questions formed should be short just like the sample questions given to you. Do not ask questions that are already asked to the candidate. 
-# - Regarding the answer generation, just answer in 3-4-lines. 
-# - Also don't use markdowns anywhere just write plain text. 
-# - Output in this format
-#     Q: <...>
-#     A: <...>
-
-# Some example basic questions to take inspiration from: 
-# What is the difference between supervised, unsupervised, and reinforcement learning?
-# Explain the bias-variance tradeoff in simple terms.
-# What is overfitting, and how can you prevent it?
-# Define precision, recall, and F1-score.
-# What are the main differences between classification and regression problems?
-# ---
-
-# Node Format
-# Each node must contain:
-# - `id`: Unique integer identifier of the node, starting at 1 and increasing by 1.
-# - `question_type`: "Direct" or "Deep Dive" (QA Block).
-# - `question`: If the question_type is given as Direct then this should be a Direct question generated
-# - `graded`: true/false.
-# - `next_node`: ID of the next node; for the last node this should always be null.
-# - `context`: Short description of what this node covers.
-# - `skills`: List of skills (verbatim) tested in this node. Only use skills that appear in the topic's focus_area list (copy the skill text exactly).
-# - `question_guidelines`: It is only required for Deep Dive or QA blocks and should not be null but null for others
-# - `question_guidelines`:
-# - `total_question_threshold`: A threshold number of questions only for Deep dive or QA blocks but the maximum number of these deep dive questions but it should follow a constraint that it should accommodate the fact that 1 opening question of each topic will be always there and also that there shall be some 2-3 direct questions for each topic for sure and also it shall follow another given constraint that overall the total no. of questions which is actually the sum of opening question, direct question(s) & deep dive questions should be equal to per total no of questions per topic and this is given as an input to you. Also for non Deep Dive / QA Blocks it shall be null.
-#     - Required (non-null) for "Deep Dive".
-
-# Rules
-# - Do NOT create a node for the Opening step. The Opening exists conceptually in the walkthrough but is excluded from nodes.
-# - Total number of nodes you output for the topic must equal to: \
-#   ( {total_no_questions_context} - 1 ), because 1 Opening question is always reserved outside of these nodes.
-# - Ensure at least 2-3 "Direct" nodes per topic (for coverage purpose).
-# - Use remaining quota for "Deep Dive" nodes.
-# - Every focus_area skill listed in the topic must appear in at least one node's `skills`. Do not invent skills that are not in the topic's focus_area list.
-# - Skills must be copied verbatim from the topic's `focus_area[].skill` values (exact text).
-# - For "Direct" nodes:
-#   - `question_guidelines` = null
-#   - `total_question_threshold` = null
-#   - At least one "Direct" node should have `graded` = false; the others can be graded = true.
-# - For "Deep Dive" nodes:
-#   - `question_guidelines` must be a concise instruction block (non-null) describing how to probe depth for the skills in this node.
-#   - `total_question_threshold` must be a positive integer and chosen so that: 
-#       (#Direct nodes) + (sum of each Deep Dive node's threshold, capped to at least 1 per Deep Dive) + 1 Opening = {total_no_questions_context}.
-#     If necessary, adjust thresholds across Deep Dive nodes to satisfy the total count exactly.
-# - Node sequencing:
-#   - IDs must be sequential starting at 1.
-#   - `next_node` must point to the next node's ID; the last node must have `next_node` = null.
-# - Be consistent and concise.
-
-# Mongo usage guidelines
-# - You shall use the mongo db database fetching tools to fetch question-generation guidelines from the collection `question_guidelines` (records with _id: "Case study type questions", "Project based questions", "Counter questions").
-# - You shall also use the mongo db database fetching tools to fetch project/experience/summary/skill-tree keys:
-#   - Projects: P1, P2, ...
-#   - Experience: E1, E2, ...
-#   - Summary keys: S, domains_assess_D (D), annotated_skill_tree_T (T)
-#   All with `_id = "{thread_id}"`.
-# - Do NOT write P1, P2, E3, T, D, S, etc. anywhere except if these are referenced within `question_guidelines` content prior to generation. (Nodes themselves generally don't include reference materials.)
-
-# Output must be a JSON object grouped by topic:
-# {{
-#   "topics_with_nodes": [
-#     {{
-#       "topic": "short name",
-#       "nodes": [
-#         {{"id": 1, "question_type": "Direct", "question": "Q: ...", "graded": false, "next_node": 2, "context": "...", "skills": ["Skill A", "Skill C", "Skill L", ..., "Skill X"], "question_guidelines": null, "total_question_threshold": null}},
-#         {{"id": 2, "question_type": "Direct", "question": "Q: ...", "graded": true, "next_node": 3, "context": "...", "skills": ["Skill C", "Skill P", ..., "Skill X"], "question_guidelines": null, "total_question_threshold": null}},
-#         {{"id": 3, "question_type": "Deep Dive", "question": "Q: ...", "graded": true, "next_node": 4, "context": "...", "skills": ["Skill B", ..., "Skill X"], "question_guidelines": "This deep diving question should...", "total_question_threshold": 2}},
-#         ...
-#         {{"id": N, "question_type": "Deep Dive", "question": "Q: ...", "graded": true, "next_node": null, "context": "...", "skills": ["Skill M", ..., "Skill X"], "question_guidelines": "....", "total_question_threshold": 1}}
-#       ]
-#     }}
-#   ]
-# }}
-# '''
-
-
-# # Running
-# NODES_AGENT_PROMPT = '''
-# You are a structured technical interview designer.
-# Convert the given discussion summary for ONE topic into a linear sequence of nodes.
-
-# Inputs:
-# - total_no_questions_context (integer): {total_no_questions_context}
-# - discussion_topic_json (JSON for ONE topic): ```{per_topic_summary_json}```
-
-# DEFINITIONS (IMPORTANT):
-# - Allowed question_type values are ONLY: "Direct" or "Deep Dive". Do NOT use "Opening".
-# - The opener is represented as question_type="Direct" with graded=false.
-
-# HARD RULES (NO EXCEPTIONS):
-# 1) Topic label
-#    - Output "topic" MUST be EXACTLY discussion_topic_json.topic (character-for-character).
-
-# 2) Node budget & composition
-#   - Let T = {total_no_questions_context}.
-#   - Produce exactly T nodes.
-#   - Node #1: Direct, graded=false.
-#   - Nodes #2..#(T-1): Direct, graded=true.
-#   - Node #T: Deep Dive, graded=true, must include:
-#     - total_question_threshold: integer >= 1
-#     - question_guidelines: non-empty plain text
-#   - IDs must be 1..T; next_node = i+1; last node next_node = null.
-#   - Allowed question_type values: only "Direct" or "Deep Dive".
-#   - Every node must include ≥1 non-empty skill verbatim from focus areas.
-
-# 3) Linear chain
-#    - ids are 1..T
-#    - next_node for node i is i+1
-#    - next_node for node T is null
-
-# 4) Skills
-#    - Every node MUST list ≥1 skill taken verbatim from discussion_topic_json.focus_area keys.
-
-# 5) QA Block usage
-#    - Only the Deep Dive node uses a QA block:
-#        • total_question_threshold: integer ≥ 1
-#        • question_guidelines: non-empty plain text
-#    - All Direct nodes:
-#        • total_question_threshold: null
-#        • question_guidelines: null
-
-# 6) Context
-#    - Single sentence; no markdown.
-
-# OUTPUT (JSON only; no markdown, no comments):
-# {{
-#   "topic": "<exactly discussion_topic_json.topic>",
-#   "nodes": [
-#     {{"id": 1, "question_type": "Direct", "graded": false, "next_node": 2, "context": "...", "skills": ["<from focus_area keys>"], "question_guidelines": null, "total_question_threshold": null}},
-#     ...,
-#     {{"id": T, "question_type": "Deep Dive", "graded": true, "next_node": null, "context": "...", "skills": ["<from focus_area keys>"], "question_guidelines": "This deep diving question should ...", "total_question_threshold": 2}}
-#   ]
-# }}
-
-# '''
-
-# Test pl
-# NODES_AGENT_PROMPT = '''
-# You are a structured technical interview designer.  
-# Your task is to convert a set of <a given input summary of discussion walkthrough for a discussion topic> into <nodes>.  
-# These nodes will decide the flow of a technical interview.
-
-# ---
-# Inputs:
-# Constraint on total no of questions to generate for each topic: 
-# \n```{total_no_questions_context}```\n
-
-# Discussion Summary:
-# \n```{discussion_summary}```\n
-# Here in this opening means starting questions related to the background of the candidate, Direct Questions are those which are related to respective topic only and Deep Dive(s) mean those that dive deep into the respective particular topic rest other things are self-explanatory.  
-
-# QA Block Instruction Templates:
-# Direct / New Question QA block:
-# ```Generate a Question Answer (QA) Pair as per the instructions below: 
-# - Do not ask multiple questions in a single question. Ask maximum 1 question in a single question statement. Do not ask questions in which the candidate has to give a walkthrough of implementation. 
-# - The questions formed should be short just like the sample questions given to you. Do not ask questions that are already asked to the candidate. 
-# - Regarding the answer generation, just answer in 3-4-lines. 
-# - Also don't use markdowns anywhere just write plain text. 
-# - Output in this format
-#     Q: <...>
-#     A: <...>
-
-# Some example basic questions to take inspiration from: 
-# What is the difference between supervised, unsupervised, and reinforcement learning?
-# Explain the bias-variance tradeoff in simple terms.
-# What is overfitting, and how can you prevent it?
-# Define precision, recall, and F1-score.
-# What are the main differences between classification and regression problems?
-# ---
-
-# Node Format
-# Each node must contain:
-# - `id`: Unique identifier of a node
-# - `question_type`: Direct / Deep Dive (QA Block)
-# - `graded`: true/false
-# - `next_node`: ID of the next node
-# - `context`: Short description of what this particular node covers
-# - `skills`: List of skills to test in that particular node (taken verbatim from focus areas)
-# - `question_guidelines`: It is only required for Deep Dive or QA blocks but should not be null
-# - `total_question_threshold`: A threshold number of questions only for Deep dive or QA blocks but the maximum number of these deep dive questions but it should follow a constraint that it should accommodate the fact that 1 opening question of each topic will be always there and also that there shall be some 2-3 direct questions for each topic for sure and also it shall follow another given constraint that overall the total no. of questions which is actually the sum of opening question, direct question(s) & deep dive questions should be equal to per total no of questions per topic and this is given as an input to you.
-
-# Rules
-# - Sequence must follow a walkthrough order for each topic.  
-# - Each topic must produce its own ordered set of nodes.  
-# - Every focus area mentioned in a topic must appear in its nodes.  
-# - QA Blocks are used only for deep dives.  
-# - Each node for respective question type should have a graded or non-graded flag.  
-# - Direct Questions are those which are related to respective topic only and Deep Dive(s) (QA Block) mean those that dive deep into the respective particular topic.  
-# - Be Consistent
-
-# Output must be a JSON object grouped by topic:  
-
-# {{
-#   "topic": "short name",
-#   "nodes": [
-#     {{"id": 1, "question_type": "Direct", "graded": false, "next_node": 2, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
-#     {{"id": 2, "question_type": "Direct", "graded": true, "next_node": 3, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
-#     {{"id": 3, "question_type": "Deep Dive", "graded": true, "next_node": 4, "context": "...", "skills": [...], "question_guidelines": null, "total_question_threshold": null}},
-#     ...
-#   ]
-# }}
-# '''
