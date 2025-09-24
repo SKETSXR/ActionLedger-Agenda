@@ -138,54 +138,96 @@ root = load_skill_tree(tree_data)
 #     2. Interrogatory- Why did you use A?''',
 #     "question_type_name": "Counter questions"}
 #     ]}
-question_guidelines = {"question_guidelines":[{"question_guidelines": '''
-	Guidelines:
 
-Design the case as a realistic situation that requires decision-making, not abstract hypotheticals.
+# Running guidelines
+# question_guidelines = {"question_guidelines":[{"question_guidelines": '''
+# 	Guidelines:
 
-Questions should encourage the candidate to analyze trade-offs (performance vs cost, scalability vs maintainability, etc.).
+# Design the case as a realistic situation that requires decision-making, not abstract hypotheticals.
 
-Probe on approach and reasoning, not only on the final outcome.
+# Questions should encourage the candidate to analyze trade-offs (performance vs cost, scalability vs maintainability, etc.).
 
-Ask about metrics, evaluation criteria, and constraints the candidate would consider.
+# Probe on approach and reasoning, not only on the final outcome.
 
-Avoid generic "tell me about a challenge" prompts — instead, anchor the case in technical detail relevant to the candidate's skill set or the job role.
+# Ask about metrics, evaluation criteria, and constraints the candidate would consider.
 
-Example frames:
+# Avoid generic "tell me about a challenge" prompts — instead, anchor the case in technical detail relevant to the candidate's skill set or the job role.
 
-"If you were designing a [system/problem] under [constraints], how would you decide between option A and option B?"
+# Example frames:
 
-"What bottlenecks could appear in [situation], and how would you measure and mitigate them?"
+# "If you were designing a [system/problem] under [constraints], how would you decide between option A and option B?"
 
-"How would you adapt your solution if the scale increased by 10x?"''',
-    "question_type_name": "Case study type questions"},
-    {"question_guidelines": '''Guidelines:
+# "What bottlenecks could appear in [situation], and how would you measure and mitigate them?"
 
-Start with "why" (motivation, design choice, architecture decision), then follow with "how" (implementation, tools, processes).
+# "How would you adapt your solution if the scale increased by 10x?"''',
+#     "question_type_name": "Case study type questions"},
+#     {"question_guidelines": '''Guidelines:
 
-Frame questions so they feel grounded in the candidate's project details (P1, P2, etc.).
+# Start with "why" (motivation, design choice, architecture decision), then follow with "how" (implementation, tools, processes).
 
-Avoid repetitive or generic prompts like "What challenges did you face?" or "How did you solve them?" unless expanded into technical reasoning.
+# Frame questions so they feel grounded in the candidate's project details (P1, P2, etc.).
 
-Direct QAs should resemble peer-to-peer technical reviews, e.g., "In your project where you implemented X, why did you choose Y approach?"
+# Avoid repetitive or generic prompts like "What challenges did you face?" or "How did you solve them?" unless expanded into technical reasoning.
 
-Encourage the candidate to explain trade-offs, alternatives considered, and design impact.
+# Direct QAs should resemble peer-to-peer technical reviews, e.g., "In your project where you implemented X, why did you choose Y approach?"
 
-Keep the phrasing specific and contextualized to avoid vague storytelling answers.
+# Encourage the candidate to explain trade-offs, alternatives considered, and design impact.
 
-Example frames:
+# Keep the phrasing specific and contextualized to avoid vague storytelling answers.
 
-"In [Project], you mentioned using [technology/tool]. Why was it chosen over alternatives?"
+# Example frames:
 
-"During [Project], how did you ensure performance/scalability/security in the design?"
+# "In [Project], you mentioned using [technology/tool]. Why was it chosen over alternatives?"
 
-"If you had to extend [Project] today to handle [new requirement], what architectural changes would you propose?"''',
-    "question_type_name": "Project based questions"},
-    {"question_guidelines": '''The counter questions should be of the types: 
-    1. Twist- What would happen if you do A instead of B
-    2. Interrogatory- Why did you use A?''',
-    "question_type_name": "Counter questions"}
-]}
+# "During [Project], how did you ensure performance/scalability/security in the design?"
+
+# "If you had to extend [Project] today to handle [new requirement], what architectural changes would you propose?"''',
+#     "question_type_name": "Project based questions"},
+#     {"question_guidelines": '''The counter questions should be of the types: 
+#     1. Twist- What would happen if you do A instead of B
+#     2. Interrogatory- Why did you use A?''',
+#     "question_type_name": "Counter questions"}
+# ]}
+
+question_guidelines = {
+  "question_guidelines": [
+    {
+      "question_guidelines": '''Guidelines:\n\n
+                                Design the case as a realistic situation/scenario that requires decision-making, not abstract hypotheticals.\n\n
+                                Questions should encourage the candidate to analyze trade-offs (performance vs cost, scalability vs maintainability, etc.).\n\n
+                                Probe on approach and reasoning, not just on the final outcome.\n\n
+                                You can include asking about the metrics, evaluation criteria, and constraints the candidate might consider.\n\n
+                                Avoid generic "tell me about a challenge" initiations, rather anchor the case in technical detail relevant to the candidate's skill set or the job role.\n\n
+                                Example frames:\n\n
+                                "If you were designing a [system/problem] under [constraints], how would you decide between option A and option B?"\n\n
+                                "What bottlenecks could appear in [situation], and how would you measure and mitigate them?"\n\n
+                                "How would you adapt your solution if the scale increased by 10x?''',
+      "question_type_name": "Case study type questions"
+    },
+    {
+      "question_guidelines": '''Guidelines:\n\n
+                                Start with "why" (motivation, design choice, architecture decision), then follow with "how" (implementation, tools, processes).\n\n
+                                Frame questions so they feel grounded in the candidate's project details (P1, P2, etc.).\n\n
+                                Avoid repetitive or generic initiations like "What challenges did you face?" or "How did you solve them?" unless expanded into technical reasoning.\n\n
+                                Direct QAs should resemble peer-to-peer technical reviews, e.g., "In your project where you implemented X, why did you choose Y approach?"\n\n
+                                Encourage the candidate to explain about the trade-offs, alternatives considered, and design impact.\n\n
+                                Keep the phrasing specific and contextualized to avoid vague storytelling answers.\n\n
+                                Example frames:\n\n
+                                "In [Project], you mentioned using [technology/tool]. Why was it chosen over alternatives?"\n\n
+                                "During [Project], how did you ensure performance/scalability/security in the design?"\n\n
+                                "If you had to extend a [Project] today for handling a [new requirement], what architectural changes would you propose?''',
+      "question_type_name": "Project based questions"
+    },
+    {
+      "question_guidelines": '''Guidelines:\n\n
+                                The counter questions should be of the types: \n    
+                                1. Twist- What would happen if you do A instead of B\n
+                                2. Interrogatory- Why did you use A?\n\n
+                                The questions should be more realistic counter questions as if asked in a real interview irrespective of the difficulty''',
+      "question_type_name": "Counter questions"
+    }
+  ]
+}
 # question_guidelines["question_type_name"] = ["Case study type questions", "Project based questions"]
 
 inp = InputSchema(
@@ -249,7 +291,7 @@ for k, v in otpt.items():
     print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
     x += f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n"
 
-with open(r"testing\op38.txt", "w", encoding="utf-8") as f:
+with open(r"testing\op39.txt", "w", encoding="utf-8") as f:
     f.write(x)
 # for i, v in otpt.items():
 #     if hasattr(v, "model_dump_json"):
