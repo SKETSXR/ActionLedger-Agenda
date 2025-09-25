@@ -195,7 +195,7 @@ from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
 from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
 from ..model_handling import llm_n
 
-i = 0
+i = 1
 
 # At top of file (if you added the log helpers there)
 def _log_planned_tool_calls(ai_msg):
@@ -235,7 +235,7 @@ class NodesGenerationAgent:
     @staticmethod
     def _agent_node(state: _MongoNodesState):
         # If we just came from ToolNode, the last messages are ToolMessages → print them.
-        print("----------------Nodes-----------------------------------")
+        print("----------------Nodes Tool Call logs-----------------------------------")
         _log_recent_tool_results(state["messages"])   # optional logging
 
         ai = NodesGenerationAgent._AGENT_MODEL.invoke(state["messages"])

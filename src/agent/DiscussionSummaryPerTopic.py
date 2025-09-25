@@ -164,7 +164,7 @@ from ..prompt.discussion_summary_per_topic_generation_agent_prompt import (
 from ..model_handling import llm_dts
 
 
-i = 0 
+i = 1 
 # At top of file (if you added the log helpers there)
 def _log_planned_tool_calls(ai_msg):
     for tc in getattr(ai_msg, "tool_calls", []) or []:
@@ -203,7 +203,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
     @staticmethod
     def _agent_node(state: _PerTopicState):
         # If we just came from ToolNode, the last messages are ToolMessages → print them.
-        print("-------------Discussion summary-----------------")
+        print("-------------Discussion summary Tool Call logs-----------------")
         _log_recent_tool_results(state["messages"])   # optional logging
 
         ai = PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL.invoke(state["messages"])

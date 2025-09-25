@@ -355,7 +355,7 @@ from ..schema.output_schema import QASetsSchema
 from ..prompt.qa_agent_prompt import QA_BLOCK_AGENT_PROMPT
 from ..model_handling import llm_qa
 
-i = 0
+i = 1
 # At top of file (if you added the log helpers there)
 def _log_planned_tool_calls(ai_msg):
     for tc in getattr(ai_msg, "tool_calls", []) or []:
@@ -388,6 +388,7 @@ class QABlockGenerationAgent:
 
     @staticmethod
     def _agent_node(state: _QAInnerState):
+        print("-----------------QA Blocks Tool Call logs------------")
         _log_recent_tool_results(state["messages"])   # optional logging
         ai = QABlockGenerationAgent._AGENT_MODEL.invoke(state["messages"])
         return {"messages": [ai]}

@@ -183,7 +183,7 @@ from src.mongo_tools import get_mongo_tools
 
 # set_llm_cache(InMemoryCache())
 
-i = 0
+i = 1
 # At top of file (if you added the log helpers there)
 def _log_planned_tool_calls(ai_msg):
     for tc in getattr(ai_msg, "tool_calls", []) or []:
@@ -222,7 +222,7 @@ class TopicGenerationAgent:
     @staticmethod
     def _agent_node(state: _MongoAgentState):
         """LLM picks tool(s) or answers; LangGraph will handle tool exec via ToolNode."""
-        print("--------------Topic------------------")
+        print("--------------Topic Tool Call logs------------------")
         _log_recent_tool_results(state["messages"])   # optional logging
 
         ai = TopicGenerationAgent._AGENT_MODEL.invoke(state["messages"])
