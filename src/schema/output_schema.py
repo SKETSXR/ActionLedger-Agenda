@@ -237,4 +237,4 @@ class OutputSchema(BaseModel):
     interview_topics: CollectiveInterviewTopicSchema
     discussion_summary_per_topic: DiscussionSummaryPerTopicSchema
     nodes: NodesSchema
-    qa_blocks: QASetsSchema
+    # qa_blocks: QASetsSchema

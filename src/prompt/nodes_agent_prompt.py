@@ -183,15 +183,15 @@ These nodes will decide the flow of a technical interview.
 
 ---
 Inputs:
-Constraint on total no of questions to generate for each topic: 
-```@total_no_questions_context```
 
 Discussion Summary for a topic:
-```@per_topic_summary_json```
-Here in this opening means starting questions related to the background of the candidate, Direct Questions are those which are related to respective topic only and Deep Dive(s) mean those that dive deep into the respective particular topic rest other things are self-explanatory.  
+\n```@per_topic_summary_json```\n
+Here in this opening means starting questions related to the background of the candidate, Direct Questions are ones related to the respective topic only and Deep Dive(s) mean those that dive deep into the respective particular topic, rest other things are self-explanatory.  
+
+\nProvided constraint on total no of questions for this topic should be equal to: ```@total_no_questions_context```\n
 
 Use the errors from all the previous node generations (if any) related to schema validation given below as a feedback to you to fix your generated outputs:
-```@nodes_error```
+\n```@nodes_error```\n
 
 QA Block Instruction Templates:
 Direct / New Question QA block:

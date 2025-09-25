@@ -188,8 +188,8 @@ class AgendaGenerationAgent:
             summary=state.generated_summary,
             interview_topics=state.interview_topics,
             discussion_summary_per_topic=state.discussion_summary_per_topic,
-            nodes=state.nodes,
-            qa_blocks=state.qa_blocks
+            nodes=state.nodes
+            # qa_blocks=state.qa_blocks
         )
         return output
 
@@ -207,7 +207,7 @@ class AgendaGenerationAgent:
         graph_builder.add_node("topic_generation_agent", TopicGenerationAgent.get_graph())
         graph_builder.add_node("discussion_summary_per_topic_generator", PerTopicDiscussionSummaryGenerationAgent.get_graph())
         graph_builder.add_node("nodes_generator", NodesGenerationAgent.get_graph())
-        graph_builder.add_node("qablock_generator", QABlockGenerationAgent.get_graph())
+        # graph_builder.add_node("qablock_generator", QABlockGenerationAgent.get_graph())
         # graph_builder.add_node("store_inp_summary_tool", AgendaGenerationAgent.store_summary_tool)
         graph_builder.add_node("store_inp_summary_tool", AgendaGenerationAgent.store_inp_summary_tool)
         # graph_builder.add_node("interview_topics_storage_tool", AgendaGenerationAgent.store_inferred_topics_tool)
@@ -219,8 +219,9 @@ class AgendaGenerationAgent:
         graph_builder.add_edge("store_inp_summary_tool", "topic_generation_agent")
         graph_builder.add_edge("topic_generation_agent", "discussion_summary_per_topic_generator")
         graph_builder.add_edge("discussion_summary_per_topic_generator", "nodes_generator")
-        graph_builder.add_edge("nodes_generator", "qablock_generator")
-        graph_builder.add_edge("qablock_generator", "output_formatter")
+        # graph_builder.add_edge("nodes_generator", "qablock_generator")
+        graph_builder.add_edge("nodes_generator", "output_formatter")
+        # graph_builder.add_edge("qablock_generator", "output_formatter")
         # graph_builder.add_edge("discussion_summary_per_topic_generator", "output_formatter")
         # graph_builder.add_edge("store_inp_summary_tool", "output_formatter")
         graph_builder.add_edge("output_formatter", END)
