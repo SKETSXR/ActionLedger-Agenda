@@ -234,6 +234,7 @@ class NodesGenerationAgent:
     @staticmethod
     def _agent_node(state: _MongoNodesState):
         # If we just came from ToolNode, the last messages are ToolMessages → print them.
+        print("----------------Nodes-----------------------------------")
         _log_recent_tool_results(state["messages"])   # optional logging
 
         ai = NodesGenerationAgent._AGENT_MODEL.invoke(state["messages"])

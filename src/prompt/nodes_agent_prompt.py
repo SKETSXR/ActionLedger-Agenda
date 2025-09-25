@@ -174,6 +174,7 @@
 # }}
 # '''
 
+# enforce sum of (per-topic node count * no. of questions (which if null then considered as 1)) = total per-topic questions.
 # Tool call visualise test
 NODES_AGENT_PROMPT = '''
 You are a structured technical interview designer.  
@@ -223,19 +224,18 @@ Valid:
   custom_mongodb_query args={"collection":"question_guidelines",
     "query":{"_id":{"$in":["Case study type questions","Project based questions","Counter questions"]}}}
 Invalid (do not do this): custom_mongodb_query args={"collection":"summary"}
-Use the fetched summary to derive the total questions per topic; enforce node count = total per-topic questions.
 
 Node Format
 Each node must contain:
 - `id`: Unique identifier of a node
-- `question_type`: Direct / Deep Dive (QA Block)
+- `question_type`: Opening / Direct / Deep Dive (QA Block)
 - `question`: If the question_type is given as Direct then this should be a Direct question generated
 - `graded`: true/false
 - `next_node`: ID of the next node and for last node this should always be null
 - `context`: Short description of what this particular node covers
 - `skills`: List of skills to test in that particular node (taken verbatim from `focus areas` lists of each sequence) can include as many number of skills as possible, <but make sure that none of the skills in the `focus_areas_covered` list are left out>.
 - `question_guidelines`: It is only required for Deep Dive or QA blocks and should not be null but null for others
-- `total_question_threshold`: A threshold number of questions only for Deep dive or QA blocks questions but it should follow a constraint that it should accommodate the fact that 1 opening question of each topic will be always there and also that there will be 1 direct question in each topic for sure and also it shall follow another given constraint that overall the total no. of questions for each topic which is actually the sum of opening question, direct question & deep dive question(s) should be equal to per total no of questions per topic and this is given as an input to you. Also for non Deep Dive / QA Blocks it shall be null. 
+- `total_question_threshold`: A threshold number of questions only for Deep dive or QA block questions but it should follow a constraint that for each Deep dive node it should be >=2. But the sum of number of questions in each deep dive node + 1 + 1 in a topic should be equal to total number of questions in a topic. Also for non Deep Dive / QA Blocks it shall be null. 
 
 Rules
 - Sequence must follow a walkthrough order for each topic.  
@@ -243,9 +243,10 @@ Rules
 - Every skill mentioned in a topic's discussion summary inside the `focus_areas_covered` list must appear in the respective nodes and none of them should be left out.
 - QA Blocks are used only for deep dives.  
 - Each node for respective question type should have a graded flag being `true` or `false`.  
-- Direct Questions are those which are related to respective topic only and Deep Dive(s) (QA Block) mean those that dive deep into the respective particular topic.  
-- Be Consistent
-- Total number of nodes should be same as the total number of questions for a given topic as provided
+- Opening Questions are ones that open the interview discussion of the topic and more information is provided in the discussion summary per topic, Direct Questions are those which are related to respective topic only and Deep Dive(s) (QA Block) mean those that dive deep into the respective particular topic.  
+- It should accommodate the fact that only 1 opening question node of each topic will be always there, also that there will be only 1 direct question node in each topic for sure
+- The question threshold in each deep dive node should be atleast 2 in each topic for sure
+- Sum of Question threshold (for null its considered as 1) in each node in a topic should be same as the total number of questions for a given topic as provided: so there will be 1 opening node, 1 direct node always but the number of deep dive nodes and their respective question threshold can vary although maintaining above constraints.
 - Use MongoDB tools per the STRICT policy above to retrieve:
   - question_guidelines (_id: "Case study type questions","Project based questions","Counter questions")
   - cv / summary context keyed by "@thread_id"
