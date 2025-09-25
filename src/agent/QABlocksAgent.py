@@ -355,7 +355,7 @@ from ..schema.output_schema import QASetsSchema
 from ..prompt.qa_agent_prompt import QA_BLOCK_AGENT_PROMPT
 from ..model_handling import llm_qa
 
-
+i = 0
 # At top of file (if you added the log helpers there)
 def _log_planned_tool_calls(ai_msg):
     for tc in getattr(ai_msg, "tool_calls", []) or []:
@@ -661,6 +661,9 @@ class QABlockGenerationAgent:
     # --- should_regenerate: schema-only, but END if there's nothing to validate ---
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
+        global i 
+        print(f"QA Blocks Iteration -> {i}")
+        i += 1
         try:
             QASetsSchema.model_validate(
                 state.qa_blocks.model_dump() if hasattr(state.qa_blocks, "model_dump") else state.qa_blocks

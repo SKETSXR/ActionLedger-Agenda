@@ -183,7 +183,7 @@ from src.mongo_tools import get_mongo_tools
 
 # set_llm_cache(InMemoryCache())
 
-
+i = 0
 # At top of file (if you added the log helpers there)
 def _log_planned_tool_calls(ai_msg):
     for tc in getattr(ai_msg, "tool_calls", []) or []:
@@ -405,6 +405,9 @@ class TopicGenerationAgent:
 
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
+        global i 
+        print(f"Topic Iteration -> {i}")
+        i += 1
         def level3_leavesp(root: SkillTreeSchema) -> list[SkillTreeSchema]:
             if not root.children: return []
             out = []

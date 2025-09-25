@@ -164,6 +164,7 @@ from ..prompt.discussion_summary_per_topic_generation_agent_prompt import (
 from ..model_handling import llm_dts
 
 
+i = 0 
 # At top of file (if you added the log helpers there)
 def _log_planned_tool_calls(ai_msg):
     for tc in getattr(ai_msg, "tool_calls", []) or []:
@@ -288,6 +289,9 @@ class PerTopicDiscussionSummaryGenerationAgent:
 
     @staticmethod
     async def should_regenerate(state: AgentInternalState):
+        global i 
+        print(f"Topic wise Discussion Summary Iteration -> {i}")
+        i += 1
         input_topics = {t.topic for t in state.interview_topics.interview_topics}
         output_topics = {dt.topic for dt in state.discussion_summary_per_topic.discussion_topics}
         if input_topics != output_topics:

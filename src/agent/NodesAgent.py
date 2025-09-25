@@ -195,6 +195,7 @@ from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
 from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
 from ..model_handling import llm_n
 
+i = 0
 
 # At top of file (if you added the log helpers there)
 def _log_planned_tool_calls(ai_msg):
@@ -407,6 +408,9 @@ class NodesGenerationAgent:
         Return True if we need to regenerate (schema invalid), else False.
         Validates the container (NodesSchema) and each TopicWithNodesSchema item inside it.
         """
+        global i 
+        print(f"Nodes Iteration -> {i}")
+        i += 1
         if getattr(state, "nodes", None) is None:
             return True
 
