@@ -234,7 +234,7 @@ Each node must contain:
 - `next_node`: ID of the next node and for last node this should always be null
 - `context`: Short description of what this particular node covers
 - `skills`: List of skills to test in that particular node (taken verbatim from `focus areas` lists of each sequence) can include as many number of skills as possible, <but make sure that none of the skills in the `focus_areas_covered` list are left out>.
-- `question_guidelines`: It is only required for Deep Dive or QA blocks and should not be null but null for others
+- `question_guidelines`: It is only required for Deep Dive or QA blocks and should be as a short and brief 1 line guide to write questions from this content, but it should not be null but null for nodes
 - `total_question_threshold`: A threshold number of questions only for Deep dive or QA block questions but it should follow a constraint that for each Deep dive node it should be >=2. But the sum of number of questions in each deep dive node + 1 + 1 in a topic should be equal to total number of questions in a topic. Also for non Deep Dive / QA Blocks it shall be null. 
 
 Rules
@@ -247,10 +247,11 @@ Rules
 - It should accommodate the fact that only 1 opening question node of each topic will be always there, also that there will be only 1 direct question node in each topic for sure
 - The question threshold in each deep dive node should be atleast 2 in each topic for sure
 - Sum of Question threshold (for null its considered as 1) in each node in a topic should be same as the total number of questions for a given topic as provided: so there will be 1 opening node, 1 direct node always but the number of deep dive nodes and their respective question threshold can vary although maintaining above constraints.
-- Use MongoDB tools per the STRICT policy above to retrieve:
+- Use MongoDB tools per the STRICT policy above to retrieve and understand if required:
   - question_guidelines (_id: "Case study type questions","Project based questions","Counter questions")
   - cv / summary context keyed by "@thread_id"
 - Do not show tool calls in the answer.
+- Don't write the _id names anywhere in your output
 
 Output must be a JSON object grouped by topic:  
 {{
