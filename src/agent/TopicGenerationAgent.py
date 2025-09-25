@@ -345,131 +345,150 @@ class TopicGenerationAgent:
         state.interview_topics = result["final_response"]
         return state
 
+
     # @staticmethod
     # async def should_regenerate(state: AgentInternalState) -> bool:
+    #     global i 
+    #     print(f"Topic Iteration -> {i}")
+    #     i += 1
     #     def level3_leavesp(root: SkillTreeSchema) -> list[SkillTreeSchema]:
-    #         if not root.children:
-    #             return []
-    #         skills_priority_must: list[SkillTreeSchema] = []
+    #         if not root.children: return []
+    #         out = []
     #         for domain in root.children:
     #             for leaf in (domain.children or []):
     #                 if not leaf.children and leaf.priority == "must":
-    #                     skills_priority_must.append(leaf)
-    #         return skills_priority_must
+    #                     out.append(leaf)
+    #         return out
 
     #     def level3_leaves(root: SkillTreeSchema) -> list[SkillTreeSchema]:
-    #         if not root.children:
-    #             return []
-    #         leaves: list[SkillTreeSchema] = []
+    #         if not root.children: return []
+    #         out = []
     #         for domain in root.children:
     #             for leaf in (domain.children or []):
     #                 if not leaf.children:
-    #                     leaves.append(leaf)
-    #         return leaves
+    #                     out.append(leaf)
+    #         return out
 
     #     all_skill_leaves = [leaf.name for leaf in level3_leaves(state.skill_tree)]
-    #     skills_priority_must = [leaf.name for leaf in level3_leavesp(state.skill_tree)]
+    #     must_leaves = [leaf.name for leaf in level3_leavesp(state.skill_tree)]
 
-    #     focus_area_list = []
+    #     # Gather all skills used
+    #     used_skills = []
     #     for t in state.interview_topics.interview_topics:
-    #         for i in t.focus_area:
-    #             for j in i.model_dump():
-    #                 if j == "skill":
-    #                     x = i.model_dump()
-    #                     if x["skill"] not in focus_area_list:
-    #                         focus_area_list.append(x["skill"])
+    #         for fa in t.focus_area:
+    #             s = fa.model_dump().get("skill")
+    #             if s and s not in used_skills:
+    #                 used_skills.append(s)
 
-    #     total_questions_sum = sum(t.total_questions for t in state.interview_topics.interview_topics)
-    #     if total_questions_sum != state.generated_summary.total_questions:
-    #         print("Total questions mismatch with summary; regenerating topics…")
+    #     # Check total questions
+    #     target_total = state.generated_summary.total_questions
+    #     got_total = sum(t.total_questions for t in state.interview_topics.interview_topics)
+    #     if got_total != target_total:
+    #         state.interview_topics_feedback = type("FB", (), {})()
+    #         state.interview_topics_feedback.feedback = (
+    #             f"Fix only the `total_questions` so that the sum equals {target_total}. "
+    #             f"Do not change topics or focus_area; keep everything else identical."
+    #         )
     #         return False
 
-    #     for s in focus_area_list:
+    #     # Check skill validity
+    #     for s in used_skills:
     #         if s not in all_skill_leaves:
+    #             state.interview_topics_feedback = type("FB", (), {})()
+    #             state.interview_topics_feedback.feedback = (
+    #                 f"The skill `{s}` is not a level-3 leaf. Replace it with a verbatim leaf from T."
+    #             )
     #             return False
 
-    #     missing_must = ", ".join(sorted(set(skills_priority_must) - set(focus_area_list)))
-    #     if missing_must:
-    #         prior = state.interview_topics_feedback.feedback if state.interview_topics_feedback else ""
-    #         feedback = (
-    #             prior
-    #             + "Please keep the topic set as it is irresepective of below instructions: ```\n"
-    #             + f"{state.interview_topics.model_dump()}```\n"
-    #             + f" But add the list of missing `must` priority skills: \n{missing_must}\n"
-    #             + " to the focus areas of the last topic which being General Skill Assessment"
+    #     # Check must coverage
+    #     missing = sorted(set(must_leaves) - set(used_skills))
+    #     if missing:
+    #         state.interview_topics_feedback = type("FB", (), {})()
+    #         state.interview_topics_feedback.feedback = (
+    #             "Add the following missing `must` skills ONLY to the last topic "
+    #             "(General skill assessment) without changing anything else:\n"
+    #             + ", ".join(missing)
     #         )
-    #         state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
     #         return False
 
     #     return True
 
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
+
         global i 
         print(f"Topic Iteration -> {i}")
         i += 1
+
         def level3_leavesp(root: SkillTreeSchema) -> list[SkillTreeSchema]:
-            if not root.children: return []
-            out = []
-            for domain in root.children:
+            if not root.children:
+                return []
+            skills_priority_must: list[SkillTreeSchema] = []
+            for domain in root.children:                 
                 for leaf in (domain.children or []):
-                    if not leaf.children and leaf.priority == "must":
-                        out.append(leaf)
-            return out
+                    if not leaf.children:  # only pick true leaves
+                        if leaf.priority == "must":
+                            skills_priority_must.append(leaf)
+
+            return skills_priority_must
 
         def level3_leaves(root: SkillTreeSchema) -> list[SkillTreeSchema]:
-            if not root.children: return []
-            out = []
-            for domain in root.children:
+            if not root.children:
+                return []
+            leaves: list[SkillTreeSchema] = []
+            for domain in root.children:                 
                 for leaf in (domain.children or []):
-                    if not leaf.children:
-                        out.append(leaf)
-            return out
+                    if not leaf.children:  # only pick true leaves
+                        leaves.append(leaf)
+            return leaves
+
 
         all_skill_leaves = [leaf.name for leaf in level3_leaves(state.skill_tree)]
-        must_leaves = [leaf.name for leaf in level3_leavesp(state.skill_tree)]
+        skills_priority_must = [leaf.name for leaf in level3_leavesp(state.skill_tree)]
+        # print(skills_priority_must)
+        # print(all_skill_leaves)
 
-        # Gather all skills used
-        used_skills = []
+        # print(state.interview_topics.model_dump())
+        focus_area_list = []
         for t in state.interview_topics.interview_topics:
-            for fa in t.focus_area:
-                s = fa.model_dump().get("skill")
-                if s and s not in used_skills:
-                    used_skills.append(s)
+            for i in t.focus_area:
+                # print(i.model_dump())
+                for j in i.model_dump():
+                    if j == "skill":
+                        x = i.model_dump()
+                        if x["skill"] not in focus_area_list:
+                            focus_area_list.append(x["skill"]) 
 
-        # Check total questions
-        target_total = state.generated_summary.total_questions
-        got_total = sum(t.total_questions for t in state.interview_topics.interview_topics)
-        if got_total != target_total:
-            state.interview_topics_feedback = type("FB", (), {})()
-            state.interview_topics_feedback.feedback = (
-                f"Fix only the `total_questions` so that the sum equals {target_total}. "
-                f"Do not change topics or focus_area; keep everything else identical."
-            )
+        total_questions_sum = sum(t.total_questions for t in state.interview_topics.interview_topics)
+        # print(f"Total Questions Sum: {total_questions_sum}\nTotal Questions in Summary: {state.generated_summary.total_questions}")
+        # print(focus_area_list)
+        if total_questions_sum != state.generated_summary.total_questions:
+            print("Total questions in topic list does not match as decided by summary... regenerating topics...")
             return False
+        # focus_area_list = all_focus_skills(state.interview_topics)
 
-        # Check skill validity
-        for s in used_skills:
-            if s not in all_skill_leaves:
-                state.interview_topics_feedback = type("FB", (), {})()
-                state.interview_topics_feedback.feedback = (
-                    f"The skill `{s}` is not a level-3 leaf. Replace it with a verbatim leaf from T."
-                )
+        # print(f"Skill Tree List {all_skill_leaves}")
+
+        # print(f"\nFocus Area List {focus_area_list}")
+        for i in focus_area_list:
+            if i not in all_skill_leaves:
                 return False
 
-        # Check must coverage
-        missing = sorted(set(must_leaves) - set(used_skills))
-        if missing:
-            state.interview_topics_feedback = type("FB", (), {})()
-            state.interview_topics_feedback.feedback = (
-                "Add the following missing `must` skills ONLY to the last topic "
-                "(General skill assessment) without changing anything else:\n"
-                + ", ".join(missing)
-            )
+        skill_list = ""
+        for i in set(skills_priority_must):
+            if i not in set(focus_area_list):
+                skill_list += ", " + i
+
+        feedback = ""
+        if skill_list != "":
+            if state.interview_topics_feedback is not None:
+                feedback = state.interview_topics_feedback.feedback
+            feedback += f"Please keep the topic set as it is irresepective of below instructions: ```\n{state.interview_topics.model_dump()}```\n But add the list of missing `must` priority skills: \n{skill_list}\n to the focus areas of the last topic which being General Skill Assessment"
+            state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
+
             return False
 
         return True
-
 
     @staticmethod
     def get_graph(checkpointer=None):
