@@ -194,7 +194,11 @@ def _log_planned_tool_calls(ai_msg):
 
 def _log_recent_tool_results(messages):
     i = len(messages) - 1
+    j = False
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
+        if j == False:    
+            print("--------------Topic Tool Call logs------------------")
+            j = True
         tm = messages[i]
         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
         i -= 1
@@ -222,7 +226,6 @@ class TopicGenerationAgent:
     @staticmethod
     def _agent_node(state: _MongoAgentState):
         """LLM picks tool(s) or answers; LangGraph will handle tool exec via ToolNode."""
-        print("--------------Topic Tool Call logs------------------")
         _log_recent_tool_results(state["messages"])   # optional logging
 
         ai = TopicGenerationAgent._AGENT_MODEL.invoke(state["messages"])

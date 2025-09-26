@@ -207,7 +207,11 @@ def _log_planned_tool_calls(ai_msg):
 
 def _log_recent_tool_results(messages):
     i = len(messages) - 1
+    j = False
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
+        if j == False:
+            print("----------------Nodes Tool Call logs-----------------------------------")
+            j = True
         tm = messages[i]
         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
         i -= 1
@@ -235,7 +239,6 @@ class NodesGenerationAgent:
     @staticmethod
     def _agent_node(state: _MongoNodesState):
         # If we just came from ToolNode, the last messages are ToolMessages → print them.
-        print("----------------Nodes Tool Call logs-----------------------------------")
         _log_recent_tool_results(state["messages"])   # optional logging
 
         ai = NodesGenerationAgent._AGENT_MODEL.invoke(state["messages"])
@@ -363,7 +366,7 @@ class NodesGenerationAgent:
         raise ValueError("total_questions must be >= 2 for each topic")
 
     @staticmethod
-    async def _gen_once(per_topic_summary_json: str, T, thread_id, nodes_error) -> TopicWithNodesSchema:
+    async def _gen_once(per_topic_summary_json: str, total_no_questions_topic, thread_id, nodes_error) -> TopicWithNodesSchema:
         from string import Template
 
         class AtTemplate(Template):
@@ -372,7 +375,7 @@ class NodesGenerationAgent:
         tpl = AtTemplate(NODES_AGENT_PROMPT)
         content = tpl.substitute(
             per_topic_summary_json=per_topic_summary_json,
-            total_no_questions_context=T,
+            total_no_questions_topic=total_no_questions_topic,
             thread_id=thread_id,
             nodes_error=nodes_error,
         )
@@ -412,10 +415,10 @@ class NodesGenerationAgent:
         out: List[TopicWithNodesSchema] = []
 
         for topic_obj, dspt_obj in zip(topics_list, summaries_list):
-            T = NodesGenerationAgent._get_total_questions(topic_obj, dspt_obj)
+            total_no_questions_topic = NodesGenerationAgent._get_total_questions(topic_obj, dspt_obj)
             per_topic_summary_json = NodesGenerationAgent._to_json_one(dspt_obj)
 
-            resp = await NodesGenerationAgent._gen_once(per_topic_summary_json, T, state.id, state.nodes_error)
+            resp = await NodesGenerationAgent._gen_once(per_topic_summary_json, total_no_questions_topic, state.id, state.nodes_error)
             out.append(resp)
 
         # Verify upstream summary wasn’t mutated

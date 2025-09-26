@@ -366,7 +366,11 @@ def _log_planned_tool_calls(ai_msg):
 
 def _log_recent_tool_results(messages):
     i = len(messages) - 1
+    j = False
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
+        if j == False:
+            print("-----------------QA Blocks Tool Call logs------------")
+            j = True
         tm = messages[i]
         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
         i -= 1
@@ -388,7 +392,6 @@ class QABlockGenerationAgent:
 
     @staticmethod
     def _agent_node(state: _QAInnerState):
-        print("-----------------QA Blocks Tool Call logs------------")
         _log_recent_tool_results(state["messages"])   # optional logging
         ai = QABlockGenerationAgent._AGENT_MODEL.invoke(state["messages"])
         return {"messages": [ai]}
