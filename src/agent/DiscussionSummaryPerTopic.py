@@ -292,7 +292,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
 
     @staticmethod
     async def should_regenerate(state: AgentInternalState):
-        global i 
+        global count 
 
         input_topics = {t.topic for t in state.interview_topics.interview_topics}
         output_topics = {dt.topic for dt in state.discussion_summary_per_topic.discussion_topics}
