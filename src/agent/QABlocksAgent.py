@@ -355,7 +355,7 @@ from ..schema.output_schema import QASetsSchema
 from ..prompt.qa_agent_prompt import QA_BLOCK_AGENT_PROMPT
 from ..model_handling import llm_qa
 
-i = 1
+count = 1
 # At top of file (if you added the log helpers there)
 def _log_planned_tool_calls(ai_msg):
     for tc in getattr(ai_msg, "tool_calls", []) or []:
@@ -677,8 +677,8 @@ class QABlockGenerationAgent:
                 "[QABlockGen ValidationError]\n "
                 f"{ve}"
             )
-            print(f"QA Blocks Retry Iteration -> {i}")
-            i += 1
+            print(f"QA Blocks Retry Iteration -> {count}")
+            count += 1
             return True
 
         return False

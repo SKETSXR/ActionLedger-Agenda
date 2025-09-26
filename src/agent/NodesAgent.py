@@ -195,7 +195,35 @@ from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
 from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
 from ..model_handling import llm_n
 
-i = 1
+count = 1
+
+# --- Arithmetic tools ---
+from langchain_core.tools import tool
+
+@tool("add")
+def add(a: float, b: float) -> float:
+    """Return a + b."""
+    return a + b
+
+@tool("subtract")
+def subtract(a: float, b: float) -> float:
+    """Return a - b."""
+    return a - b
+
+@tool("multiply")
+def multiply(a: float, b: float) -> float:
+    """Return a * b."""
+    return a * b
+
+@tool("divide")
+def divide(a: float, b: float) -> float:
+    """Return a / b. Raises if b == 0."""
+    if b == 0:
+        raise ValueError("Division by zero")
+    return a / b
+
+ARITH_TOOLS = [add, subtract, multiply, divide]
+
 
 # At top of file (if you added the log helpers there)
 def _log_planned_tool_calls(ai_msg):
@@ -216,6 +244,52 @@ def _log_recent_tool_results(messages):
         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
         i -= 1
 
+def _easy_enforce_budget(nodes: list, total_no_questions_topic: int) -> list:
+    """Keep a single Deep Dive and give it the whole budget (>=2).
+    Opening/Direct remain with null thresholds."""
+    if not isinstance(nodes, list):
+        return nodes
+
+    # Budget counts only Deep Dives (Opening + Direct are 0 by definition)
+    budget = max(0, int(total_no_questions_topic) - 2)
+
+    # Find Deep Dives (keep the first, drop the rest)
+    dd_idx = [i for i, n in enumerate(nodes)
+              if str(n.get("question_type", "")).strip().lower() == "deep dive"]
+
+    if not dd_idx:
+        # Nothing to do if the model produced no deep dives
+        return nodes
+
+    # Remove extra deep dives (keep only the first)
+    for idx in reversed(dd_idx[1:]):
+        nodes.pop(idx)
+
+    # Ensure question_guidelines present for the single deep dive
+    first = dd_idx[0] if dd_idx else None
+    # Recompute index if we popped anything before it
+    if first is not None:
+        # Find its new position (same object identity not guaranteed)
+        first_pos = next((i for i, n in enumerate(nodes)
+                          if str(n.get("question_type","")).strip().lower() == "deep dive"), None)
+        if first_pos is not None:
+            if not nodes[first_pos].get("question_guidelines"):
+                nodes[first_pos]["question_guidelines"] = (
+                    "This deep diving question should probe concrete trade-offs, metrics, and implementation constraints."
+                )
+            # Give the whole budget to this deep dive (respect min 2)
+            if budget > 0:
+                nodes[first_pos]["total_question_threshold"] = max(2, budget)
+            else:
+                # If caller passed too small a total (e.g., 0 or 1), still satisfy min 2
+                nodes[first_pos]["total_question_threshold"] = 2
+
+    # Re-link next_node chain (IDs remain as-is; just fix pointers)
+    for i in range(len(nodes) - 1):
+        nodes[i]["next_node"] = nodes[i + 1]["id"]
+    nodes[-1]["next_node"] = None
+
+    return nodes
 
 
 # ---------- Inner ReAct state for Mongo loop (per-topic) ----------
@@ -229,6 +303,8 @@ class NodesGenerationAgent:
     # Inside class TopicGenerationAgent
     # make sure you have this:
     MONGO_TOOLS = get_mongo_tools(llm=llm_n)
+    ALL_TOOLS = MONGO_TOOLS + ARITH_TOOLS
+
     _AGENT_MODEL = llm_n.bind_tools(MONGO_TOOLS)
     _STRUCTURED_MODEL = llm_n.with_structured_output(
         TopicWithNodesSchema, method="function_calling"
@@ -283,7 +359,7 @@ class NodesGenerationAgent:
     _workflow = StateGraph(_MongoNodesState)
     _workflow.add_node("agent", _agent_node)
     _workflow.add_node("respond", _respond_node)
-    _workflow.add_node("tools", ToolNode(MONGO_TOOLS, tags=["mongo-tools"]))
+    _workflow.add_node("tools", ToolNode(MONGO_TOOLS, tags=["mongo-tools+arith-tools"]))
     _workflow.set_entry_point("agent")
     _workflow.add_conditional_edges(
         "agent",
@@ -418,7 +494,18 @@ class NodesGenerationAgent:
             total_no_questions_topic = NodesGenerationAgent._get_total_questions(topic_obj, dspt_obj)
             per_topic_summary_json = NodesGenerationAgent._to_json_one(dspt_obj)
 
-            resp = await NodesGenerationAgent._gen_once(per_topic_summary_json, total_no_questions_topic, state.id, state.nodes_error)
+            # resp = await NodesGenerationAgent._gen_once(per_topic_summary_json, total_no_questions_topic, state.id, state.nodes_error)
+            resp = await NodesGenerationAgent._gen_once(
+            per_topic_summary_json, total_no_questions_topic, state.id, state.nodes_error
+        )
+
+        if hasattr(resp, "model_dump"):
+            d = resp.model_dump()
+            d["nodes"] = _easy_enforce_budget(d.get("nodes", []), total_no_questions_topic)
+            resp = TopicWithNodesSchema.model_validate(d)
+        else:
+            resp["nodes"] = _easy_enforce_budget(resp.get("nodes", []), total_no_questions_topic)
+
             out.append(resp)
 
         # Verify upstream summary wasn’t mutated
@@ -440,9 +527,9 @@ class NodesGenerationAgent:
     #     Return True if we need to regenerate (schema invalid), else False.
     #     Validates the container (NodesSchema) and each TopicWithNodesSchema item inside it.
     #     """
-    #     global i 
-    #     print(f"Nodes Iteration -> {i}")
-    #     i += 1
+    #     global count 
+    #     print(f"Nodes Iteration -> {count}")
+    #     count += 1
     #     if getattr(state, "nodes", None) is None:
     #         return True
 
@@ -542,8 +629,8 @@ class NodesGenerationAgent:
                 state.nodes_error += f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n" + str(ve) + "\n"
 
         if any_invalid:
-            print(f"Nodes Retry Iteration -> {i}")
-            i += 1
+            print(f"Nodes Retry Iteration -> {count}")
+            count += 1
         return any_invalid
 
     @staticmethod

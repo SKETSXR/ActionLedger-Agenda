@@ -94,7 +94,7 @@ load_dotenv()
     
 # '''
 
-with open(r"testing\Ayam\jd.txt", "r", encoding="utf-8") as f:
+with open(r"testing\Ghanshyam - SWE\jd.txt", "r", encoding="utf-8") as f:
     jd_inp_text = f.read()
 jd_json_string = asyncio.run(parse_jd_text_to_json(jd_inp_text))
 if jd_json_string == "JD not contain any text":
@@ -106,7 +106,7 @@ jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["comp
 # with open(r"parsed_cv7.json", "r", encoding='utf-8') as c:
 #     candidate_profile = json.load(c)
 
-candidate_profile = asyncio.run(parse_pdf_to_json(r"testing\Ayam\AyamHeniberMeitei_2025L - ayam heniber.pdf"))
+candidate_profile = asyncio.run(parse_pdf_to_json(r"testing\Ghanshyam - SWE\Resume-Ghanshyam-jangir - GHANSHYAM JANGIR.pdf"))
 # print(candidate_profile)
 if candidate_profile == "CV does not contain proper text":
     raise("Open AI API not running")
@@ -291,7 +291,7 @@ for k, v in otpt.items():
     print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
     x += f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n"
 
-with open(r"testing\op41.txt", "w", encoding="utf-8") as f:
+with open(r"testing\op42.txt", "w", encoding="utf-8") as f:
     f.write(x)
 # for i, v in otpt.items():
 #     if hasattr(v, "model_dump_json"):

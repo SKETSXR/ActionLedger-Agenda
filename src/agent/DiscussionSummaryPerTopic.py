@@ -164,7 +164,7 @@ from ..prompt.discussion_summary_per_topic_generation_agent_prompt import (
 from ..model_handling import llm_dts
 
 
-i = 1 
+count = 1 
 # At top of file (if you added the log helpers there)
 def _log_planned_tool_calls(ai_msg):
     for tc in getattr(ai_msg, "tool_calls", []) or []:
@@ -300,8 +300,8 @@ class PerTopicDiscussionSummaryGenerationAgent:
             missing = input_topics - output_topics
             extra = output_topics - input_topics
             print(f"[PerTopic] Topic mismatch: missing {missing}, extra {extra}")
-            print(f"Topic wise Discussion Summary Retry Iteration -> {i}")
-            i += 1
+            print(f"Topic wise Discussion Summary Retry Iteration -> {count}")
+            count += 1
             return True
         else:
             return False

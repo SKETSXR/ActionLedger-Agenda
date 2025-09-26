@@ -183,7 +183,7 @@ from src.mongo_tools import get_mongo_tools
 
 # set_llm_cache(InMemoryCache())
 
-i = 1
+count = 1
 # At top of file (if you added the log helpers there)
 def _log_planned_tool_calls(ai_msg):
     for tc in getattr(ai_msg, "tool_calls", []) or []:
@@ -310,20 +310,7 @@ class TopicGenerationAgent:
             else ""
         )
         state.interview_topics_feedbacks += "\n" + interview_topics_feedback + "\n"
-        # MONGO_USAGE_RULES = '''
-        #                     MongoDB tool usage rules (STRICT):
-        #                     - Always use the right tool:
-        #                     • mongodb_list_collections()          # no args
-        #                     • mongodb_schema(collection_names)    # comma-separated names: "cv, summary"
-        #                     • mongodb_query(collection, query)    # BOTH args MUST be given
-        #                     - 'collection' is the collection name (e.g., "cv", "summary", "question_guidelines").
-        #                     - 'query' is a pure JSON filter string ONLY (no 'db.' shell, no aggregate, no comments).
-        #                     Example: collection="summary", query='{"_id": "thread_38"}'
-        #                     - Do NOT send just a JSON object as the whole command.
-        #                     - Do NOT send 'db.collection.find(...)' - that will fail. Use the two-arg format above.
-        #                     - If a query fails twice, STOP calling tools and proceed with the data you have.\n
-        #                     '''
-        MONGO_USAGE_RULES = ""
+
         from string import Template
 
         class AtTemplate(Template):
@@ -351,9 +338,9 @@ class TopicGenerationAgent:
 
     # @staticmethod
     # async def should_regenerate(state: AgentInternalState) -> bool:
-    #     global i 
-    #     print(f"Topic Iteration -> {i}")
-    #     i += 1
+    #     global count 
+    #     print(f"Topic Iteration -> {count}")
+    #     count += 1
     #     def level3_leavesp(root: SkillTreeSchema) -> list[SkillTreeSchema]:
     #         if not root.children: return []
     #         out = []
@@ -419,7 +406,7 @@ class TopicGenerationAgent:
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
 
-        global i 
+        global count
 
         def level3_leavesp(root: SkillTreeSchema) -> list[SkillTreeSchema]:
             if not root.children:
@@ -464,8 +451,8 @@ class TopicGenerationAgent:
         # print(f"Total Questions Sum: {total_questions_sum}\nTotal Questions in Summary: {state.generated_summary.total_questions}")
         # print(focus_area_list)
         if total_questions_sum != state.generated_summary.total_questions:
-            print(f"Total questions in topic list does not match as decided by summary... regenerating topics... retry iteration -> {i}")
-            i += 1
+            print(f"Total questions in topic list does not match as decided by summary... regenerating topics... retry iteration -> {count}")
+            count += 1
             return False
         # focus_area_list = all_focus_skills(state.interview_topics)
 
@@ -474,8 +461,8 @@ class TopicGenerationAgent:
         # print(f"\nFocus Area List {focus_area_list}")
         for i in focus_area_list:
             if i not in all_skill_leaves:
-                print(f"Topic Retry Iteration -> {i}")
-                i += 1
+                print(f"Topic Retry Iteration -> {count}")
+                count += 1
                 return False
 
         skill_list = ""
@@ -489,8 +476,8 @@ class TopicGenerationAgent:
                 feedback = state.interview_topics_feedback.feedback
             feedback += f"Please keep the topic set as it is irresepective of below instructions: ```\n{state.interview_topics.model_dump()}```\n But add the list of missing `must` priority skills: \n{skill_list}\n to the focus areas of the last topic which being General Skill Assessment"
             state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
-            print(f"Topic Retry Iteration -> {i}")
-            i += 1
+            print(f"Topic Retry Iteration -> {count}")
+            count += 1
 
             return False
 
