@@ -192,7 +192,7 @@ class NodeSchema(BaseModel):
     next_node: Optional[int] = Field(None, ge=1)
     context: str = Field(..., min_length=1)
     skills: List[str] = Field(..., min_items=1)
-    total_question_threshold: Optional[int] = Field(None, ge=1)
+    total_question_threshold: Optional[int] = Field(None, ge=2)
     question_guidelines: Optional[str] = None
 
 
