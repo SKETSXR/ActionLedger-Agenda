@@ -663,8 +663,7 @@ class QABlockGenerationAgent:
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
         global i 
-        print(f"QA Blocks Iteration -> {i}")
-        i += 1
+
         try:
             QASetsSchema.model_validate(
                 state.qa_blocks.model_dump() if hasattr(state.qa_blocks, "model_dump") else state.qa_blocks
@@ -675,7 +674,10 @@ class QABlockGenerationAgent:
                 "[QABlockGen ValidationError]\n "
                 f"{ve}"
             )
+            print(f"QA Blocks Retry Iteration -> {i}")
+            i += 1
             return True
+
         return False
 
     @staticmethod

@@ -290,14 +290,15 @@ class PerTopicDiscussionSummaryGenerationAgent:
     @staticmethod
     async def should_regenerate(state: AgentInternalState):
         global i 
-        print(f"Topic wise Discussion Summary Iteration -> {i}")
-        i += 1
+
         input_topics = {t.topic for t in state.interview_topics.interview_topics}
         output_topics = {dt.topic for dt in state.discussion_summary_per_topic.discussion_topics}
         if input_topics != output_topics:
             missing = input_topics - output_topics
             extra = output_topics - input_topics
             print(f"[PerTopic] Topic mismatch: missing {missing}, extra {extra}")
+            print(f"Topic wise Discussion Summary Retry Iteration -> {i}")
+            i += 1
             return True
         else:
             return False

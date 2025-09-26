@@ -417,8 +417,6 @@ class TopicGenerationAgent:
     async def should_regenerate(state: AgentInternalState) -> bool:
 
         global i 
-        print(f"Topic Iteration -> {i}")
-        i += 1
 
         def level3_leavesp(root: SkillTreeSchema) -> list[SkillTreeSchema]:
             if not root.children:
@@ -463,7 +461,8 @@ class TopicGenerationAgent:
         # print(f"Total Questions Sum: {total_questions_sum}\nTotal Questions in Summary: {state.generated_summary.total_questions}")
         # print(focus_area_list)
         if total_questions_sum != state.generated_summary.total_questions:
-            print("Total questions in topic list does not match as decided by summary... regenerating topics...")
+            print(f"Total questions in topic list does not match as decided by summary... regenerating topics... retry iteration -> {i}")
+            i += 1
             return False
         # focus_area_list = all_focus_skills(state.interview_topics)
 
@@ -472,6 +471,8 @@ class TopicGenerationAgent:
         # print(f"\nFocus Area List {focus_area_list}")
         for i in focus_area_list:
             if i not in all_skill_leaves:
+                print(f"Topic Retry Iteration -> {i}")
+                i += 1
                 return False
 
         skill_list = ""
@@ -485,6 +486,8 @@ class TopicGenerationAgent:
                 feedback = state.interview_topics_feedback.feedback
             feedback += f"Please keep the topic set as it is irresepective of below instructions: ```\n{state.interview_topics.model_dump()}```\n But add the list of missing `must` priority skills: \n{skill_list}\n to the focus areas of the last topic which being General Skill Assessment"
             state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
+            print(f"Topic Retry Iteration -> {i}")
+            i += 1
 
             return False
 

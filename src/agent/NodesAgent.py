@@ -431,6 +431,63 @@ class NodesGenerationAgent:
         )
         return state
 
+    # @staticmethod
+    # async def should_regenerate(state: AgentInternalState) -> bool:
+    #     """
+    #     Return True if we need to regenerate (schema invalid), else False.
+    #     Validates the container (NodesSchema) and each TopicWithNodesSchema item inside it.
+    #     """
+    #     global i 
+    #     print(f"Nodes Iteration -> {i}")
+    #     i += 1
+    #     if getattr(state, "nodes", None) is None:
+    #         return True
+
+    #     # Validate NodesSchema (container)
+    #     try:
+    #         NodesSchema.model_validate(
+    #             state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else state.nodes
+    #         )
+    #     except ValidationError as ve:
+    #         print("[NodesGen][ValidationError] Container NodesSchema invalid")
+    #         print(str(ve))
+    #         state.nodes_error += (
+    #             "The previous generated o/p did not follow the given schema as it got following errors:\n"
+    #             + (getattr(state, "nodes_error", "") or "")
+    #             + "\n[NodesSchema ValidationError]\n"
+    #             + str(ve)
+    #             + "\n"
+    #         )
+    #         return True
+
+    #     # Validate each topic payload
+    #     try:
+    #         topics_payload = (
+    #             state.nodes.topics_with_nodes
+    #             if hasattr(state.nodes, "topics_with_nodes")
+    #             else state.nodes.get("topics_with_nodes", [])
+    #         )
+    #     except Exception as e:
+    #         print("[NodesGen][ValidationError] Could not read topics_with_nodes:", e)
+    #         state.nodes_error += "\n[NodesSchema Payload Error]\n" + str(e) + "\n"
+    #         return True
+
+    #     any_invalid = False
+    #     for idx, item in enumerate(topics_payload):
+    #         try:
+    #             TopicWithNodesSchema.model_validate(
+    #                 item.model_dump() if hasattr(item, "model_dump") else item
+    #             )
+    #         except ValidationError as ve:
+    #             any_invalid = True
+    #             print(f"[NodesGen][ValidationError] TopicWithNodesSchema invalid at index {idx}")
+    #             print(str(ve))
+    #             state.nodes_error += (
+    #                 f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n" + str(ve) + "\n"
+    #             )
+
+    #     return any_invalid
+    
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
         """
@@ -438,26 +495,22 @@ class NodesGenerationAgent:
         Validates the container (NodesSchema) and each TopicWithNodesSchema item inside it.
         """
         global i 
-        print(f"Nodes Iteration -> {i}")
-        i += 1
+
+        # Nothing produced yet? -> regenerate
         if getattr(state, "nodes", None) is None:
             return True
 
         # Validate NodesSchema (container)
         try:
+            # accept either a Pydantic instance or a plain dictionary
             NodesSchema.model_validate(
                 state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else state.nodes
             )
         except ValidationError as ve:
             print("[NodesGen][ValidationError] Container NodesSchema invalid")
             print(str(ve))
-            state.nodes_error += (
-                "The previous generated o/p did not follow the given schema as it got following errors:\n"
-                + (getattr(state, "nodes_error", "") or "")
-                + "\n[NodesSchema ValidationError]\n"
-                + str(ve)
-                + "\n"
-            )
+            state.nodes_error += "The previous generated o/p did not follow the given schema as it got following errors:\n" + (getattr(state, "nodes_error", "") or "") + \
+                                "\n[NodesSchema ValidationError]\n" + str(ve) + "\n"
             return True
 
         # Validate each topic payload
@@ -475,6 +528,7 @@ class NodesGenerationAgent:
         any_invalid = False
         for idx, item in enumerate(topics_payload):
             try:
+                # item can be pydantic model or dictionary
                 TopicWithNodesSchema.model_validate(
                     item.model_dump() if hasattr(item, "model_dump") else item
                 )
@@ -482,10 +536,11 @@ class NodesGenerationAgent:
                 any_invalid = True
                 print(f"[NodesGen][ValidationError] TopicWithNodesSchema invalid at index {idx}")
                 print(str(ve))
-                state.nodes_error += (
-                    f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n" + str(ve) + "\n"
-                )
+                state.nodes_error += f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n" + str(ve) + "\n"
 
+        if any_invalid:
+            print(f"Nodes Retry Iteration -> {i}")
+            i += 1
         return any_invalid
 
     @staticmethod

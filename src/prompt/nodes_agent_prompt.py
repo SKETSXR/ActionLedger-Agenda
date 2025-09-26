@@ -188,7 +188,7 @@ Discussion Summary for a topic:
 \n```@per_topic_summary_json```\n
 Here in this opening means starting questions related to the background of the candidate, Direct Questions are ones related to the respective topic only and Deep Dive(s) mean those that dive deep into the respective particular topic, rest other things are self-explanatory.  
 
-\nProvided constraint on total no of questions for this topic should be equal to: ```@total_no_questions_context```\n
+\nProvided constraint on total no of questions for this topic will be provided below where being required\n
 
 Use the errors from all the previous node generations (if any) related to schema validation given below as a feedback to you to fix your generated outputs:
 \n```@nodes_error```\n
@@ -235,7 +235,7 @@ Each node must contain:
 - `context`: Short description of what this particular node covers
 - `skills`: List of skills to test in that particular node (taken verbatim from `focus areas` lists of each sequence) can include as many number of skills as possible, <but make sure that none of the skills in the `focus_areas_covered` list are left out>.
 - `question_guidelines`: It is only required for Deep Dive or QA blocks and should be as a short and brief 1 line guide to write questions from this content, but it should not be null but null for nodes
-- `total_question_threshold`: A threshold number of questions only for Deep dive/QA block questions but it should follow a constraint that in each Deep dive node total_question_threshold should be atleast 2, but the sum of total_question_threshold from each deep dive node + 2 for each topic should be equal to provided total number of questions of each topic. Also for non Deep Dive / QA Blocks total_question_threshold shall be null. 
+- `total_question_threshold`: A threshold number of questions only for Deep dive/QA block questions but it should follow a constraint that in each Deep dive node total_question_threshold should be atleast 2, but the sum of total_question_threshold from each deep dive node + 2 for each topic should be equal to @total_no_questions_context. Also for non Deep Dive / QA Blocks total_question_threshold shall be null. 
 
 Rules
 - Sequence must follow a walkthrough order for each topic.  
@@ -246,7 +246,7 @@ Rules
 - Opening Questions are ones that open the interview discussion of the topic and more information is provided in the discussion summary per topic, Direct Questions are those which are related to respective topic only and Deep Dive(s) (QA Block) mean those that dive deep into the respective particular topic.  
 - It should accommodate the fact that only 1 opening question node of each topic will be always there, also that there will be only 1 direct question node in each topic for sure
 - The total_question_threshold in each deep dive node should be atleast 2 in each topic for sure
-- There will always be 1 opening node, 1 direct node always but you can vary number of deep dive nodes or their respective total_question_threshold but still <the sum of all deep dive node's total_question_threshold + 2 should be equal to total_questions as provided per topic>: no matter what the topic is this constraint should be maintained.
+- There will always be 1 opening node, 1 direct node always but you can vary number of deep dive nodes or their respective total_question_threshold but still <the sum of all deep dive node's total_question_threshold + 2 should be equal to @total_no_questions_context of this topic>: no matter what the topic is this constraint should be maintained.
 - Use MongoDB tools per the STRICT policy above to retrieve and understand if required:
   - question_guidelines (_id: "Case study type questions","Project based questions","Counter questions")
   - cv / summary context keyed by "@thread_id"
