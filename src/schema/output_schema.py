@@ -181,7 +181,7 @@ class DiscussionSummaryPerTopicSchema(BaseModel):
     discussion_topics: List[DiscussionTopic]
 
 
-QuestionType = Literal["Opening", "Direct", "Deep Dive"]
+QuestionType = Literal["Direct", "Deep Dive"]
 
 
 class NodeSchema(BaseModel):
