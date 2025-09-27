@@ -189,6 +189,7 @@ from langgraph.prebuilt import ToolNode
 from langchain_core.messages import SystemMessage, HumanMessage
 import json, copy
 from pydantic import ValidationError
+from langchain_core.tools import tool
 from src.mongo_tools import get_mongo_tools
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
@@ -199,7 +200,7 @@ from ..logging_tools import get_tool_logger, log_tool_activity
 count = 1
 
 # --- Arithmetic tools ---
-from langchain_core.tools import tool
+
 
 @tool("add")
 def add(a: float, b: float) -> float:
@@ -224,27 +225,6 @@ def divide(a: float, b: float) -> float:
     return a / b
 
 ARITH_TOOLS = [add, subtract, multiply, divide]
-
-
-# # At top of file (if you added the log helpers there)
-# def _log_planned_tool_calls(ai_msg):
-#     for tc in getattr(ai_msg, "tool_calls", []) or []:
-#         try:
-#             print(f"[ToolCall] name={tc['name']} args={tc.get('args')}")
-#         except Exception:
-#             print(f"[ToolCall] {tc}")
-
-# def _log_recent_tool_results(messages):
-#     i = len(messages) - 1
-#     j = False
-#     while i >= 0 and getattr(messages[i], "type", None) == "tool":
-#         if j == False:
-#             print("----------------Nodes Tool Call logs-----------------------------------")
-#             j = True
-#         tm = messages[i]
-#         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
-#         i -= 1
-
 
 
 AGENT_NAME = "nodes_agent"
@@ -275,7 +255,6 @@ class NodesGenerationAgent:
     @staticmethod
     def _agent_node(state: _MongoNodesState):
         # If we just came from ToolNode, the last messages are ToolMessages → print them.
-        # _log_recent_tool_results(state["messages"])   # optional logging
         log_tool_activity(state["messages"], ai_msg=None, agent_name=AGENT_NAME, logger=LOGGER, header="Nodes Tool Activity", pretty_json=True)
 
         ai = NodesGenerationAgent._AGENT_MODEL.invoke(state["messages"])
@@ -311,10 +290,6 @@ class NodesGenerationAgent:
 
     @staticmethod
     def _should_continue(state: _MongoNodesState):
-        # last = state["messages"][-1]
-        # if getattr(last, "tool_calls", None):
-        #     _log_planned_tool_calls(last)  # optional logging
-        #     return "continue"
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
             log_tool_activity(state["messages"], ai_msg=last, agent_name=AGENT_NAME, logger=LOGGER, header="Nodes Tool Activity", pretty_json=True)

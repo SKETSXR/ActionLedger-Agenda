@@ -156,6 +156,7 @@ from langgraph.graph import MessagesState
 from langgraph.prebuilt import ToolNode
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.mongo_tools import get_mongo_tools
+from string import Template
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import DiscussionSummaryPerTopicSchema
 from ..prompt.discussion_summary_per_topic_generation_agent_prompt import (
@@ -171,25 +172,6 @@ LOGGER = get_tool_logger(AGENT_NAME, log_dir=LOG_DIR, backup_count=365)
 
 
 count = 1 
-# # At top of file (if you added the log helpers there)
-# def _log_planned_tool_calls(ai_msg):
-#     for tc in getattr(ai_msg, "tool_calls", []) or []:
-#         try:
-#             print(f"[ToolCall] name={tc['name']} args={tc.get('args')}")
-#         except Exception:
-#             print(f"[ToolCall] {tc}")
-
-# def _log_recent_tool_results(messages):
-#     i = len(messages) - 1
-#     j = False
-#     while i >= 0 and getattr(messages[i], "type", None) == "tool":
-#         if j == False:
-#             print("-------------Discussion summary Tool Call logs-----------------")
-#             j = True
-#         tm = messages[i]
-#         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
-#         i -= 1
-
 
 
 # ---------- Inner ReAct state for per-topic Mongo loop ----------
@@ -213,7 +195,6 @@ class PerTopicDiscussionSummaryGenerationAgent:
     @staticmethod
     def _agent_node(state: _PerTopicState):
         # If we just came from ToolNode, the last messages are ToolMessages → print them.
-        # _log_recent_tool_results(state["messages"])   # optional logging
         log_tool_activity(
             messages=state["messages"],
             ai_msg=None,
@@ -256,11 +237,6 @@ class PerTopicDiscussionSummaryGenerationAgent:
 
     @staticmethod
     def _should_continue(state: _PerTopicState):
-        # last = state["messages"][-1]
-        # if getattr(last, "tool_calls", None):
-        #     _log_planned_tool_calls(last)  # optional logging
-        #     return "continue"
-
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
             # Log planned tool calls from the assistant message
@@ -296,8 +272,6 @@ class PerTopicDiscussionSummaryGenerationAgent:
         Drive inner graph for a single topic:
           System prompt -> agent (may call Mongo tools) -> respond (structured DiscussionTopic)
         """
-
-        from string import Template
 
         class AtTemplate(Template):
             delimiter = '@'   # anything not used in your prompt samples

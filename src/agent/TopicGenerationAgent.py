@@ -185,25 +185,6 @@ from ..logging_tools import get_tool_logger, log_tool_activity
 # set_llm_cache(InMemoryCache())
 
 count = 1
-# # At top of file (if you added the log helpers there)
-# def _log_planned_tool_calls(ai_msg):
-#     for tc in getattr(ai_msg, "tool_calls", []) or []:
-#         try:
-#             print(f"[ToolCall] name={tc['name']} args={tc.get('args')}")
-#         except Exception:
-#             print(f"[ToolCall] {tc}")
-
-# def _log_recent_tool_results(messages):
-#     i = len(messages) - 1
-#     j = False
-#     while i >= 0 and getattr(messages[i], "type", None) == "tool":
-#         if j == False:    
-#             print("--------------Topic Tool Call logs------------------")
-#             j = True
-#         tm = messages[i]
-#         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
-#         i -= 1
-
 
 # ---------------- Logger config ----------------
 AGENT_NAME = "topic_generation_agent"
@@ -232,7 +213,6 @@ class TopicGenerationAgent:
     @staticmethod
     def _agent_node(state: _MongoAgentState):
         """LLM picks tool(s) or answers; LangGraph will handle tool exec via ToolNode."""
-        # _log_recent_tool_results(state["messages"])   # optional logging
         log_tool_activity(
             messages=state["messages"],
             ai_msg=None,
@@ -291,11 +271,6 @@ class TopicGenerationAgent:
 
     @staticmethod
     def _should_continue(state: _MongoAgentState):
-        # last = state["messages"][-1]
-        # if getattr(last, "tool_calls", None):
-        #     _log_planned_tool_calls(last)  # optional logging
-        #     return "continue"
-
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
             # Log planned tool calls from the assistant message
