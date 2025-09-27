@@ -753,60 +753,78 @@ class NodesGenerationAgent:
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
         """
-        Only emit a single retry log with reason 'node schema error' when we decide to retry.
-        No other logs.
+        Return True if we need to regenerate (schema invalid), else False.
+        Validates the container (NodesSchema) and each TopicWithNodesSchema item inside it.
         """
-        global count
+        global count 
 
-        needs_retry = False
-
-        # 1) Nothing produced yet?
+        # Nothing produced yet? -> regenerate
         if getattr(state, "nodes", None) is None:
-            needs_retry = True
-        else:
-            # 2) Validate container schema
-            try:
-                NodesSchema.model_validate(
-                    state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else state.nodes
-                )
-            except ValidationError:
-                needs_retry = True
+            return True
 
-            # 3) Validate per-topic payload shape (only if container looked okay)
-            if not needs_retry:
-                try:
-                    topics_payload = (
-                        state.nodes.topics_with_nodes
-                        if hasattr(state.nodes, "topics_with_nodes")
-                        else state.nodes.get("topics_with_nodes", [])
-                    )
-                except Exception:
-                    needs_retry = True
-                else:
-                    # 4) Validate each topic schema
-                    for item in topics_payload or []:
-                        try:
-                            TopicWithNodesSchema.model_validate(
-                                item.model_dump() if hasattr(item, "model_dump") else item
-                            )
-                        except ValidationError:
-                            needs_retry = True
-                            break
-
-        if needs_retry:
-            # Log exactly once per retry, with the requested message
-            log_retry_iteration(
-                agent_name=AGENT_NAME,
-                iteration=count,
-                reason="node schema error",
-                logger=LOGGER,
-                pretty_json=True,
+        # Validate NodesSchema (container)
+        try:
+            # accept either a Pydantic instance or a plain dictionary
+            NodesSchema.model_validate(
+                state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else state.nodes
             )
+        except ValidationError as ve:
+            # print("[NodesGen][ValidationError] Container NodesSchema invalid")
+            # print(str(ve))
+            state.nodes_error += "The previous generated o/p did not follow the given schema as it got following errors:\n" + (getattr(state, "nodes_error", "") or "") + \
+                                "\n[NodesSchema ValidationError]\n" + str(ve) + "\n"
+            log_retry_iteration(
+                    agent_name=AGENT_NAME,
+                    iteration=count,
+                    reason=f"[NodesGen][ValidationError] Container NodesSchema invalid\n {ve}",
+                    logger=LOGGER,
+                    pretty_json=True,
+                )
             count += 1
             return True
 
-        return False
+        # Validate each topic payload
+        try:
+            topics_payload = (
+                state.nodes.topics_with_nodes
+                if hasattr(state.nodes, "topics_with_nodes")
+                else state.nodes.get("topics_with_nodes", [])
+            )
+        except Exception as e:
+            # print("[NodesGen][ValidationError] Could not read topics_with_nodes:", e)
+            state.nodes_error += "\n[NodesSchema Payload Error]\n" + str(e) + "\n"
+            log_retry_iteration(
+                    agent_name=AGENT_NAME,
+                    iteration=count,
+                    reason=f"[NodesGen][ValidationError] Could not read topics_with_nodes: {e}",
+                    logger=LOGGER,
+                    pretty_json=True,
+                )
+            count += 1
+            return True
 
+        any_invalid = False
+        for idx, item in enumerate(topics_payload):
+            try:
+                # item can be pydantic model or dictionary
+                TopicWithNodesSchema.model_validate(
+                    item.model_dump() if hasattr(item, "model_dump") else item
+                )
+            except ValidationError as ve:
+                any_invalid = True
+                state.nodes_error += f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n" + str(ve) + "\n"
+                            # Log exactly once per retry, with the requested message
+
+        if any_invalid:
+            log_retry_iteration(
+                                    agent_name=AGENT_NAME,
+                                    iteration=count,
+                                    reason="node schema error",
+                                    logger=LOGGER,
+                                    pretty_json=True,
+                                )
+            count += 1
+        return any_invalid
 
     @staticmethod
     def get_graph(checkpointer=None):
