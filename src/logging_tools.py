@@ -269,7 +269,7 @@ def _emit(
     obj = {
         "event": event,
         "agent": agent_name,
-        "ts": ts or (datetime.utcnow().isoformat(timespec="seconds") + "Z"),
+        "ts": ts or (datetime.now().isoformat(timespec="seconds")),
         "data": data,
     }
     if pretty_json:
@@ -294,7 +294,7 @@ def log_tool_activity(
     Set `pretty_json=True` for indented, multi-line JSON output.
     """
     log = logger or get_tool_logger(agent_name)
-    now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    now = datetime.now().isoformat(timespec="seconds")
 
     # Planned tool calls
     tool_calls = getattr(ai_msg, "tool_calls", None)
