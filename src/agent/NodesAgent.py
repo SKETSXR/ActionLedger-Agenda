@@ -244,52 +244,97 @@ def _log_recent_tool_results(messages):
         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
         i -= 1
 
-def _easy_enforce_budget(nodes: list, total_no_questions_topic: int) -> list:
-    """Keep a single Deep Dive and give it the whole budget (>=2).
-    Opening/Direct remain with null thresholds."""
+def _qt(n: dict) -> str:
+    return str(n.get("question_type", "")).strip().lower()
+
+def _safe_id(n: dict) -> int:
+    try:
+        return int(n.get("id", 0))
+    except Exception:
+        return 0
+
+def _enforce_topic_budget_by_index(nodes: list, total_questions: int) -> list:
+    """
+    Make nodes conform to:
+      - Exactly 1 Opening + 1 Direct (thresholds None)
+      - ≥ 1 Deep Dive
+      - Each Deep Dive threshold ≥ 2
+      - Sum(Deep Dive thresholds) == (total_questions - 2)
+      - Order: Opening -> Direct -> DeepDive(s) -> others
+    If Deep Dives invalid/mismatched, collapse to a single Deep Dive with full budget.
+    """
     if not isinstance(nodes, list):
         return nodes
 
-    # Budget counts only Deep Dives (Opening + Direct are 0 by definition)
-    budget = max(0, int(total_no_questions_topic) - 2)
+    B = int(total_questions) - 2
+    if B < 2:
+        # Always require at least 1 deep dive with min 2, so force a feasible budget
+        B = 2
 
-    # Find Deep Dives (keep the first, drop the rest)
-    dd_idx = [i for i, n in enumerate(nodes)
-              if str(n.get("question_type", "")).strip().lower() == "deep dive"]
+    openings = [n for n in nodes if _qt(n) == "opening"]
+    directs  = [n for n in nodes if _qt(n) == "direct"]
+    deeps    = [n for n in nodes if _qt(n) == "deep dive"]
 
-    if not dd_idx:
-        # Nothing to do if the model produced no deep dives
-        return nodes
+    opening = openings[0] if openings else (nodes[0] if nodes else None)
+    direct  = directs[0]  if directs  else (nodes[1] if len(nodes) > 1 else None)
 
-    # Remove extra deep dives (keep only the first)
-    for idx in reversed(dd_idx[1:]):
-        nodes.pop(idx)
+    # Ensure ≥1 Deep Dive
+    if not deeps:
+        new_id = (max([_safe_id(n) for n in nodes] + [0]) + 1)
+        deeps = [{
+            "id": new_id,
+            "question_type": "Deep Dive",
+            "question": "Deep dive on key focus areas.",
+            "graded": True,
+            "next_node": None,
+            "context": "QA block for deeper probing.",
+            "skills": [],
+            "question_guidelines": "Probe trade-offs, metrics, and constraints.",
+            "total_question_threshold": B,
+        }]
+    else:
+        # Validate/repair: if any invalid or sum != B -> collapse to one with full B
+        valid = True
+        s = 0
+        for d in deeps:
+            thr = d.get("total_question_threshold")
+            if not isinstance(thr, int) or thr < 2:
+                valid = False
+                break
+            s += thr
+        if (not valid) or (s != B):
+            first = deeps[0]
+            first["total_question_threshold"] = B
+            if not first.get("question_guidelines"):
+                first["question_guidelines"] = "Probe trade-offs, metrics, and constraints."
+            deeps = [first]
 
-    # Ensure question_guidelines present for the single deep dive
-    first = dd_idx[0] if dd_idx else None
-    # Recompute index if we popped anything before it
-    if first is not None:
-        # Find its new position (same object identity not guaranteed)
-        first_pos = next((i for i, n in enumerate(nodes)
-                          if str(n.get("question_type","")).strip().lower() == "deep dive"), None)
-        if first_pos is not None:
-            if not nodes[first_pos].get("question_guidelines"):
-                nodes[first_pos]["question_guidelines"] = (
-                    "This deep diving question should probe concrete trade-offs, metrics, and implementation constraints."
-                )
-            # Give the whole budget to this deep dive (respect min 2)
-            if budget > 0:
-                nodes[first_pos]["total_question_threshold"] = max(2, budget)
-            else:
-                # If caller passed too small a total (e.g., 0 or 1), still satisfy min 2
-                nodes[first_pos]["total_question_threshold"] = 2
+    # Opening/Direct thresholds/guidelines -> None
+    for n in (opening, direct):
+        if isinstance(n, dict):
+            if n.get("total_question_threshold") is not None:
+                n["total_question_threshold"] = None
+            if n.get("question_guidelines") is not None:
+                n["question_guidelines"] = None
 
-    # Re-link next_node chain (IDs remain as-is; just fix pointers)
-    for i in range(len(nodes) - 1):
-        nodes[i]["next_node"] = nodes[i + 1]["id"]
-    nodes[-1]["next_node"] = None
+    # Rebuild order and re-chain next_node
+    new_nodes, added = [], set()
+    if isinstance(opening, dict): new_nodes.append(opening); added.add(id(opening))
+    if isinstance(direct, dict) and id(direct) not in added:
+        new_nodes.append(direct); added.add(id(direct))
+    for d in deeps:
+        if id(d) not in added:
+            new_nodes.append(d); added.add(id(d))
+    for n in nodes:
+        if id(n) not in added:
+            new_nodes.append(n); added.add(id(n))
 
-    return nodes
+    for i in range(len(new_nodes) - 1):
+        new_nodes[i]["next_node"] = new_nodes[i + 1].get("id")
+    if new_nodes:
+        new_nodes[-1]["next_node"] = None
+
+    return new_nodes
 
 
 # ---------- Inner ReAct state for Mongo loop (per-topic) ----------
@@ -431,15 +476,30 @@ class NodesGenerationAgent:
             return json.dumps(copy.deepcopy(x.dict()))
         return json.dumps(copy.deepcopy(x))
 
-    @staticmethod
-    def _get_total_questions(topic_obj: Any, dspt_obj: Any) -> int:
+    # @staticmethod
+    # def _get_total_questions(topic_obj: Any, dspt_obj: Any) -> int:
 
-        for src in (topic_obj, dspt_obj):
-            d = NodesGenerationAgent._as_dict(src)
-            tq = d.get("total_questions")
-            if isinstance(tq, int) and tq >= 2:
-                return tq
-        raise ValueError("total_questions must be >= 2 for each topic")
+    #     for src in (topic_obj, dspt_obj):
+    #         d = NodesGenerationAgent._as_dict(src)
+    #         tq = d.get("total_questions")
+    #         if isinstance(tq, int) and tq >= 2:
+    #             return tq
+    #     raise ValueError("total_questions must be >= 2 for each topic")
+
+    @staticmethod
+    def _get_total_questions(topic_obj: Any, _dspt_obj: Any) -> int:
+        """
+        Return the per-topic total_questions from the interview_topics entry ONLY.
+        We enforce >= 4 because we always require at least 1 Deep Dive (min threshold 2):
+        total_questions = 1 (Opening) + 1 (Direct) + sum(Deep Dive thresholds >=2) -> minimum 4.
+        """
+        d = NodesGenerationAgent._as_dict(topic_obj)
+        tq = d.get("total_questions")
+        if not isinstance(tq, int) or tq < 4:
+            raise ValueError(
+                "Each topic must set total_questions >= 4 because at least 1 Deep Dive (min threshold 2) is required."
+            )
+        return tq
 
     @staticmethod
     async def _gen_once(per_topic_summary_json: str, total_no_questions_topic, thread_id, nodes_error) -> TopicWithNodesSchema:
@@ -463,7 +523,7 @@ class NodesGenerationAgent:
         )
         return result["final_response"]  # TopicWithNodesSchema
 
-    # ----------------------------- Main Node generation node -----------------------------
+    # # ----------------------------- Main Node generation node -----------------------------
     @staticmethod
     async def nodes_generator(state: AgentInternalState) -> AgentInternalState:
         # Guards
@@ -494,17 +554,7 @@ class NodesGenerationAgent:
             total_no_questions_topic = NodesGenerationAgent._get_total_questions(topic_obj, dspt_obj)
             per_topic_summary_json = NodesGenerationAgent._to_json_one(dspt_obj)
 
-            # resp = await NodesGenerationAgent._gen_once(per_topic_summary_json, total_no_questions_topic, state.id, state.nodes_error)
-            resp = await NodesGenerationAgent._gen_once(
-            per_topic_summary_json, total_no_questions_topic, state.id, state.nodes_error
-        )
-
-        if hasattr(resp, "model_dump"):
-            d = resp.model_dump()
-            d["nodes"] = _easy_enforce_budget(d.get("nodes", []), total_no_questions_topic)
-            resp = TopicWithNodesSchema.model_validate(d)
-        else:
-            resp["nodes"] = _easy_enforce_budget(resp.get("nodes", []), total_no_questions_topic)
+            resp = await NodesGenerationAgent._gen_once(per_topic_summary_json, total_no_questions_topic, state.id, state.nodes_error)
 
             out.append(resp)
 
@@ -520,6 +570,90 @@ class NodesGenerationAgent:
             topics_with_nodes=[t.model_dump() if hasattr(t, "model_dump") else t for t in out]
         )
         return state
+
+    # @staticmethod
+    # async def nodes_generator(state: AgentInternalState) -> AgentInternalState:
+    #     # Guards
+    #     if state.interview_topics is None or not getattr(state.interview_topics, "interview_topics", None):
+    #         raise ValueError("No interview topics to summarize.")
+    #     if state.discussion_summary_per_topic is None:
+    #         raise ValueError("discussion_summary_per_topic is required.")
+
+    #     topics_list = list(state.interview_topics.interview_topics)
+    #     try:
+    #         summaries_list = list(state.discussion_summary_per_topic.discussion_topics)
+    #     except Exception:
+    #         summaries_list = list(state.discussion_summary_per_topic)
+
+    #     # Snapshot upstream summaries (sanity: ensure we don't mutate them)
+    #     snapshot = json.dumps(
+    #         [s.model_dump() if hasattr(s, "model_dump") else s for s in summaries_list],
+    #         sort_keys=True
+    #     )
+
+    #     # Visibility logs
+    #     print("[nodes_generator] len(topics_list) =", len(topics_list), "type:", type(topics_list))
+    #     print("[nodes_generator] len(summaries_list) =", len(summaries_list), "type:", type(summaries_list))
+
+    #     pair_count = min(len(topics_list), len(summaries_list))
+    #     if pair_count == 0:
+    #         raise ValueError("No topics/summaries to process.")
+
+    #     out: List[TopicWithNodesSchema] = []
+
+    #     # Iterate by index (avoids silent empty zip issues)
+    #     for i in range(pair_count):
+    #         topic_obj = topics_list[i]
+    #         dspt_obj  = summaries_list[i]
+
+    #         try:
+    #             total_no_questions_topic = NodesGenerationAgent._get_total_questions(topic_obj, dspt_obj)
+    #         except Exception as e:
+    #             print(f"[nodes_generator] _get_total_questions failed at index {i}: {e}")
+    #             continue
+
+    #         try:
+    #             per_topic_summary_json = NodesGenerationAgent._to_json_one(dspt_obj)
+    #         except Exception as e:
+    #             print(f"[nodes_generator] _to_json_one failed at index {i}: {e}")
+    #             continue
+
+    #         try:
+    #             resp = await NodesGenerationAgent._gen_once(
+    #                 per_topic_summary_json,
+    #                 total_no_questions_topic,
+    #                 state.id,
+    #                 state.nodes_error,
+    #             )
+    #         except Exception as e:
+    #             print(f"[nodes_generator] _gen_once raised at index {i}: {e}")
+    #             continue
+
+    #         if resp is None:
+    #             print(f"[nodes_generator] _gen_once returned None at index {i}; skipping this topic.")
+    #             continue
+
+    #         out.append(resp)
+
+    #     if not out:
+    #         raise RuntimeError(
+    #             "[nodes_generator] No topics_with_nodes produced. "
+    #             "Check that interview_topics.interview_topics and discussion_summary_per_topic.discussion_topics "
+    #             "are non-empty, aligned, and that _gen_once returns a valid TopicWithNodesSchema."
+    #         )
+
+    #     # Verify upstream summary wasn’t mutated
+    #     after = json.dumps(
+    #         [s.model_dump() if hasattr(s, "model_dump") else s for s in summaries_list],
+    #         sort_keys=True
+    #     )
+    #     if after != snapshot:
+    #         raise RuntimeError("discussion_summary_per_topic mutated during node generation")
+
+    #     state.nodes = NodesSchema(
+    #         topics_with_nodes=[t.model_dump() if hasattr(t, "model_dump") else t for t in out]
+    #     )
+    #     return state
 
     # @staticmethod
     # async def should_regenerate(state: AgentInternalState) -> bool:
@@ -578,13 +712,143 @@ class NodesGenerationAgent:
 
     #     return any_invalid
     
+    # # Old one is running again
+    # @staticmethod
+    # async def should_regenerate(state: AgentInternalState) -> bool:
+    #     """
+    #     Return True if we need to regenerate (schema invalid), else False.
+    #     Validates the container (NodesSchema) and each TopicWithNodesSchema item inside it.
+    #     """
+    #     global i 
+
+    #     # Nothing produced yet? -> regenerate
+    #     if getattr(state, "nodes", None) is None:
+    #         return True
+
+    #     # Validate NodesSchema (container)
+    #     try:
+    #         # accept either a Pydantic instance or a plain dictionary
+    #         NodesSchema.model_validate(
+    #             state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else state.nodes
+    #         )
+    #     except ValidationError as ve:
+    #         print("[NodesGen][ValidationError] Container NodesSchema invalid")
+    #         print(str(ve))
+    #         state.nodes_error += "The previous generated o/p did not follow the given schema as it got following errors:\n" + (getattr(state, "nodes_error", "") or "") + \
+    #                             "\n[NodesSchema ValidationError]\n" + str(ve) + "\n"
+    #         return True
+
+    #     # Validate each topic payload
+    #     try:
+    #         topics_payload = (
+    #             state.nodes.topics_with_nodes
+    #             if hasattr(state.nodes, "topics_with_nodes")
+    #             else state.nodes.get("topics_with_nodes", [])
+    #         )
+    #     except Exception as e:
+    #         print("[NodesGen][ValidationError] Could not read topics_with_nodes:", e)
+    #         state.nodes_error += "\n[NodesSchema Payload Error]\n" + str(e) + "\n"
+    #         return True
+
+    #     any_invalid = False
+    #     for idx, item in enumerate(topics_payload):
+    #         try:
+    #             # item can be pydantic model or dictionary
+    #             TopicWithNodesSchema.model_validate(
+    #                 item.model_dump() if hasattr(item, "model_dump") else item
+    #             )
+    #         except ValidationError as ve:
+    #             any_invalid = True
+    #             print(f"[NodesGen][ValidationError] TopicWithNodesSchema invalid at index {idx}")
+    #             print(str(ve))
+    #             state.nodes_error += f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n" + str(ve) + "\n"
+
+    #     if any_invalid:
+    #         print(f"Nodes Retry Iteration -> {count}")
+    #         count += 1
+    #     return any_invalid
+
+    # try
+
+    # @staticmethod
+    # async def should_regenerate(state: AgentInternalState) -> bool:
+    #     """
+    #     Strict, minimal, per-topic fixer:
+    #     - Validate container + per-topic schema.
+    #     - For each topic (by index), enforce budget: sum(DD thresholds) = total_questions-2, ≥1 DD, each ≥2.
+    #     - Collapse to one Deep Dive with full budget when needed.
+    #     - Persist back into state.nodes as a fresh NodesSchema.
+    #     - Return False after successful in-place fix to stop retries.
+    #     """
+    #     # Nothing yet -> ask generator once
+    #     if getattr(state, "nodes", None) is None:
+    #         return True
+
+    #     # Container schema check
+    #     try:
+    #         NodesSchema.model_validate(
+    #             state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else state.nodes
+    #         )
+    #     except ValidationError:
+    #         return True
+
+    #     # Extract payload (as dict so we can reconstruct cleanly)
+    #     nodes_container = (
+    #         state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else copy.deepcopy(state.nodes)
+    #     )
+    #     topics_payload = nodes_container.get("topics_with_nodes", [])
+    #     if not isinstance(topics_payload, list):
+    #         return True  # let generator try again
+
+    #     # Per-topic totals strictly by index
+    #     topics_list = list(getattr(state.interview_topics, "interview_topics", []))
+
+    #     changed = False
+    #     fixed_topics = []
+
+    #     for idx, item in enumerate(topics_payload):
+    #         # Validate per-topic shape lightly
+    #         try:
+    #             TopicWithNodesSchema.model_validate(item)
+    #         except ValidationError:
+    #             return True  # one more generation attempt
+
+    #         # Get per-topic total by index (default 6 if missing)
+    #         try:
+    #             t_obj = topics_list[idx]
+    #             t_dict = t_obj.model_dump() if hasattr(t_obj, "model_dump") else dict(t_obj)
+    #             t_total = int(t_dict.get("total_questions", 6))
+    #         except Exception:
+    #             t_total = 6
+
+    #         nodes = item.get("nodes", []) or []
+    #         fixed = _enforce_topic_budget_by_index(nodes, t_total)
+    #         if fixed is not nodes:
+    #             changed = True
+    #         item["nodes"] = fixed
+    #         fixed_topics.append(item)
+
+    #     if changed:
+    #         # Rebuild and persist as a fresh NodesSchema to avoid partial pydantic mutations
+    #         new_container = {"topics_with_nodes": fixed_topics}
+    #         try:
+    #             state.nodes = NodesSchema.model_validate(new_container)
+    #         except ValidationError:
+    #             # If somehow invalid, allow one more loop
+    #             return True
+    #         # Fixed in place; stop retry loop
+    #         return False
+
+    #     # Already correct; stop retry loop
+    #     return False
+
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
         """
         Return True if we need to regenerate (schema invalid), else False.
         Validates the container (NodesSchema) and each TopicWithNodesSchema item inside it.
         """
-        global i 
+        global count 
 
         # Nothing produced yet? -> regenerate
         if getattr(state, "nodes", None) is None:
