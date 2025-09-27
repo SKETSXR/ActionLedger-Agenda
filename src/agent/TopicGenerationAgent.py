@@ -174,13 +174,14 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_community.cache import InMemoryCache
 from langchain.globals import set_llm_cache
 from langgraph.graph import MessagesState
+from string import Template
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import CollectiveInterviewTopicSchema
 from ..schema.input_schema import SkillTreeSchema
 from ..prompt.topic_generation_agent_prompt import TOPIC_GENERATION_AGENT_PROMPT
 from ..model_handling import llm_tg
 from src.mongo_tools import get_mongo_tools
-from ..logging_tools import get_tool_logger, log_tool_activity
+from ..logging_tools import get_tool_logger, log_tool_activity, log_retry_iteration
 
 # set_llm_cache(InMemoryCache())
 
@@ -312,8 +313,6 @@ class TopicGenerationAgent:
             else ""
         )
         state.interview_topics_feedbacks += "\n" + interview_topics_feedback + "\n"
-
-        from string import Template
 
         class AtTemplate(Template):
             delimiter = '@'   # anything not used in your prompt samples
@@ -453,7 +452,18 @@ class TopicGenerationAgent:
         # print(f"Total Questions Sum: {total_questions_sum}\nTotal Questions in Summary: {state.generated_summary.total_questions}")
         # print(focus_area_list)
         if total_questions_sum != state.generated_summary.total_questions:
-            print(f"Total questions in topic list does not match as decided by summary... regenerating topics... retry iteration -> {count}")
+            # print(f"Total questions in topic list does not match as decided by summary... regenerating topics... retry iteration -> {count}")
+            log_retry_iteration(
+                                    agent_name=AGENT_NAME,
+                                    iteration=count,
+                                    reason="Total questions mismatch",
+                                    logger=LOGGER,
+                                    pretty_json=True,
+                                    extra={
+                                        "got_total": total_questions_sum,
+                                        "target_total": state.generated_summary.total_questions
+                                    }
+                                )
             count += 1
             return False
         # focus_area_list = all_focus_skills(state.interview_topics)
@@ -463,7 +473,15 @@ class TopicGenerationAgent:
         # print(f"\nFocus Area List {focus_area_list}")
         for i in focus_area_list:
             if i not in all_skill_leaves:
-                print(f"Topic Retry Iteration -> {count}")
+                # print(f"Topic Retry Iteration -> {count}")
+                log_retry_iteration(
+                                        agent_name=AGENT_NAME,
+                                        iteration=count,
+                                        reason="Invalid focus skill",
+                                        logger=LOGGER,
+                                        pretty_json=True,
+                                        extra={"skill": i}
+                                    )
                 count += 1
                 return False
 
@@ -478,7 +496,15 @@ class TopicGenerationAgent:
                 feedback = state.interview_topics_feedback.feedback
             feedback += f"Please keep the topic set as it is irresepective of below instructions: ```\n{state.interview_topics.model_dump()}```\n But add the list of missing `must` priority skills: \n{skill_list}\n to the focus areas of the last topic which being General Skill Assessment"
             state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
-            print(f"Topic Retry Iteration -> {count}")
+            # print(f"Topic Retry Iteration -> {count}")
+            log_retry_iteration(
+                                    agent_name=AGENT_NAME,
+                                    iteration=count,
+                                    reason="Missing MUST skills",
+                                    logger=LOGGER,
+                                    pretty_json=True,
+                                    extra={"missing_must": skill_list}
+                                )
             count += 1
 
             return False

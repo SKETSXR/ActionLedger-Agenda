@@ -190,12 +190,13 @@ from langchain_core.messages import SystemMessage, HumanMessage
 import json, copy
 from pydantic import ValidationError
 from langchain_core.tools import tool
+from string import Template
 from src.mongo_tools import get_mongo_tools
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
 from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
 from ..model_handling import llm_n
-from ..logging_tools import get_tool_logger, log_tool_activity
+from ..logging_tools import get_tool_logger, log_tool_activity, log_retry_iteration
 
 count = 1
 
@@ -354,7 +355,6 @@ class NodesGenerationAgent:
 
     @staticmethod
     async def _gen_once(per_topic_summary_json: str, total_no_questions_topic, thread_id, nodes_error) -> TopicWithNodesSchema:
-        from string import Template
 
         class AtTemplate(Template):
             delimiter = '@'   # anything not used in your prompt samples
@@ -362,7 +362,7 @@ class NodesGenerationAgent:
         tpl = AtTemplate(NODES_AGENT_PROMPT)
         content = tpl.substitute(
             per_topic_summary_json=per_topic_summary_json,
-            total_no_questions_topic=total_no_questions_topic,
+            # total_no_questions_topic=total_no_questions_topic,
             thread_id=thread_id,
             nodes_error=nodes_error,
         )
@@ -693,60 +693,120 @@ class NodesGenerationAgent:
     #     # Already correct; stop retry loop
     #     return False
 
+
+    # # Running new node schema check
+    # @staticmethod
+    # async def should_regenerate(state: AgentInternalState) -> bool:
+    #     """
+    #     Return True if we need to regenerate (schema invalid), else False.
+    #     Validates the container (NodesSchema) and each TopicWithNodesSchema item inside it.
+    #     """
+    #     global count 
+
+    #     # Nothing produced yet? -> regenerate
+    #     if getattr(state, "nodes", None) is None:
+    #         return True
+
+    #     # Validate NodesSchema (container)
+    #     try:
+    #         # accept either a Pydantic instance or a plain dictionary
+    #         NodesSchema.model_validate(
+    #             state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else state.nodes
+    #         )
+    #     except ValidationError as ve:
+    #         print("[NodesGen][ValidationError] Container NodesSchema invalid")
+    #         print(str(ve))
+    #         state.nodes_error += "The previous generated o/p did not follow the given schema as it got following errors:\n" + (getattr(state, "nodes_error", "") or "") + \
+    #                             "\n[NodesSchema ValidationError]\n" + str(ve) + "\n"
+    #         return True
+
+    #     # Validate each topic payload
+    #     try:
+    #         topics_payload = (
+    #             state.nodes.topics_with_nodes
+    #             if hasattr(state.nodes, "topics_with_nodes")
+    #             else state.nodes.get("topics_with_nodes", [])
+    #         )
+    #     except Exception as e:
+    #         print("[NodesGen][ValidationError] Could not read topics_with_nodes:", e)
+    #         state.nodes_error += "\n[NodesSchema Payload Error]\n" + str(e) + "\n"
+    #         return True
+
+    #     any_invalid = False
+    #     for idx, item in enumerate(topics_payload):
+    #         try:
+    #             # item can be pydantic model or dictionary
+    #             TopicWithNodesSchema.model_validate(
+    #                 item.model_dump() if hasattr(item, "model_dump") else item
+    #             )
+    #         except ValidationError as ve:
+    #             any_invalid = True
+    #             print(f"[NodesGen][ValidationError] TopicWithNodesSchema invalid at index {idx}")
+    #             print(str(ve))
+    #             state.nodes_error += f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n" + str(ve) + "\n"
+
+    #     if any_invalid:
+    #         print(f"Nodes Retry Iteration -> {count}")
+    #         count += 1
+    #     return any_invalid
+
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
         """
-        Return True if we need to regenerate (schema invalid), else False.
-        Validates the container (NodesSchema) and each TopicWithNodesSchema item inside it.
+        Only emit a single retry log with reason 'node schema error' when we decide to retry.
+        No other logs.
         """
-        global count 
+        global count
 
-        # Nothing produced yet? -> regenerate
+        needs_retry = False
+
+        # 1) Nothing produced yet?
         if getattr(state, "nodes", None) is None:
-            return True
-
-        # Validate NodesSchema (container)
-        try:
-            # accept either a Pydantic instance or a plain dictionary
-            NodesSchema.model_validate(
-                state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else state.nodes
-            )
-        except ValidationError as ve:
-            print("[NodesGen][ValidationError] Container NodesSchema invalid")
-            print(str(ve))
-            state.nodes_error += "The previous generated o/p did not follow the given schema as it got following errors:\n" + (getattr(state, "nodes_error", "") or "") + \
-                                "\n[NodesSchema ValidationError]\n" + str(ve) + "\n"
-            return True
-
-        # Validate each topic payload
-        try:
-            topics_payload = (
-                state.nodes.topics_with_nodes
-                if hasattr(state.nodes, "topics_with_nodes")
-                else state.nodes.get("topics_with_nodes", [])
-            )
-        except Exception as e:
-            print("[NodesGen][ValidationError] Could not read topics_with_nodes:", e)
-            state.nodes_error += "\n[NodesSchema Payload Error]\n" + str(e) + "\n"
-            return True
-
-        any_invalid = False
-        for idx, item in enumerate(topics_payload):
+            needs_retry = True
+        else:
+            # 2) Validate container schema
             try:
-                # item can be pydantic model or dictionary
-                TopicWithNodesSchema.model_validate(
-                    item.model_dump() if hasattr(item, "model_dump") else item
+                NodesSchema.model_validate(
+                    state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else state.nodes
                 )
-            except ValidationError as ve:
-                any_invalid = True
-                print(f"[NodesGen][ValidationError] TopicWithNodesSchema invalid at index {idx}")
-                print(str(ve))
-                state.nodes_error += f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n" + str(ve) + "\n"
+            except ValidationError:
+                needs_retry = True
 
-        if any_invalid:
-            print(f"Nodes Retry Iteration -> {count}")
+            # 3) Validate per-topic payload shape (only if container looked okay)
+            if not needs_retry:
+                try:
+                    topics_payload = (
+                        state.nodes.topics_with_nodes
+                        if hasattr(state.nodes, "topics_with_nodes")
+                        else state.nodes.get("topics_with_nodes", [])
+                    )
+                except Exception:
+                    needs_retry = True
+                else:
+                    # 4) Validate each topic schema
+                    for item in topics_payload or []:
+                        try:
+                            TopicWithNodesSchema.model_validate(
+                                item.model_dump() if hasattr(item, "model_dump") else item
+                            )
+                        except ValidationError:
+                            needs_retry = True
+                            break
+
+        if needs_retry:
+            # Log exactly once per retry, with the requested message
+            log_retry_iteration(
+                agent_name=AGENT_NAME,
+                iteration=count,
+                reason="node schema error",
+                logger=LOGGER,
+                pretty_json=True,
+            )
             count += 1
-        return any_invalid
+            return True
+
+        return False
+
 
     @staticmethod
     def get_graph(checkpointer=None):

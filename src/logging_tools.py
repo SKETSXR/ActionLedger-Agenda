@@ -170,6 +170,37 @@ from typing import Any, Optional, Sequence
 
 # ---------- Logger setup ----------
 
+
+def log_retry_iteration(
+    agent_name: str,
+    iteration: int,
+    reason: str = "",
+    *,
+    logger: Optional[logging.Logger] = None,
+    pretty_json: bool = False,
+    extra: Optional[dict] = None,
+) -> None:
+    """
+    Log a retry iteration (to console + file).
+    - agent_name: e.g., "discussion_summary_agent"
+    - iteration: your module-level `count` (before or after increment, your call)
+    - reason: short human-readable reason or phase label
+    - extra: optional structured context (e.g., {"missing": [...], "schema_errors": "..."})
+    """
+    log = logger or get_tool_logger(agent_name)
+    payload = {"iteration": iteration, "reason": reason}
+    if extra:
+        payload["extra"] = extra
+
+    _emit(
+        logger=log,
+        event="retry_iteration",
+        agent_name=agent_name,
+        data=payload,
+        pretty_json=pretty_json,
+    )
+
+
 def get_tool_logger(
     agent_name: str,
     log_dir: str = "logs",
@@ -217,8 +248,10 @@ def get_tool_logger(
 def _msg_type(m: Any) -> Optional[str]:
     return getattr(m, "type", None)
 
+
 def _msg_content(m: Any) -> Any:
     return getattr(m, "content", None)
+
 
 def _tool_call_id(m: Any) -> Any:
     return getattr(m, "tool_call_id", None)

@@ -163,7 +163,7 @@ from ..prompt.discussion_summary_per_topic_generation_agent_prompt import (
     DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT,
 )
 from ..model_handling import llm_dts
-from ..logging_tools import get_tool_logger, log_tool_activity
+from ..logging_tools import get_tool_logger, log_tool_activity, log_retry_iteration
 
 
 AGENT_NAME = "discussion_summary_agent"
@@ -301,7 +301,15 @@ class PerTopicDiscussionSummaryGenerationAgent:
             missing = input_topics - output_topics
             extra = output_topics - input_topics
             print(f"[PerTopic] Topic mismatch: missing {missing}, extra {extra}")
-            print(f"Topic wise Discussion Summary Retry Iteration -> {count}")
+            # print(f"Topic wise Discussion Summary Retry Iteration -> {count}")
+            log_retry_iteration(
+                                    agent_name=AGENT_NAME,
+                                    iteration=count,                          
+                                    reason="Topic mismatch",
+                                    logger=LOGGER,
+                                    pretty_json=True,
+                                    extra={"missing": missing, "extra": extra}
+                                )
             count += 1
             return True
         else:

@@ -349,12 +349,13 @@ import json, copy, re
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import ValidationError
 from langchain_core.exceptions import OutputParserException
+from string import Template
 from src.mongo_tools import get_mongo_tools
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import QASetsSchema
 from ..prompt.qa_agent_prompt import QA_BLOCK_AGENT_PROMPT
 from ..model_handling import llm_qa
-from ..logging_tools import get_tool_logger, log_tool_activity
+from ..logging_tools import get_tool_logger, log_tool_activity, log_retry_iteration
 
 count = 1
 
@@ -480,7 +481,6 @@ class QABlockGenerationAgent:
         Returns (one_qa_set_dict, err_msg).
         On parse/validation error, returns ({ "topic": topic_name, "qa_blocks": [] }, error_string).
         """
-        from string import Template
 
         class AtTemplate(Template):
             delimiter = '@'   # anything not used in your prompt samples
@@ -678,7 +678,15 @@ class QABlockGenerationAgent:
                 "[QABlockGen ValidationError]\n "
                 f"{ve}"
             )
-            print(f"QA Blocks Retry Iteration -> {count}")
+            # print(f"QA Blocks Retry Iteration -> {count}")
+            log_retry_iteration(
+                                    agent_name=AGENT_NAME,
+                                    iteration=count,
+                                    reason="Schema validation failed",
+                                    logger=LOGGER,
+                                    pretty_json=True,
+                                    extra={"error": str(ve)[:4000]}  # trim if giant
+                                )
             count += 1
             return True
 
