@@ -180,29 +180,35 @@ from ..schema.input_schema import SkillTreeSchema
 from ..prompt.topic_generation_agent_prompt import TOPIC_GENERATION_AGENT_PROMPT
 from ..model_handling import llm_tg
 from src.mongo_tools import get_mongo_tools
+from ..logging_tools import get_tool_logger, log_tool_activity
 
 # set_llm_cache(InMemoryCache())
 
 count = 1
-# At top of file (if you added the log helpers there)
-def _log_planned_tool_calls(ai_msg):
-    for tc in getattr(ai_msg, "tool_calls", []) or []:
-        try:
-            print(f"[ToolCall] name={tc['name']} args={tc.get('args')}")
-        except Exception:
-            print(f"[ToolCall] {tc}")
+# # At top of file (if you added the log helpers there)
+# def _log_planned_tool_calls(ai_msg):
+#     for tc in getattr(ai_msg, "tool_calls", []) or []:
+#         try:
+#             print(f"[ToolCall] name={tc['name']} args={tc.get('args')}")
+#         except Exception:
+#             print(f"[ToolCall] {tc}")
 
-def _log_recent_tool_results(messages):
-    i = len(messages) - 1
-    j = False
-    while i >= 0 and getattr(messages[i], "type", None) == "tool":
-        if j == False:    
-            print("--------------Topic Tool Call logs------------------")
-            j = True
-        tm = messages[i]
-        print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
-        i -= 1
+# def _log_recent_tool_results(messages):
+#     i = len(messages) - 1
+#     j = False
+#     while i >= 0 and getattr(messages[i], "type", None) == "tool":
+#         if j == False:    
+#             print("--------------Topic Tool Call logs------------------")
+#             j = True
+#         tm = messages[i]
+#         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
+#         i -= 1
 
+
+# ---------------- Logger config ----------------
+AGENT_NAME = "topic_generation_agent"
+LOG_DIR = "logs"
+LOGGER = get_tool_logger(AGENT_NAME, log_dir=LOG_DIR, backup_count=365)
 
 
 # ---------- Inner ReAct state for Mongo loop ----------
@@ -226,7 +232,15 @@ class TopicGenerationAgent:
     @staticmethod
     def _agent_node(state: _MongoAgentState):
         """LLM picks tool(s) or answers; LangGraph will handle tool exec via ToolNode."""
-        _log_recent_tool_results(state["messages"])   # optional logging
+        # _log_recent_tool_results(state["messages"])   # optional logging
+        log_tool_activity(
+            messages=state["messages"],
+            ai_msg=None,
+            agent_name=AGENT_NAME,
+            logger=LOGGER,
+            header="Topic Generation Tool Activity",
+            pretty_json=True 
+        )
 
         ai = TopicGenerationAgent._AGENT_MODEL.invoke(state["messages"])
         return {"messages": [ai]}
@@ -277,9 +291,22 @@ class TopicGenerationAgent:
 
     @staticmethod
     def _should_continue(state: _MongoAgentState):
+        # last = state["messages"][-1]
+        # if getattr(last, "tool_calls", None):
+        #     _log_planned_tool_calls(last)  # optional logging
+        #     return "continue"
+
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
-            _log_planned_tool_calls(last)  # optional logging
+            # Log planned tool calls from the assistant message
+            log_tool_activity(
+                messages=state["messages"],
+                ai_msg=last,
+                agent_name=AGENT_NAME,
+                logger=LOGGER,
+                header="Topic Generation Tool Activity",
+                pretty_json=True 
+            )
             return "continue"
         return "respond"
 

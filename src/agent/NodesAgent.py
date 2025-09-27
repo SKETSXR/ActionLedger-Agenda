@@ -194,6 +194,7 @@ from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
 from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
 from ..model_handling import llm_n
+from ..logging_tools import get_tool_logger, log_tool_activity
 
 count = 1
 
@@ -225,116 +226,30 @@ def divide(a: float, b: float) -> float:
 ARITH_TOOLS = [add, subtract, multiply, divide]
 
 
-# At top of file (if you added the log helpers there)
-def _log_planned_tool_calls(ai_msg):
-    for tc in getattr(ai_msg, "tool_calls", []) or []:
-        try:
-            print(f"[ToolCall] name={tc['name']} args={tc.get('args')}")
-        except Exception:
-            print(f"[ToolCall] {tc}")
+# # At top of file (if you added the log helpers there)
+# def _log_planned_tool_calls(ai_msg):
+#     for tc in getattr(ai_msg, "tool_calls", []) or []:
+#         try:
+#             print(f"[ToolCall] name={tc['name']} args={tc.get('args')}")
+#         except Exception:
+#             print(f"[ToolCall] {tc}")
 
-def _log_recent_tool_results(messages):
-    i = len(messages) - 1
-    j = False
-    while i >= 0 and getattr(messages[i], "type", None) == "tool":
-        if j == False:
-            print("----------------Nodes Tool Call logs-----------------------------------")
-            j = True
-        tm = messages[i]
-        print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
-        i -= 1
+# def _log_recent_tool_results(messages):
+#     i = len(messages) - 1
+#     j = False
+#     while i >= 0 and getattr(messages[i], "type", None) == "tool":
+#         if j == False:
+#             print("----------------Nodes Tool Call logs-----------------------------------")
+#             j = True
+#         tm = messages[i]
+#         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
+#         i -= 1
 
-def _qt(n: dict) -> str:
-    return str(n.get("question_type", "")).strip().lower()
 
-def _safe_id(n: dict) -> int:
-    try:
-        return int(n.get("id", 0))
-    except Exception:
-        return 0
 
-def _enforce_topic_budget_by_index(nodes: list, total_questions: int) -> list:
-    """
-    Make nodes conform to:
-      - Exactly 1 Opening + 1 Direct (thresholds None)
-      - ≥ 1 Deep Dive
-      - Each Deep Dive threshold ≥ 2
-      - Sum(Deep Dive thresholds) == (total_questions - 2)
-      - Order: Opening -> Direct -> DeepDive(s) -> others
-    If Deep Dives invalid/mismatched, collapse to a single Deep Dive with full budget.
-    """
-    if not isinstance(nodes, list):
-        return nodes
-
-    B = int(total_questions) - 2
-    if B < 2:
-        # Always require at least 1 deep dive with min 2, so force a feasible budget
-        B = 2
-
-    openings = [n for n in nodes if _qt(n) == "opening"]
-    directs  = [n for n in nodes if _qt(n) == "direct"]
-    deeps    = [n for n in nodes if _qt(n) == "deep dive"]
-
-    opening = openings[0] if openings else (nodes[0] if nodes else None)
-    direct  = directs[0]  if directs  else (nodes[1] if len(nodes) > 1 else None)
-
-    # Ensure ≥1 Deep Dive
-    if not deeps:
-        new_id = (max([_safe_id(n) for n in nodes] + [0]) + 1)
-        deeps = [{
-            "id": new_id,
-            "question_type": "Deep Dive",
-            "question": "Deep dive on key focus areas.",
-            "graded": True,
-            "next_node": None,
-            "context": "QA block for deeper probing.",
-            "skills": [],
-            "question_guidelines": "Probe trade-offs, metrics, and constraints.",
-            "total_question_threshold": B,
-        }]
-    else:
-        # Validate/repair: if any invalid or sum != B -> collapse to one with full B
-        valid = True
-        s = 0
-        for d in deeps:
-            thr = d.get("total_question_threshold")
-            if not isinstance(thr, int) or thr < 2:
-                valid = False
-                break
-            s += thr
-        if (not valid) or (s != B):
-            first = deeps[0]
-            first["total_question_threshold"] = B
-            if not first.get("question_guidelines"):
-                first["question_guidelines"] = "Probe trade-offs, metrics, and constraints."
-            deeps = [first]
-
-    # Opening/Direct thresholds/guidelines -> None
-    for n in (opening, direct):
-        if isinstance(n, dict):
-            if n.get("total_question_threshold") is not None:
-                n["total_question_threshold"] = None
-            if n.get("question_guidelines") is not None:
-                n["question_guidelines"] = None
-
-    # Rebuild order and re-chain next_node
-    new_nodes, added = [], set()
-    if isinstance(opening, dict): new_nodes.append(opening); added.add(id(opening))
-    if isinstance(direct, dict) and id(direct) not in added:
-        new_nodes.append(direct); added.add(id(direct))
-    for d in deeps:
-        if id(d) not in added:
-            new_nodes.append(d); added.add(id(d))
-    for n in nodes:
-        if id(n) not in added:
-            new_nodes.append(n); added.add(id(n))
-
-    for i in range(len(new_nodes) - 1):
-        new_nodes[i]["next_node"] = new_nodes[i + 1].get("id")
-    if new_nodes:
-        new_nodes[-1]["next_node"] = None
-
-    return new_nodes
+AGENT_NAME = "nodes_agent"
+LOG_DIR = "logs"
+LOGGER = get_tool_logger(AGENT_NAME, log_dir=LOG_DIR, backup_count=365)
 
 
 # ---------- Inner ReAct state for Mongo loop (per-topic) ----------
@@ -360,7 +275,8 @@ class NodesGenerationAgent:
     @staticmethod
     def _agent_node(state: _MongoNodesState):
         # If we just came from ToolNode, the last messages are ToolMessages → print them.
-        _log_recent_tool_results(state["messages"])   # optional logging
+        # _log_recent_tool_results(state["messages"])   # optional logging
+        log_tool_activity(state["messages"], ai_msg=None, agent_name=AGENT_NAME, logger=LOGGER, header="Nodes Tool Activity", pretty_json=True)
 
         ai = NodesGenerationAgent._AGENT_MODEL.invoke(state["messages"])
         return {"messages": [ai]}
@@ -395,9 +311,13 @@ class NodesGenerationAgent:
 
     @staticmethod
     def _should_continue(state: _MongoNodesState):
+        # last = state["messages"][-1]
+        # if getattr(last, "tool_calls", None):
+        #     _log_planned_tool_calls(last)  # optional logging
+        #     return "continue"
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
-            _log_planned_tool_calls(last)  # optional logging
+            log_tool_activity(state["messages"], ai_msg=last, agent_name=AGENT_NAME, logger=LOGGER, header="Nodes Tool Activity", pretty_json=True)
             return "continue"
         return "respond"
 
@@ -415,40 +335,6 @@ class NodesGenerationAgent:
     _workflow.add_edge("respond", END)
     _nodes_graph = _workflow.compile()
 
-    # # ----------------- helpers (unchanged) -----------------
-    # @staticmethod
-    # def _as_dict(x: Any) -> Dict[str, Any]:
-    #     if hasattr(x, "model_dump"):
-    #         return x.model_dump()
-    #     if hasattr(x, "dict"):
-    #         return x.dict()
-    #     return x if isinstance(x, dict) else {}
-
-    # @staticmethod
-    # def _get_topic_name(obj: Any) -> str:
-    #     d = NodesGenerationAgent._as_dict(obj)
-    #     for k in ("topic", "name", "title", "label"):
-    #         v = d.get(k)
-    #         if isinstance(v, str) and v.strip():
-    #             return v.strip()
-    #     return "Unknown"
-
-    # @staticmethod
-    # def _to_json_one(x: Any) -> str:
-    #     if hasattr(x, "model_dump"):
-    #         return json.dumps(copy.deepcopy(x.model_dump()))
-    #     if hasattr(x, "dict"):
-    #         return json.dumps(copy.deepcopy(x.dict()))
-    #     return json.dumps(copy.deepcopy(x))
-
-    # @staticmethod
-    # def _get_total_questions(topic_obj: Any, dspt_obj: Any) -> int:
-    #     for src in (topic_obj, dspt_obj):
-    #         d = NodesGenerationAgent._as_dict(src)
-    #         tq = d.get("total_questions")
-    #         if isinstance(tq, int) and tq >= 2:
-    #             return tq
-    #     raise ValueError("total_questions must be >= 2 for each topic")
 
     @staticmethod
     def _as_dict(x: Any) -> Dict[str, Any]:
@@ -475,16 +361,6 @@ class NodesGenerationAgent:
         if hasattr(x, "dict"):
             return json.dumps(copy.deepcopy(x.dict()))
         return json.dumps(copy.deepcopy(x))
-
-    # @staticmethod
-    # def _get_total_questions(topic_obj: Any, dspt_obj: Any) -> int:
-
-    #     for src in (topic_obj, dspt_obj):
-    #         d = NodesGenerationAgent._as_dict(src)
-    #         tq = d.get("total_questions")
-    #         if isinstance(tq, int) and tq >= 2:
-    #             return tq
-    #     raise ValueError("total_questions must be >= 2 for each topic")
 
     @staticmethod
     def _get_total_questions(topic_obj: Any, _dspt_obj: Any) -> int:
