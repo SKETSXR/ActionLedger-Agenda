@@ -192,6 +192,25 @@ AGENT_NAME = "topic_generation_agent"
 LOG_DIR = "logs"
 LOGGER = get_tool_logger(AGENT_NAME, log_dir=LOG_DIR, backup_count=365)
 
+# # At top of file (if you added the log helpers there)
+# def _log_planned_tool_calls(ai_msg):
+#     for tc in getattr(ai_msg, "tool_calls", []) or []:
+#         try:
+#             print(f"[ToolCall] name={tc['name']} args={tc.get('args')}")
+#         except Exception:
+#             print(f"[ToolCall] {tc}")
+
+# def _log_recent_tool_results(messages):
+#     i = len(messages) - 1
+#     j = False
+#     while i >= 0 and getattr(messages[i], "type", None) == "tool":
+#         if j == False:
+#             print("----------------Nodes Tool Call logs-----------------------------------")
+#             j = True
+#         tm = messages[i]
+#         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
+#         i -= 1
+
 
 # ---------- Inner ReAct state for Mongo loop ----------
 class _MongoAgentState(MessagesState):
@@ -214,6 +233,7 @@ class TopicGenerationAgent:
     @staticmethod
     def _agent_node(state: _MongoAgentState):
         """LLM picks tool(s) or answers; LangGraph will handle tool exec via ToolNode."""
+        # _log_recent_tool_results(state["messages"])   # optional logging
         log_tool_activity(
             messages=state["messages"],
             ai_msg=None,
@@ -272,6 +292,10 @@ class TopicGenerationAgent:
 
     @staticmethod
     def _should_continue(state: _MongoAgentState):
+        # last = state["messages"][-1]
+        # if getattr(last, "tool_calls", None):
+        #     _log_planned_tool_calls(last)  # optional logging
+        #     return "continue"
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
             # Log planned tool calls from the assistant message
@@ -506,6 +530,7 @@ class TopicGenerationAgent:
                                     extra={"missing_must": skill_list}
                                 )
             count += 1
+            # print("-----------Topic retry logging-------------")
 
             return False
 
