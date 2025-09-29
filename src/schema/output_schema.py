@@ -209,24 +209,46 @@ QType = Literal["New Question", "Counter Question"]
 QDiff = Literal["Easy", "Medium", "Hard"]
 QCountType = Literal["Twist", "Interrogatory"]
 
+# class QAItem(BaseModel):
+#     qa_id: str = Field(..., description="QA identifier like 'QA1'")
+#     example_questions: List[str] = Field(..., min_items=5, max_items=5)
+
+
+# class QABlock(BaseModel):
+#     block_id: str = Field(..., description="Block identifier like 'B1'")
+#     guideline: str = Field(..., min_length=1)
+#     q_type: QType
+#     q_difficulty: QDiff
+#     counter_type: Optional[QCountType] = None  # required if q_type == "Counter Question"
+#     qa_items: List[QAItem] = Field(..., min_items=1, max_items=1)  # exactly one QA item per block
+
+
+# class QASet(BaseModel):
+#     topic: str = Field(..., min_length=1)
+#     qa_blocks: List[QABlock] = Field(..., min_items=7, max_items=7)  # exactly 7 blocks per topic
+
+
+# class QASetsSchema(BaseModel):
+#     qa_sets: List[QASet] = Field(..., min_items=1)
+
+
 class QAItem(BaseModel):
     qa_id: str = Field(..., description="QA identifier like 'QA1'")
+    q_type: QType
+    q_difficulty: QDiff
+    counter_type: Optional[QCountType] = None  # required iff q_type == "Counter Question"
     example_questions: List[str] = Field(..., min_items=5, max_items=5)
-
 
 class QABlock(BaseModel):
     block_id: str = Field(..., description="Block identifier like 'B1'")
     guideline: str = Field(..., min_length=1)
-    q_type: QType
-    q_difficulty: QDiff
-    counter_type: Optional[QCountType] = None  # required if q_type == "Counter Question"
-    qa_items: List[QAItem] = Field(..., min_items=1, max_items=1)  # exactly one QA item per block
-
+    # exactly 7 items per block: 3 New + 2 Twist (M/H) + 2 Interrogatory (M/H)
+    qa_items: List[QAItem] = Field(..., min_items=7, max_items=7)
 
 class QASet(BaseModel):
     topic: str = Field(..., min_length=1)
-    qa_blocks: List[QABlock] = Field(..., min_items=7, max_items=7)  # exactly 7 blocks per topic
-
+    # allow variable number; we enforce equality to deep-dive count in code
+    qa_blocks: List[QABlock] = Field(..., min_items=1)
 
 class QASetsSchema(BaseModel):
     qa_sets: List[QASet] = Field(..., min_items=1)
@@ -237,4 +259,4 @@ class OutputSchema(BaseModel):
     interview_topics: CollectiveInterviewTopicSchema
     discussion_summary_per_topic: DiscussionSummaryPerTopicSchema
     nodes: NodesSchema
-    # qa_blocks: QASetsSchema
+    qa_blocks: QASetsSchema

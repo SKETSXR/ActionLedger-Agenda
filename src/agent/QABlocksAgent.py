@@ -340,6 +340,7 @@
 #     g = graph.get_graph().draw_ascii()
 #     print(g)
 
+# Tool visualise code
 
 from typing import List, Any, Dict, Optional, Tuple
 from langgraph.graph import StateGraph, START, END
@@ -363,6 +364,7 @@ AGENT_NAME = "qa_block_generation_agent"
 LOG_DIR = "logs"
 LOGGER = get_tool_logger(AGENT_NAME, log_dir=LOG_DIR, backup_count=365)
 
+
 # ---------- Inner ReAct state for per-topic QA generation ----------
 class _QAInnerState(MessagesState):
     final_response: QASetsSchema
@@ -375,7 +377,6 @@ class QABlockGenerationAgent:
     MONGO_TOOLS = get_mongo_tools(llm=llm_qa)
     _AGENT_MODEL = llm_qa.bind_tools(MONGO_TOOLS)
     _STRUCTURED_MODEL = llm_qa.with_structured_output(QASetsSchema, method="function_calling")
-
 
     @staticmethod
     def _agent_node(state: _QAInnerState):
@@ -394,40 +395,32 @@ class QABlockGenerationAgent:
     def _respond_node(state: _QAInnerState):
         msgs = state["messages"]
 
-        # get the original SystemMessage
-        sys_text = None
-        for m in msgs:
-            if getattr(m, "type", None) == "system" or isinstance(m, SystemMessage):
-                sys_text = m.content
+        # IMPORTANT: feed the assistant's textual answer (not the original system prompt)
+        ai_content = None
+        for m in reversed(msgs):
+            # prefer last assistant msg that does not request tools
+            if getattr(m, "type", None) in ("ai", "assistant") and not getattr(m, "tool_calls", None):
+                ai_content = m.content
                 break
-        if not sys_text:
-            # fallbacks
+
+        if ai_content is None:
+            # fallback: any assistant content
             for m in reversed(msgs):
                 if getattr(m, "type", None) in ("ai", "assistant"):
-                    sys_text = m.content
+                    ai_content = m.content
                     break
-        if not sys_text:
-            sys_text = msgs[-1].content
 
-        # append tool results so the structured pass sees fetched guidelines
-        tool_chunks = []
-        for m in msgs:
-            if getattr(m, "type", None) == "tool" or m.__class__.__name__ == "ToolMessage":
-                tool_chunks.append(m.content if isinstance(m.content, str) else json.dumps(m.content))
+        if ai_content is None:
+            # last resort: the last message content (system/human/tool)
+            ai_content = msgs[-1].content
 
-        consolidated = sys_text
-        if tool_chunks:
-            consolidated += "\n\n[TOOL_RESULTS]\n" + "\n---\n".join(tool_chunks)
-
-        final_obj = QABlockGenerationAgent._STRUCTURED_MODEL.invoke([HumanMessage(content=consolidated)])
+        final_obj = QABlockGenerationAgent._STRUCTURED_MODEL.invoke([HumanMessage(content=ai_content)])
         return {"final_response": final_obj}
-
 
     @staticmethod
     def _should_continue(state: _QAInnerState):
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
-            # log planned tool calls from the assistant msg
             log_tool_activity(
                 messages=state["messages"],
                 ai_msg=last,
@@ -442,7 +435,6 @@ class QABlockGenerationAgent:
     _workflow = StateGraph(_QAInnerState)
     _workflow.add_node("agent", _agent_node)
     _workflow.add_node("respond", _respond_node)
-    # Bare name works here because we’re still in the class body:
     _workflow.add_node("tools", ToolNode(MONGO_TOOLS, tags=["mongo-tools"]))
     _workflow.set_entry_point("agent")
     _workflow.add_conditional_edges("agent", _should_continue, {"continue": "tools", "respond": "respond"})
@@ -450,7 +442,7 @@ class QABlockGenerationAgent:
     _workflow.add_edge("respond", END)
     _qa_inner_graph = _workflow.compile()
 
-    # ----------------- small helpers (unchanged) -----------------
+    # ----------------- utilities -----------------
     @staticmethod
     def _as_dict(x: Any) -> Dict[str, Any]:
         if hasattr(x, "model_dump"):
@@ -468,54 +460,6 @@ class QABlockGenerationAgent:
                 return v.strip()
         return "Unknown"
 
-    # ----------------- per-topic generation using inner graph -----------------
-    @staticmethod
-    async def _gen_for_topic(
-        topic_name: str,
-        discussion_summary_json: str,
-        deep_dive_nodes_json: str,
-        thread_id: str,
-        qa_error: str = ""
-    ) -> Tuple[Dict[str, Any], str]:
-        """
-        Returns (one_qa_set_dict, err_msg).
-        On parse/validation error, returns ({ "topic": topic_name, "qa_blocks": [] }, error_string).
-        """
-
-        class AtTemplate(Template):
-            delimiter = '@'   # anything not used in your prompt samples
-
-        tpl = AtTemplate(QA_BLOCK_AGENT_PROMPT)
-        content = tpl.substitute(
-            discussion_summary=discussion_summary_json,
-            deep_dive_nodes=deep_dive_nodes_json,
-            thread_id=thread_id,
-            qa_error=qa_error or ""
-        )
-        sys = content
-
-        try:
-            # Drive inner graph: agent <-> tools ... -> respond (structured QASetsSchema)
-
-            result = await QABlockGenerationAgent._qa_inner_graph.ainvoke({"messages": [SystemMessage(content=sys)]})
-            schema = result["final_response"]  # QASetsSchema
-
-            obj = schema.model_dump() if hasattr(schema, "model_dump") else schema
-            sets = obj.get("qa_sets", []) or []
-            if not sets:
-                return {"topic": topic_name, "qa_blocks": []}, "No qa_sets produced."
-
-            one = sets[0]
-            one["topic"] = topic_name
-            one["qa_blocks"] = one.get("qa_blocks", []) or []
-            return one, ""
-
-        except (ValidationError, OutputParserException) as e:
-            return {"topic": topic_name, "qa_blocks": []}, f"Parser/Schema error: {e}"
-        except Exception as e:
-            # Any other runtime/tool error
-            return {"topic": topic_name, "qa_blocks": []}, f"Generation error: {e}"
-
     @staticmethod
     def _can(s: str) -> str:
         s = (s or "").strip().lower()
@@ -525,7 +469,6 @@ class QABlockGenerationAgent:
 
     @staticmethod
     def _make_fallback_summary(topic_name: str, topic_dict: Dict[str, Any], summaries_list: List[Any]) -> Dict[str, Any]:
-        # Try to synthesize a minimal summary from topic nodes
         node_hints = []
         for n in (topic_dict.get("nodes") or [])[:5]:
             hint = n.get("title") or n.get("name") or n.get("question") or ""
@@ -547,7 +490,72 @@ class QABlockGenerationAgent:
                 return v.strip()
         return "Unknown"
 
-    # ----------------------------- Main generator (unchanged flow) -----------------------------
+    # ----------------- one-topic generation -----------------
+    @staticmethod
+    async def _gen_for_topic(
+        topic_name: str,
+        discussion_summary_json: str,
+        deep_dive_nodes_json: str,
+        thread_id: str,
+        qa_error: str = ""
+    ) -> Tuple[Dict[str, Any], str]:
+        class AtTemplate(Template):
+            delimiter = '@'
+
+        deep_dive_nodes = json.loads(deep_dive_nodes_json or "[]")
+        n_blocks = len(deep_dive_nodes)
+
+        COUNT_DIRECTIVE = f"""
+    IMPORTANT COUNT RULE:
+    - This topic has {n_blocks} deep-dive nodes. Output exactly {n_blocks} QA blocks (one per deep-dive node, in order).
+    """
+
+        tpl = AtTemplate(QA_BLOCK_AGENT_PROMPT + COUNT_DIRECTIVE)
+        sys = tpl.substitute(
+            discussion_summary=discussion_summary_json,
+            deep_dive_nodes=deep_dive_nodes_json,
+            thread_id=thread_id,
+            qa_error=qa_error or ""
+        )
+
+        try:
+            result = await QABlockGenerationAgent._qa_inner_graph.ainvoke({"messages": [SystemMessage(content=sys)]})
+            schema = result["final_response"]  # QASetsSchema
+
+            obj = schema.model_dump() if hasattr(schema, "model_dump") else schema
+            sets = obj.get("qa_sets", []) or []
+            if not sets:
+                return {"topic": topic_name, "qa_blocks": []}, "No qa_sets produced."
+
+            one = sets[0]
+            one["topic"] = topic_name
+            blocks = one.get("qa_blocks", []) or []
+
+            # Hard validations
+            errs = []
+            if len(blocks) != n_blocks:
+                errs.append(f"Expected {n_blocks} blocks, got {len(blocks)}.")
+            for i, b in enumerate(blocks, start=1):
+                qi = b.get("qa_items", []) or []
+                if len(qi) != 7:
+                    errs.append(f"Block {i} must have 7 qa_items, got {len(qi)}.")
+                # ensure no Easy counters
+                for item in qi:
+                    if (item.get("q_type") == "Counter Question" and
+                        item.get("q_difficulty") == "Easy"):
+                        errs.append(f"Block {i} has an Easy counter (qa_id={item.get('qa_id')}); not allowed.")
+
+            if errs:
+                return one, " ; ".join(errs)
+
+            return one, ""
+
+        except (ValidationError, OutputParserException) as e:
+            return {"topic": topic_name, "qa_blocks": []}, f"Parser/Schema error: {e}"
+        except Exception as e:
+            return {"topic": topic_name, "qa_blocks": []}, f"Generation error: {e}"
+
+    # ----------------- main generator -----------------
     @staticmethod
     async def qablock_generator(state: AgentInternalState) -> AgentInternalState:
         if state.interview_topics is None or not getattr(state.interview_topics, "interview_topics", None):
@@ -571,14 +579,15 @@ class QABlockGenerationAgent:
         final_sets: List[Dict[str, Any]] = []
         accumulated_errs: List[str] = []
 
-        # Quick index for optional pairing
+        # Build quick indexes
         summaries_by_can = {}
         for s in summaries_list:
             nm = QABlockGenerationAgent._extract_topic_name_from_summary(s)
             summaries_by_can[QABlockGenerationAgent._can(nm)] = s
 
+        covered = set()
+
         DEEP_DIVE_ALIASES = {"deep dive", "deep_dive", "deep-dive", "probe", "follow up", "follow-up"}
-        covered = set()  # canonical names already processed
 
         # -------- Pass A: generate for every topic node group --------
         for topic_entry in state.nodes.topics_with_nodes:
@@ -586,25 +595,18 @@ class QABlockGenerationAgent:
             topic_name = topic_dict.get("topic") or QABlockGenerationAgent._get_topic_name(topic_entry) or "Unknown"
             ckey = QABlockGenerationAgent._can(topic_name)
 
-            # Optional pairing (fallback summary if missing)
+            # Pair with summary or fallback
             summary_obj = summaries_by_can.get(ckey)
             if summary_obj is None:
                 accumulated_errs.append(f"[QABlocks] No summary for '{topic_name}'; using fallback summary.")
                 summary_obj = QABlockGenerationAgent._make_fallback_summary(topic_name, topic_dict, summaries_list)
 
-            # Collect deep-dive nodes (fallback subset if none)
+            # Collect deep dives (the count does not affect 7-block rule; they help for skills context)
             deep_dive_nodes: List[dict] = []
             for node in (topic_dict.get("nodes") or []):
                 qtype = str(node.get("question_type", "")).strip().lower()
                 if qtype in DEEP_DIVE_ALIASES:
                     deep_dive_nodes.append(node)
-            if not deep_dive_nodes:
-                nodes_all = topic_dict.get("nodes") or []
-                deep_dive_nodes = nodes_all[:3] if nodes_all else []
-                if not deep_dive_nodes and nodes_all:
-                    deep_dive_nodes = nodes_all
-                if not deep_dive_nodes:
-                    accumulated_errs.append(f"[QABlocks] Topic '{topic_name}' has no nodes; proceeding with empty nodes.")
 
             # Prepare JSONs and invoke
             summary_json = json.dumps(summary_obj.model_dump() if hasattr(summary_obj, "model_dump") else summary_obj)
@@ -618,7 +620,7 @@ class QABlockGenerationAgent:
                 qa_error=getattr(state, "qa_error", "") or ""
             )
 
-            final_sets.append(one_set)  # keep even if empty to maintain traceability
+            final_sets.append(one_set)
             if err:
                 accumulated_errs.append(f"[{topic_name}] {err}")
             elif not (one_set.get("qa_blocks") or []):
@@ -626,7 +628,7 @@ class QABlockGenerationAgent:
 
             covered.add(ckey)
 
-        # -------- Pass B: summaries that didn't appear in Pass A --------
+        # -------- Pass B: summaries that didn’t appear in Pass A (parity with nodes agent) --------
         for s in summaries_list:
             s_name = QABlockGenerationAgent._extract_topic_name_from_summary(s) or "Unknown"
             ckey = QABlockGenerationAgent._can(s_name)
@@ -663,11 +665,9 @@ class QABlockGenerationAgent:
 
         return state
 
-    # --- should_regenerate: schema-only, but END if there's nothing to validate ---
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
-        global i 
-
+        global count
         try:
             QASetsSchema.model_validate(
                 state.qa_blocks.model_dump() if hasattr(state.qa_blocks, "model_dump") else state.qa_blocks
@@ -678,18 +678,16 @@ class QABlockGenerationAgent:
                 "[QABlockGen ValidationError]\n "
                 f"{ve}"
             )
-            # print(f"QA Blocks Retry Iteration -> {count}")
             log_retry_iteration(
-                                    agent_name=AGENT_NAME,
-                                    iteration=count,
-                                    reason="Schema validation failed",
-                                    logger=LOGGER,
-                                    pretty_json=True,
-                                    extra={"error": str(ve)[:4000]}  # trim if giant
-                                )
+                agent_name=AGENT_NAME,
+                iteration=count,
+                reason="Schema validation failed",
+                logger=LOGGER,
+                pretty_json=True,
+                extra={"error": str(ve)[:4000]}
+            )
             count += 1
             return True
-
         return False
 
     @staticmethod

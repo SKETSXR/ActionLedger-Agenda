@@ -35,7 +35,7 @@ class AgentInternalState(BaseModel):
     discussion_summary_per_topic: DiscussionSummaryPerTopicSchema | None = None
     nodes: NodesSchema | None = None
     nodes_error: str = ""  # To capture any errors during node generation
-    # qa_blocks: QASetsSchema | None = None
-    # qa_error: str = ""
+    qa_blocks: QASetsSchema | None = None
+    qa_error: str = ""
     interview_topics_feedback: CollectiveInterviewTopicFeedbackSchema | None = None
     interview_topics_feedbacks: str = ""
