@@ -200,32 +200,32 @@ from ..logging_tools import get_tool_logger, log_tool_activity, log_retry_iterat
 
 count = 1
 
-# --- Arithmetic tools ---
+# # --- Arithmetic tools ---
 
 
-@tool("add")
-def add(a: float, b: float) -> float:
-    """Return a + b."""
-    return a + b
+# @tool("add")
+# def add(a: float, b: float) -> float:
+#     """Return a + b."""
+#     return a + b
 
-@tool("subtract")
-def subtract(a: float, b: float) -> float:
-    """Return a - b."""
-    return a - b
+# @tool("subtract")
+# def subtract(a: float, b: float) -> float:
+#     """Return a - b."""
+#     return a - b
 
-@tool("multiply")
-def multiply(a: float, b: float) -> float:
-    """Return a * b."""
-    return a * b
+# @tool("multiply")
+# def multiply(a: float, b: float) -> float:
+#     """Return a * b."""
+#     return a * b
 
-@tool("divide")
-def divide(a: float, b: float) -> float:
-    """Return a / b. Raises if b == 0."""
-    if b == 0:
-        raise ValueError("Division by zero")
-    return a / b
+# @tool("divide")
+# def divide(a: float, b: float) -> float:
+#     """Return a / b. Raises if b == 0."""
+#     if b == 0:
+#         raise ValueError("Division by zero")
+#     return a / b
 
-ARITH_TOOLS = [add, subtract, multiply, divide]
+# ARITH_TOOLS = [add, subtract, multiply, divide]
 
 
 AGENT_NAME = "nodes_agent"
@@ -244,7 +244,7 @@ class NodesGenerationAgent:
     # Inside class TopicGenerationAgent
     # make sure you have this:
     MONGO_TOOLS = get_mongo_tools(llm=llm_n)
-    ALL_TOOLS = MONGO_TOOLS + ARITH_TOOLS
+    # ALL_TOOLS = MONGO_TOOLS + ARITH_TOOLS
 
     _AGENT_MODEL = llm_n.bind_tools(MONGO_TOOLS)
     _STRUCTURED_MODEL = llm_n.with_structured_output(
