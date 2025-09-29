@@ -42,52 +42,84 @@ class CandidateProjectSummarySchema(BaseModel):
     projectwise_summary: List[ProjectReasoningSummarySchema] = Field(..., description="List of project wise summary")   
 
 
-class AnnotatedSkillTreeSummarySchema(BaseModel):
-    children: Optional[list['AnnotatedSkillTreeSummarySchema']] = Field(
-        default=None,
-        description="Child nodes; present for domains, empty or None for skills"
-    )
-    name: Annotated[
-        str,
-        Field(
-            ...,
-            description="Name of the skill or domain",
-            examples=["Databases"]
-        )
-    ]
-    weight: Annotated[
-        float,
-        Field(
-            ...,
-            description="Importance of this skill/domain in the overall evaluation. Value is normalized between 0 and 1",
-            examples=[0.2]
-        )
-    ]
-    priority: Literal["must", "high", "low"] = Field(..., description="Priority of the skill or domain", examples=["must", "high", "low"])
+# class AnnotatedSkillTreeSummarySchema(BaseModel):
+#     children: Optional[list['AnnotatedSkillTreeSummarySchema']] = Field(
+#         default=None,
+#         description="Child nodes; present for domains, empty or None for skills"
+#     )
+#     name: Annotated[
+#         str,
+#         Field(
+#             ...,
+#             description="Name of the skill or domain",
+#             examples=["Databases"]
+#         )
+#     ]
+#     weight: Annotated[
+#         float,
+#         Field(
+#             ...,
+#             description="Importance of this skill/domain in the overall evaluation. Value is normalized between 0 and 1",
+#             examples=[0.2]
+#         )
+#     ]
+#     priority: Literal["must", "high", "low"] = Field(..., description="Priority of the skill or domain", examples=["must", "high", "low"])
     
-    comment: Annotated[
-        Optional[str],
-        Field(
-            default=None,
-            description="Evidence comment required for skills (leaves), forbidden for domains",
-            examples=[
-                "Integrated AI-driven document processing solutions using LangChain, Python, and cloud-native architectures",
-                "no such evidence"
-            ]
-        )
-    ]
+#     comment: Annotated[
+#         Optional[str],
+#         Field(
+#             default=None,
+#             description="Evidence comment required for skills (leaves), forbidden for domains",
+#             examples=[
+#                 "Integrated AI-driven document processing solutions using LangChain, Python, and cloud-native architectures",
+#                 "no such evidence"
+#             ]
+#         )
+#     ]
 
 
-class DomainToAssessSchema(BaseModel):
-    name: str = Field(..., description="Domain name, e.g., 'Machine Learning'")
-    weight: float = Field(..., description="Normalized importance in [0, 1]")
-    priority: Literal["must", "high", "low"] = Field(..., description="Priority of the skill or domain", examples=["must", "high", "low"])
+# class DomainToAssessSchema(BaseModel):
+#     name: str = Field(..., description="Domain name, e.g., 'Machine Learning'")
+#     weight: float = Field(..., description="Normalized importance in [0, 1]")
+#     priority: Literal["must", "high", "low"] = Field(..., description="Priority of the skill or domain", examples=["must", "high", "low"])
 
 
+# class DomainsToAssessListSchema(BaseModel):
+#     domains: List[DomainToAssessSchema] = Field(
+#         ..., description="List of domains to be assessed"
+#     )
+
+# Level 3 (leaf): actual skills — REQUIRED fields, no children
+class SkillLeaf(BaseModel):
+    name: str = Field(..., description="Leaf skill name (verbatim)")
+    weight: float = Field(..., description="Normalized in [0,1]")
+    priority: Literal["must", "high", "low"] = Field(..., description="Priority")
+    comment: str = Field(..., description="Short evidence/comment for this skill")
+
+# Level 2 (domain): must have non-empty children of leaves
+class DomainNode(BaseModel):
+    name: str = Field(..., description="Domain name")
+    weight: float = Field(..., description="Normalized in [0,1]")
+    priority: Literal["must", "high", "low"]
+    comment: Optional[str] = None
+    children: List[SkillLeaf] = Field(..., description="Non-empty list of leaf skills")
+
+# Level 1 (root): contains domains
+class AnnotatedSkillTreeSummarySchema(BaseModel):
+    name: str = Field(..., description="Root label, e.g., 'L3 (Software Engineer 2)'")
+    weight: float = Field(..., description="Usually 1.0")
+    priority: Literal["must", "high", "low"]
+    comment: Optional[str] = None
+    children: List[DomainNode] = Field(..., description="Non-empty list of domains")
+
+# Wrap in your summary payload used for Gemini structured output:
 class DomainsToAssessListSchema(BaseModel):
-    domains: List[DomainToAssessSchema] = Field(
-        ..., description="List of domains to be assessed"
-    )
+    class Domain(BaseModel):
+        name: str
+        weight: float
+        priority: Literal["must", "high", "low"]
+    domains: List[Domain]
+
 
 class TotalQuestionsSchema(BaseModel):
     total_questions: Annotated[

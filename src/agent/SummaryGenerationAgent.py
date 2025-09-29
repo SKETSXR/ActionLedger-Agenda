@@ -16,26 +16,57 @@ class SummaryGenerationAgent:
 
     llm_sg = llm_sg
 
+    # running with open AI
+    # @staticmethod
+    # async def summary_generator(state: AgentInternalState) -> AgentInternalState:
+    #     summary = await SummaryGenerationAgent.llm_sg \
+    #     .with_structured_output(GeneratedSummarySchema, method="function_calling") \
+    #     .ainvoke(
+    #         [
+    #             SystemMessage(
+    #                 content=SUMMARY_GENERATION_AGENT_PROMPT.format(
+    #                     job_description=state.job_description.model_dump_json(),
+    #                     skill_tree=state.skill_tree.model_dump_json(),
+    #                     candidate_profile=state.candidate_profile.model_dump_json(),
+    #                     # generated_summary=state.generated_summary.model_dump_json() if state.generated_summary else ""
+    #                 )
+    #             ),
+    #             state.messages[-1] if len(state.messages) else ""
+    #         ]
+    #     )
+    #     state.generated_summary = summary
+    #     return state
+
+    # try with gemini
     @staticmethod
     async def summary_generator(state: AgentInternalState) -> AgentInternalState:
+        # 1. Prepare the SystemMessage
+        system_message = SystemMessage(
+            content=SUMMARY_GENERATION_AGENT_PROMPT.format(
+                job_description=state.job_description.model_dump_json(),
+                skill_tree=state.skill_tree.model_dump_json(),
+                candidate_profile=state.candidate_profile.model_dump_json(),
+            )
+        )
+
+        # 2. Create a mandatory HumanMessage to trigger the model
+        # This message instructs the model to act on the SystemMessage and generate the required JSON.
+        trigger_message = HumanMessage(
+            content="Based on the provided instructions please start the process"
+        )
+
+        # 3. Ainvoke the model with both messages
         summary = await SummaryGenerationAgent.llm_sg \
         .with_structured_output(GeneratedSummarySchema, method="function_calling") \
         .ainvoke(
             [
-                SystemMessage(
-                    content=SUMMARY_GENERATION_AGENT_PROMPT.format(
-                        job_description=state.job_description.model_dump_json(),
-                        skill_tree=state.skill_tree.model_dump_json(),
-                        candidate_profile=state.candidate_profile.model_dump_json(),
-                        # generated_summary=state.generated_summary.model_dump_json() if state.generated_summary else ""
-                    )
-                ),
-                state.messages[-1] if len(state.messages) else ""
+                system_message,
+                trigger_message # <-- ESSENTIAL FIX
             ]
         )
+        
         state.generated_summary = summary
         return state
-
     @staticmethod
     def get_graph(checkpointer=None):
 

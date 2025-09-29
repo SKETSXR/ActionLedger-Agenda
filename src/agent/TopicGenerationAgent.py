@@ -325,7 +325,43 @@ class TopicGenerationAgent:
     _workflow.add_edge("respond", END)
     _mongo_graph = _workflow.compile()
 
+    # running with open ai
     # ---------- Your original node, now using the inner graph ----------
+    # @staticmethod
+    # async def topic_generator(state: AgentInternalState) -> AgentInternalState:
+    #     if not state.generated_summary:
+    #         raise ValueError("Summary cannot be null.")
+
+    #     interview_topics_feedback = (
+    #         state.interview_topics_feedback.feedback
+    #         if state.interview_topics_feedback is not None
+    #         else ""
+    #     )
+    #     state.interview_topics_feedbacks += "\n" + interview_topics_feedback + "\n"
+
+    #     class AtTemplate(Template):
+    #         delimiter = '@'   # anything not used in your prompt samples
+
+    #     tpl = AtTemplate(TOPIC_GENERATION_AGENT_PROMPT)
+    #     content = tpl.substitute(
+    #         generated_summary=state.generated_summary.model_dump_json(),
+    #         interview_topics_feedbacks=state.interview_topics_feedbacks,
+    #         thread_id=state.id,
+    #     )
+
+
+    #     messages = [
+    #         SystemMessage(
+    #             content=content
+    #         )
+    #     ]
+
+    #     # Let LangGraph handle tool-calling loop (agent <-> tools), then structure the output
+    #     result = await TopicGenerationAgent._mongo_graph.ainvoke({"messages": messages})
+    #     state.interview_topics = result["final_response"]
+    #     return state
+
+    # Trying for gemini
     @staticmethod
     async def topic_generator(state: AgentInternalState) -> AgentInternalState:
         if not state.generated_summary:
@@ -339,7 +375,7 @@ class TopicGenerationAgent:
         state.interview_topics_feedbacks += "\n" + interview_topics_feedback + "\n"
 
         class AtTemplate(Template):
-            delimiter = '@'   # anything not used in your prompt samples
+            delimiter = '@'
 
         tpl = AtTemplate(TOPIC_GENERATION_AGENT_PROMPT)
         content = tpl.substitute(
@@ -348,10 +384,12 @@ class TopicGenerationAgent:
             thread_id=state.id,
         )
 
-
         messages = [
             SystemMessage(
                 content=content
+            ),
+            HumanMessage(
+                content="Based on the instructions, please start the process."
             )
         ]
 

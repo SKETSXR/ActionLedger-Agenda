@@ -163,6 +163,9 @@ Here are following headings
    - Reproduce the skill tree exactly as given (keep names, priority and weights only).  
    - Add a new key `"comment"` for each leaf (skill).  
    - If an exact evidence from the candidate profile is written/mentioned (not as per your assumptions) there then only the `"comment"` must state this in a format <evidence - ... >, otherwise `"no such evidence"`.  
+   - children at root must be a non-empty array of domains.
+   - Each domain's children must be a non-empty array of leaf skills.
+   - Do not emit empty objects. Do not omit required fields.
 
 9. Domains to assess (D)
    - Reproduce the annotated skill tree but all the domains from the annotated skill tree.  

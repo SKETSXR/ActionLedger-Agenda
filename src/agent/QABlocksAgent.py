@@ -540,6 +540,72 @@ class QABlockGenerationAgent:
         return "Unknown"
 
     # ----------------- one-topic generation -----------------
+    # running with open AI
+    # @staticmethod
+    # async def _gen_for_topic(
+    #     topic_name: str,
+    #     discussion_summary_json: str,
+    #     deep_dive_nodes_json: str,
+    #     thread_id: str,
+    #     qa_error: str = ""
+    # ) -> Tuple[Dict[str, Any], str]:
+    #     class AtTemplate(Template):
+    #         delimiter = '@'
+
+    #     deep_dive_nodes = json.loads(deep_dive_nodes_json or "[]")
+    #     n_blocks = len(deep_dive_nodes)
+
+    #     COUNT_DIRECTIVE = f"""
+    # IMPORTANT COUNT RULE:
+    # - This topic has {n_blocks} deep-dive nodes. Output exactly {n_blocks} QA blocks (one per deep-dive node, in order).
+    # """
+
+    #     tpl = AtTemplate(QA_BLOCK_AGENT_PROMPT + COUNT_DIRECTIVE)
+    #     sys = tpl.substitute(
+    #         discussion_summary=discussion_summary_json,
+    #         deep_dive_nodes=deep_dive_nodes_json,
+    #         thread_id=thread_id,
+    #         qa_error=qa_error or ""
+    #     )
+
+    #     try:
+    #         result = await QABlockGenerationAgent._qa_inner_graph.ainvoke({"messages": [SystemMessage(content=sys)]})
+    #         schema = result["final_response"]  # QASetsSchema
+
+    #         obj = schema.model_dump() if hasattr(schema, "model_dump") else schema
+    #         sets = obj.get("qa_sets", []) or []
+    #         if not sets:
+    #             return {"topic": topic_name, "qa_blocks": []}, "No qa_sets produced."
+
+    #         one = sets[0]
+    #         one["topic"] = topic_name
+    #         blocks = one.get("qa_blocks", []) or []
+
+    #         # Hard validations
+    #         errs = []
+    #         if len(blocks) != n_blocks:
+    #             errs.append(f"Expected {n_blocks} blocks, got {len(blocks)}.")
+    #         for i, b in enumerate(blocks, start=1):
+    #             qi = b.get("qa_items", []) or []
+    #             if len(qi) != 7:
+    #                 errs.append(f"Block {i} must have 7 qa_items, got {len(qi)}.")
+    #             # ensure no Easy counters
+    #             for item in qi:
+    #                 if (item.get("q_type") == "Counter Question" and
+    #                     item.get("q_difficulty") == "Easy"):
+    #                     errs.append(f"Block {i} has an Easy counter (qa_id={item.get('qa_id')}); not allowed.")
+
+    #         if errs:
+    #             return one, " ; ".join(errs)
+
+    #         return one, ""
+
+    #     except (ValidationError, OutputParserException) as e:
+    #         return {"topic": topic_name, "qa_blocks": []}, f"Parser/Schema error: {e}"
+    #     except Exception as e:
+    #         return {"topic": topic_name, "qa_blocks": []}, f"Generation error: {e}"
+
+    # try with gemini
     @staticmethod
     async def _gen_for_topic(
         topic_name: str,
@@ -555,20 +621,31 @@ class QABlockGenerationAgent:
         n_blocks = len(deep_dive_nodes)
 
         COUNT_DIRECTIVE = f"""
-    IMPORTANT COUNT RULE:
-    - This topic has {n_blocks} deep-dive nodes. Output exactly {n_blocks} QA blocks (one per deep-dive node, in order).
-    """
+        IMPORTANT COUNT RULE:
+        - This topic has {n_blocks} deep-dive nodes. Output exactly {n_blocks} QA blocks (one per deep-dive node, in order).
+        """
 
         tpl = AtTemplate(QA_BLOCK_AGENT_PROMPT + COUNT_DIRECTIVE)
-        sys = tpl.substitute(
+        sys_content = tpl.substitute(
             discussion_summary=discussion_summary_json,
             deep_dive_nodes=deep_dive_nodes_json,
             thread_id=thread_id,
             qa_error=qa_error or ""
         )
 
+        sys_message = SystemMessage(content=sys_content)
+        
+        # This acts as the conversational trigger for the agent to start processing 
+        # the system instructions and calling tools.
+        trigger_message = HumanMessage(
+            content="Based on the provided instructions please start the process"
+        )
+        
         try:
-            result = await QABlockGenerationAgent._qa_inner_graph.ainvoke({"messages": [SystemMessage(content=sys)]})
+            # Pass both System and Human messages
+            result = await QABlockGenerationAgent._qa_inner_graph.ainvoke(
+                {"messages": [sys_message, trigger_message]} 
+            )
             schema = result["final_response"]  # QASetsSchema
 
             obj = schema.model_dump() if hasattr(schema, "model_dump") else schema

@@ -290,15 +290,42 @@ class PerTopicDiscussionSummaryGenerationAgent:
     _per_topic_graph = _workflow.compile()
 
     # ---------- One-topic call via inner graph (no manual loop) ----------
+    # Running with open AI
+    # @staticmethod
+    # async def _one_topic_call(generated_summary_json: str, topic: Dict[str, Any], thread_id):
+    #     """
+    #     Drive inner graph for a single topic:
+    #       System prompt -> agent (may call Mongo tools) -> respond (structured DiscussionTopic)
+    #     """
+
+    #     class AtTemplate(Template):
+    #         delimiter = '@'   # anything not used in your prompt samples
+
+    #     tpl = AtTemplate(DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT)
+    #     content = tpl.substitute(
+    #         generated_summary=generated_summary_json,
+    #         interview_topic=json.dumps(topic),
+    #         thread_id=thread_id,
+    #     )
+
+    #     sys = SystemMessage(
+    #         content=content
+    #     )
+    #     result = await PerTopicDiscussionSummaryGenerationAgent._per_topic_graph.ainvoke(
+    #         {"messages": [sys]}
+    #     )
+    #     return result["final_response"]  # DiscussionSummaryPerTopicSchema.DiscussionTopic
+
+    # try with gemini
     @staticmethod
     async def _one_topic_call(generated_summary_json: str, topic: Dict[str, Any], thread_id):
         """
         Drive inner graph for a single topic:
-          System prompt -> agent (may call Mongo tools) -> respond (structured DiscussionTopic)
+        System prompt -> agent (may call Mongo tools) -> respond (structured DiscussionTopic)
         """
 
         class AtTemplate(Template):
-            delimiter = '@'   # anything not used in your prompt samples
+            delimiter = '@'
 
         tpl = AtTemplate(DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT)
         content = tpl.substitute(
@@ -307,13 +334,21 @@ class PerTopicDiscussionSummaryGenerationAgent:
             thread_id=thread_id,
         )
 
-        sys = SystemMessage(
+        sys_message = SystemMessage(
             content=content
         )
-        result = await PerTopicDiscussionSummaryGenerationAgent._per_topic_graph.ainvoke(
-            {"messages": [sys]}
+        
+        
+        # This acts as the initial prompt to trigger the agent to start generating the summary 
+        # and use the tools described in the SystemMessage.
+        trigger_message = HumanMessage(
+            content="Based on the provided instructions please start the process"
         )
-        return result["final_response"]  # DiscussionSummaryPerTopicSchema.DiscussionTopic
+
+        result = await PerTopicDiscussionSummaryGenerationAgent._per_topic_graph.ainvoke(
+            {"messages": [sys_message, trigger_message]} # <-- Passing both System and Human messages
+        )
+        return result["final_response"]
 
     @staticmethod
     async def should_regenerate(state: AgentInternalState):

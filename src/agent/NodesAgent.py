@@ -377,11 +377,34 @@ class NodesGenerationAgent:
             )
         return tq
 
+    # running with open AI
+    # @staticmethod
+    # async def _gen_once(per_topic_summary_json: str, total_no_questions_topic, thread_id, nodes_error) -> TopicWithNodesSchema:
+
+    #     class AtTemplate(Template):
+    #         delimiter = '@'   # anything not used in your prompt samples
+
+    #     tpl = AtTemplate(NODES_AGENT_PROMPT)
+    #     content = tpl.substitute(
+    #         per_topic_summary_json=per_topic_summary_json,
+    #         # total_no_questions_topic=total_no_questions_topic,
+    #         thread_id=thread_id,
+    #         nodes_error=nodes_error,
+    #     )
+    #     sys = content
+    
+    #     # Drive inner graph: agent <-> tools ... -> respond (structured)
+    #     result = await NodesGenerationAgent._nodes_graph.ainvoke(
+    #         {"messages": [SystemMessage(content=sys)]}
+    #     )
+    #     return result["final_response"]  # TopicWithNodesSchema
+
+    # Try with gemini
     @staticmethod
     async def _gen_once(per_topic_summary_json: str, total_no_questions_topic, thread_id, nodes_error) -> TopicWithNodesSchema:
 
         class AtTemplate(Template):
-            delimiter = '@'   # anything not used in your prompt samples
+            delimiter = '@'
 
         tpl = AtTemplate(NODES_AGENT_PROMPT)
         content = tpl.substitute(
@@ -390,13 +413,21 @@ class NodesGenerationAgent:
             thread_id=thread_id,
             nodes_error=nodes_error,
         )
-        sys = content
-    
+        
+        # Set the comprehensive instructions as the SystemMessage
+        sys_message = SystemMessage(content=content)
+        
+        # This acts as the conversational trigger for the agent to start processing 
+        # the system instructions and calling tools.
+        trigger_message = HumanMessage(
+            content="Based on the provided instructions please start the process"
+        )
+
         # Drive inner graph: agent <-> tools ... -> respond (structured)
         result = await NodesGenerationAgent._nodes_graph.ainvoke(
-            {"messages": [SystemMessage(content=sys)]}
+            {"messages": [sys_message, trigger_message]} # <-- Passing both System and Human messages
         )
-        return result["final_response"]  # TopicWithNodesSchema
+        return result["final_response"]
 
     # # ----------------------------- Main Node generation node -----------------------------
     @staticmethod
