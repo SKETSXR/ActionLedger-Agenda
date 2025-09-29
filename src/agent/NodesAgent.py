@@ -804,6 +804,7 @@ class NodesGenerationAgent:
                     logger=LOGGER,
                     pretty_json=True,
                 )
+            # print(f"Node Retry Iteration -> {count}")
             count += 1
             return True
 
@@ -824,6 +825,7 @@ class NodesGenerationAgent:
                     logger=LOGGER,
                     pretty_json=True,
                 )
+            # print(f"Node Retry Iteration -> {count}")
             count += 1
             return True
 
@@ -840,6 +842,7 @@ class NodesGenerationAgent:
                             # Log exactly once per retry, with the requested message
 
         if any_invalid:
+            # print(f"Node Retry Iteration -> {count}")
             log_retry_iteration(
                                     agent_name=AGENT_NAME,
                                     iteration=count,
