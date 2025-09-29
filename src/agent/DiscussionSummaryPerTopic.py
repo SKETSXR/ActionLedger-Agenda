@@ -330,7 +330,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
         tpl = AtTemplate(DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT)
         content = tpl.substitute(
             generated_summary=generated_summary_json,
-            interview_topic=json.dumps(topic),
+            interview_topic=json.dumps(topic, ensure_ascii=False),
             thread_id=thread_id,
         )
 
@@ -393,7 +393,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
         try:
             generated_summary_json = state.generated_summary.model_dump_json()
         except Exception:
-            generated_summary_json = json.dumps(state.generated_summary)
+            generated_summary_json = json.dumps(state.generated_summary, ensure_ascii=False)
 
         # Run all topic calls concurrently (each via inner graph)
         tasks = [

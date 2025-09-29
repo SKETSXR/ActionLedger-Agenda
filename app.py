@@ -189,41 +189,83 @@ root = load_skill_tree(tree_data)
 #     "question_type_name": "Counter questions"}
 # ]}
 
+# Running old
+# question_guidelines = {
+#   "question_guidelines": [
+#     {
+#       "question_guidelines": '''Guidelines:\n\n
+#                                 Design the case as a realistic situation/scenario that requires decision-making, not abstract hypotheticals.\n\n
+#                                 Questions should encourage the candidate to analyze trade-offs (performance vs cost, scalability vs maintainability, etc.).\n\n
+#                                 Probe on approach and reasoning, not just on the final outcome.\n\n
+#                                 You can include asking about the metrics, evaluation criteria, and constraints the candidate might consider.\n\n
+#                                 Avoid generic "tell me about a challenge" initiations, rather anchor the case in technical detail relevant to the candidate's skill set or the job role.\n\n
+#                                 Example frames:\n\n
+#                                 "If you were designing a [system/problem] under [constraints], how would you decide between option A and option B?"\n\n
+#                                 "What bottlenecks could appear in [situation], and how would you measure and mitigate them?"\n\n
+#                                 "How would you adapt your solution if the scale increased by 10x?''',
+#       "question_type_name": "Case study type questions"
+#     },
+#     {
+#       "question_guidelines": '''Guidelines:\n\n
+#                                 Start with "why" (motivation, design choice, architecture decision), then follow with "how" (implementation, tools, processes).\n\n
+#                                 Frame questions so they feel grounded in the candidate's project details (P1, P2, etc.).\n\n
+#                                 Avoid repetitive or generic initiations like "What challenges did you face?" or "How did you solve them?" unless expanded into technical reasoning.\n\n
+#                                 Direct QAs should resemble peer-to-peer technical reviews, e.g., "In your project where you implemented X, why did you choose Y approach?"\n\n
+#                                 Encourage the candidate to explain about the trade-offs, alternatives considered, and design impact.\n\n
+#                                 Keep the phrasing specific and contextualized to avoid vague storytelling answers.\n\n
+#                                 Example frames:\n\n
+#                                 "In [Project], you mentioned using [technology/tool]. Why was it chosen over alternatives?"\n\n
+#                                 "During [Project], how did you ensure performance/scalability/security in the design?"\n\n
+#                                 "If you had to extend a [Project] today for handling a [new requirement], what architectural changes would you propose?''',
+#       "question_type_name": "Project based questions"
+#     },
+#     {
+#       "question_guidelines": '''Guidelines:\n\n
+#                                 The counter questions should be of the types: \n    
+#                                 1. Twist- What would happen if you do A instead of B\n
+#                                 2. Interrogatory- Why did you use A?\n\n
+#                                 The questions should be more realistic counter questions as if asked in a real interview irrespective of the difficulty''',
+#       "question_type_name": "Counter questions"
+#     }
+#   ]
+# }
 question_guidelines = {
   "question_guidelines": [
     {
       "question_guidelines": '''Guidelines:\n\n
-                                Design the case as a realistic situation/scenario that requires decision-making, not abstract hypotheticals.\n\n
-                                Questions should encourage the candidate to analyze trade-offs (performance vs cost, scalability vs maintainability, etc.).\n\n
-                                Probe on approach and reasoning, not just on the final outcome.\n\n
-                                You can include asking about the metrics, evaluation criteria, and constraints the candidate might consider.\n\n
-                                Avoid generic "tell me about a challenge" initiations, rather anchor the case in technical detail relevant to the candidate's skill set or the job role.\n\n
-                                Example frames:\n\n
-                                "If you were designing a [system/problem] under [constraints], how would you decide between option A and option B?"\n\n
-                                "What bottlenecks could appear in [situation], and how would you measure and mitigate them?"\n\n
-                                "How would you adapt your solution if the scale increased by 10x?''',
+                                Definition:
+                                A case study question presents a hypothetical scenario with specific constraints and asks the candidate to analyze, design, or solve a problem. Probe on approach and reasoning, not just on the final outcome. Avoid generic "tell me about a challenge" initiations, rather anchor the case in technical detail relevant to the candidate's skill set or the job role. The first question always sets the stage with the case and constraints. Follow-up questions explore design choices, trade-offs, and decision-making. 
+                                Example:
+                                Case: "You are asked to design a system that handles online ticket booking for concerts. The system should support high traffic during peak booking times but must also minimize operational costs. The constraint is that the budget only allows use of basic cloud services, not premium enterprise ones."
+                                Q1: How would you design the overall system architecture to meet these constraints?
+                                Q2: What approach would you take to handle sudden spikes in traffic during a ticket release?
+                                Q3: If the system starts facing delays in payment confirmation, how would you modify the design?''',
       "question_type_name": "Case study type questions"
     },
     {
       "question_guidelines": '''Guidelines:\n\n
-                                Start with "why" (motivation, design choice, architecture decision), then follow with "how" (implementation, tools, processes).\n\n
-                                Frame questions so they feel grounded in the candidate's project details (P1, P2, etc.).\n\n
-                                Avoid repetitive or generic initiations like "What challenges did you face?" or "How did you solve them?" unless expanded into technical reasoning.\n\n
-                                Direct QAs should resemble peer-to-peer technical reviews, e.g., "In your project where you implemented X, why did you choose Y approach?"\n\n
-                                Encourage the candidate to explain about the trade-offs, alternatives considered, and design impact.\n\n
-                                Keep the phrasing specific and contextualized to avoid vague storytelling answers.\n\n
-                                Example frames:\n\n
-                                "In [Project], you mentioned using [technology/tool]. Why was it chosen over alternatives?"\n\n
-                                "During [Project], how did you ensure performance/scalability/security in the design?"\n\n
-                                "If you had to extend a [Project] today for handling a [new requirement], what architectural changes would you propose?''',
+                                Definition:
+                                These questions are grounded in the candidate's past projects. The interviewer picks specific aspects of the project (requirements, challenges, decisions) and explores them in detail.
+                                Example:
+                                "In your last project, you mentioned you worked on a system that processed large amounts of user data. What was the most significant performance bottleneck you faced?"
+                                "You said you chose a queue-based architecture. Why did you prefer that over a simpler request-response model?"
+                                ''',
       "question_type_name": "Project based questions"
     },
     {
       "question_guidelines": '''Guidelines:\n\n
-                                The counter questions should be of the types: \n    
-                                1. Twist- What would happen if you do A instead of B\n
-                                2. Interrogatory- Why did you use A?\n\n
-                                The questions should be more realistic counter questions as if asked in a real interview irrespective of the difficulty''',
+                                Counter questions build directly on the candidate's previous answer. While making the examples, implicitly create a sample candidate's response related to the focus areas then create the examples. The counter questions are of two types:
+                                (a) Interrogatory Counter Questions
+                                These dig deeper into the reasoning behind a choice the candidate made.
+                                Example:
+                                Candidate: "I would use caching to reduce response times."
+                                Counter: "Why did you choose caching over database optimization first? What risks does caching introduce?"
+                                (b) Twist Counter Questions
+                                These modify the scenario or constraints slightly and ask the candidate to reconsider.
+                                Example:
+                                Original Q: "How would you design a system for online ticket booking under limited budget constraints?"
+                                Candidate Answer: "I'd use basic cloud services with auto-scaling."
+                                Twist Counter: "Now suppose the budget is no longer a constraint, but strict compliance with data privacy laws is required. How does your design change?"''',
       "question_type_name": "Counter questions"
     }
   ]
@@ -291,7 +333,7 @@ for k, v in otpt.items():
     print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
     x += f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n"
 
-with open(r"testing\op49.txt", "w", encoding="utf-8") as f:
+with open(r"testing\op50.txt", "w", encoding="utf-8") as f:
     f.write(x)
 # for i, v in otpt.items():
 #     if hasattr(v, "model_dump_json"):
