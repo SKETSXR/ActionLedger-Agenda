@@ -1,75 +1,123 @@
-import json
-import yaml
-import time
 import asyncio
-from src.agent.AgendaGenerationAgent import AgendaGenerationAgent
-from src.schema.input_schema import JobDescriptionSchema, CandidateProfileSchema, SkillTreeSchema, InputSchema
-from src.tools.jd_extraction import parse_jd_text_to_json
-from src.tools.cv_extraction import parse_pdf_to_json
+import json
+import time
+from pathlib import Path
+
+import yaml
 from dotenv import load_dotenv
 
-start = time.time_ns()
-load_dotenv()
+from src.agent.AgendaGenerationAgent import AgendaGenerationAgent
+from src.schema.input_schema import (
+    JobDescriptionSchema,
+    CandidateProfileSchema,
+    SkillTreeSchema,
+    InputSchema,
+)
+from src.tools.jd_extraction import parse_jd_text_to_json
+from src.tools.cv_extraction import parse_pdf_to_json
 
-with open(r"testing\Ayam\jd.txt", "r", encoding="utf-8") as f:
-    jd_inp_text = f.read()
-jd_json_string = asyncio.run(parse_jd_text_to_json(jd_inp_text))
-if jd_json_string == "JD not contain any text":
-    raise("Open AI API not running")
-jd = json.loads(jd_json_string)
-jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["company_background"], fundamental_knowledge=jd.get("fundamental_knowledge"))
 
-candidate_profile = asyncio.run(parse_pdf_to_json(r"testing\Ayam\AyamHeniberMeitei_2025L - ayam heniber.pdf"))
-if candidate_profile == "CV does not contain proper text":
-    raise("Open AI API not running")
-candidate_profile = json.loads(candidate_profile)
+# ----------------------------- Helpers ----------------------------- #
+def _load_text(path: Path) -> str:
+    with path.open("r", encoding="utf-8") as f:
+        return f.read()
 
-cp = CandidateProfileSchema(skills=candidate_profile["skills"],
-                            projects=candidate_profile["projects"],
-                            experience=candidate_profile["experience"])
 
-# Skill tree loading using json
-def load_skill_tree(tree_json: dict) -> SkillTreeSchema:
+def _load_json(path: Path) -> dict:
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _load_yaml(path: Path) -> dict:
+    with path.open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def _load_skill_tree(tree_json: dict) -> SkillTreeSchema:
+    # Keep construction identical to original while isolating into a helper.
     return SkillTreeSchema(**tree_json)
 
-with open(r"testing\custom_testing_inputs\skilltree3_priority.json", "r", encoding="utf-8") as f:
-    tree_data = json.load(f)
 
-root = load_skill_tree(tree_data)
+# ----------------------------- Main ----------------------------- #
+if __name__ == "__main__":
+    start = time.time_ns()
+    load_dotenv()
 
-with open(r"testing\custom_testing_inputs\question_guidelines.json", "r", encoding="utf-8") as f:
-  question_guidelines = json.load(f)
+    # Inputs (paths preserved; normalized for cross-platform usage)
+    jd_txt_path = Path(r"testing\Ayam\jd.txt")
+    cv_pdf_path = Path(r"testing\Ayam\AyamHeniberMeitei_2025L - ayam heniber.pdf")
+    skill_tree_json_path = Path(r"testing\custom_testing_inputs\skilltree3_priority.json")
+    qg_json_path = Path(r"testing\custom_testing_inputs\question_guidelines.json")
+    config_yaml_path = Path("config.yaml")
+    output_txt_path = Path(r"testing\op51.txt")
 
-inp = InputSchema(
-    job_description=jdes,
-    skill_tree=root,
-    candidate_profile=cp,
-    question_guidelines=question_guidelines
-)
+    # --- JD parse ---
+    jd_inp_text = _load_text(jd_txt_path)
+    jd_json_string = asyncio.run(parse_jd_text_to_json(jd_inp_text))
+    if jd_json_string == "JD not contain any text":
+        # Preserve original failure semantics but raise a proper exception
+        raise RuntimeError("Open AI API not running (JD parse returned empty).")
 
-inp_cv = inp.candidate_profile.model_dump_json(indent=2)
-inp_jd = inp.job_description.model_dump_json(indent=2)
-inp_skill_tree = inp.skill_tree.model_dump_json(indent=2)
-print(inp_cv + "\n")
-print(inp_jd + "\n")
+    jd = json.loads(jd_json_string)
+    jdes = JobDescriptionSchema(
+        job_role=jd["job_role"],
+        company_background=jd["company_background"],
+        fundamental_knowledge=jd.get("fundamental_knowledge"),
+    )
 
-print(inp_skill_tree)
+    # --- CV parse ---
+    candidate_profile = asyncio.run(parse_pdf_to_json(str(cv_pdf_path)))
+    if candidate_profile == "CV does not contain proper text":
+        raise RuntimeError("Open AI API not running (CV parse returned empty).")
 
-with open("config.yaml", "r") as yamlfile:
-    config = yaml.load(yamlfile, Loader=yaml.FullLoader)
+    candidate_profile = json.loads(candidate_profile)
+    cp = CandidateProfileSchema(
+        skills=candidate_profile["skills"],
+        projects=candidate_profile["projects"],
+        experience=candidate_profile["experience"],
+    )
 
-graph = AgendaGenerationAgent.get_graph()
+    # --- Skill tree ---
+    tree_data = _load_json(skill_tree_json_path)
+    root = _load_skill_tree(tree_data)
 
-otpt = asyncio.run(graph.ainvoke(inp, config))
+    # --- Question guidelines ---
+    question_guidelines = _load_json(qg_json_path)
 
-x = ""
-for k, v in otpt.items():
-    k = str(k).capitalize()
-    print(f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n")
-    x += f"\n{k} --->\n\n {v.model_dump_json(indent=2)}\n"
+    # Construct pipeline input
+    inp = InputSchema(
+        job_description=jdes,
+        skill_tree=root,
+        candidate_profile=cp,
+        question_guidelines=question_guidelines,
+    )
 
-with open(r"testing\op51.txt", "w", encoding="utf-8") as f:
-    f.write(x)
+    # Debug prints (intentionally preserved)
+    inp_cv = inp.candidate_profile.model_dump_json(indent=2)
+    inp_jd = inp.job_description.model_dump_json(indent=2)
+    inp_skill_tree = inp.skill_tree.model_dump_json(indent=2)
+    print(inp_cv + "\n")
+    print(inp_jd + "\n")
+    print(inp_skill_tree)
 
-end = time.time_ns()
-print(f"\nTime taken: {(end - start) / 60000000000} mins")
+    # Load config
+    config = _load_yaml(config_yaml_path)
+
+    # Build the graph and execute
+    graph = AgendaGenerationAgent.get_graph()
+    otpt = asyncio.run(graph.ainvoke(inp, config))
+
+    # Collect and persist outputs (format preserved)
+    combined_text = ""
+    for k, v in otpt.items():
+        section = str(k).capitalize()
+        section_text = v.model_dump_json(indent=2)
+        print(f"\n{section} --->\n\n {section_text}\n")
+        combined_text += f"\n{section} --->\n\n {section_text}\n"
+
+    output_txt_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_txt_path.open("w", encoding="utf-8") as f:
+        f.write(combined_text)
+
+    end = time.time_ns()
+    print(f"\nTime taken: {(end - start) / 60000000000} mins")
