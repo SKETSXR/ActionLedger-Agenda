@@ -1,9 +1,9 @@
-
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import MessagesState
 from string import Template
+
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import CollectiveInterviewTopicSchema
 from ..schema.input_schema import SkillTreeSchema
@@ -12,89 +12,79 @@ from ..model_handling import llm_tg
 from src.mongo_tools import get_mongo_tools
 from ..logging_tools import get_tool_logger, log_tool_activity, log_retry_iteration
 
-# set_llm_cache(InMemoryCache())
 
+# Global retry counter used only for logging iteration counts.
 count = 1
 
-# ---------------- Logger config ----------------
+
+# ---------------- Logging ----------------
 AGENT_NAME = "topic_generation_agent"
 LOG_DIR = "logs"
 LOGGER = get_tool_logger(AGENT_NAME, log_dir=LOG_DIR, backup_count=365)
 
-# # At top of file (if you added the log helpers there)
-# def _log_planned_tool_calls(ai_msg):
-#     for tc in getattr(ai_msg, "tool_calls", []) or []:
-#         try:
-#             print(f"[ToolCall] name={tc['name']} args={tc.get('args')}")
-#         except Exception:
-#             print(f"[ToolCall] {tc}")
 
-# def _log_recent_tool_results(messages):
-#     i = len(messages) - 1
-#     j = False
-#     while i >= 0 and getattr(messages[i], "type", None) == "tool":
-#         if j == False:
-#             print("----------------Nodes Tool Call logs-----------------------------------")
-#             j = True
-#         tm = messages[i]
-#         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
-#         i -= 1
-
-
-# ---------- Inner ReAct state for Mongo loop ----------
+# ---------------- Inner ReAct state for Mongo loop ----------------
 class _MongoAgentState(MessagesState):
+    """State container for the inner Mongo-enabled ReAct loop."""
     final_response: CollectiveInterviewTopicSchema
 
 
 class TopicGenerationAgent:
+    """
+    Generates interview topics from a prepared summary by running a small
+    ReAct-style tool-using loop (for Mongo tools) and then coercing the final
+    assistant content into a typed schema.
+    """
 
-    # Models & tools
+    # LLMs & tools (All required class attributes are created once)
     llm_tg = llm_tg
-    # Inside class TopicGenerationAgent
     MONGO_TOOLS = get_mongo_tools(llm=llm_tg)
     _AGENT_MODEL = llm_tg.bind_tools(MONGO_TOOLS)
     _STRUCTURED_MODEL = llm_tg.with_structured_output(
         CollectiveInterviewTopicSchema, method="function_calling"
     )
 
-    # ---------- Build the inner ReAct graph ONCE ----------
-    # Nodes
+    # ---------- Inner graph nodes ----------
     @staticmethod
     def _agent_node(state: _MongoAgentState):
-        """LLM picks tool(s) or answers; LangGraph will handle tool exec via ToolNode."""
-        # _log_recent_tool_results(state["messages"])   # optional logging
+        """
+        Invoke the tool-enabled model. LangGraph handles actual tool execution
+        via the ToolNode edge when tool calls are present.
+        """
         log_tool_activity(
             messages=state["messages"],
             ai_msg=None,
             agent_name=AGENT_NAME,
             logger=LOGGER,
             header="Topic Generation Tool Activity",
-            pretty_json=True 
+            pretty_json=True,
         )
-
         ai = TopicGenerationAgent._AGENT_MODEL.invoke(state["messages"])
         return {"messages": [ai]}
 
     @staticmethod
     def _respond_node(state: _MongoAgentState):
+        """
+        Take the last non-tool-call AI message content, and coerce it into the
+        expected structured schema using the structured-output model.
+        """
         msgs = state["messages"]
 
-        # Find the last ASSISTANT message that does NOT request tools
+        # Prefer the most recent assistant message without tool calls;
+        # fall back to the most recent assistant message; finally to the last msg.
         ai_content = None
         for m in reversed(msgs):
-            # LangChain AssistantMessage typically has .type == "ai"
             if getattr(m, "type", None) in ("ai", "assistant"):
-                if not getattr(m, "tool_calls", None):  # completed answer
+                if not getattr(m, "tool_calls", None):
                     ai_content = m.content
                     break
 
-        # Fallbacks: if none found, take the last assistant content even if it had tool calls,
-        # else take the last message content.
         if ai_content is None:
             for m in reversed(msgs):
                 if getattr(m, "type", None) in ("ai", "assistant"):
                     ai_content = m.content
                     break
+
         if ai_content is None:
             ai_content = msgs[-1].content
 
@@ -105,25 +95,24 @@ class TopicGenerationAgent:
 
     @staticmethod
     def _should_continue(state: _MongoAgentState):
-        # last = state["messages"][-1]
-        # if getattr(last, "tool_calls", None):
-        #     _log_planned_tool_calls(last)  # optional logging
-        #     return "continue"
+        """
+        Router: if the last assistant message planned tool calls, continue to tools.
+        Otherwise, proceed to respond (coerce to schema).
+        """
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
-            # Log planned tool calls from the assistant message
             log_tool_activity(
                 messages=state["messages"],
                 ai_msg=last,
                 agent_name=AGENT_NAME,
                 logger=LOGGER,
                 header="Topic Generation Tool Activity",
-                pretty_json=True 
+                pretty_json=True,
             )
             return "continue"
         return "respond"
 
-    # Compile inner graph
+    # ---------- Compile inner ReAct graph once ----------
     _workflow = StateGraph(_MongoAgentState)
     _workflow.add_node("agent", _agent_node)
     _workflow.add_node("respond", _respond_node)
@@ -138,8 +127,14 @@ class TopicGenerationAgent:
     _workflow.add_edge("respond", END)
     _mongo_graph = _workflow.compile()
 
+    # ---------------- Graph node: topic generation ----------------
     @staticmethod
     async def topic_generator(state: AgentInternalState) -> AgentInternalState:
+        """
+        Build the system prompt from the generated summary and accumulated
+        feedback, run the inner Mongo ReAct loop, and store the typed topics
+        on the agent state.
+        """
         if not state.generated_summary:
             raise ValueError("Summary cannot be null.")
 
@@ -151,7 +146,8 @@ class TopicGenerationAgent:
         state.interview_topics_feedbacks += "\n" + interview_topics_feedback + "\n"
 
         class AtTemplate(Template):
-            delimiter = '@'
+            # Take @placeholders in the prompt template as input
+            delimiter = "@"
 
         tpl = AtTemplate(TOPIC_GENERATION_AGENT_PROMPT)
         content = tpl.substitute(
@@ -161,129 +157,134 @@ class TopicGenerationAgent:
         )
 
         messages = [
-            SystemMessage(
-                content=content
-            ),
-            HumanMessage(
-                content="Based on the instructions, please start the process."
-            )
+            SystemMessage(content=content),
+            HumanMessage(content="Based on the instructions, please start the process."),
         ]
 
-        # Let LangGraph handle tool-calling loop (agent <-> tools), then structure the output
         result = await TopicGenerationAgent._mongo_graph.ainvoke({"messages": messages})
         state.interview_topics = result["final_response"]
         return state
 
+    # ---------------- Graph router: should regenerate? ----------------
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
-
+        """
+        Decide whether to regenerate topics based on:
+        1) Total question count matching the generated summary's target.
+        2) All focus-area skills belonging to the leaf set of the skill tree.
+        3) Ensuring all 'must' priority leaf skills are included at least once.
+        When missing MUST skills, feedback is injected to add them to the
+        'General Skill Assessment' topic's focus areas.
+        """
         global count
 
         def level3_leavesp(root: SkillTreeSchema) -> list[SkillTreeSchema]:
+            """Collect true leaves with priority == 'must' from the 3rd level."""
             if not root.children:
                 return []
             skills_priority_must: list[SkillTreeSchema] = []
-            for domain in root.children:                 
+            for domain in root.children:
                 for leaf in (domain.children or []):
-                    if not leaf.children:  # only pick true leaves
-                        if leaf.priority == "must":
-                            skills_priority_must.append(leaf)
-
+                    if not leaf.children and leaf.priority == "must":
+                        skills_priority_must.append(leaf)
             return skills_priority_must
 
         def level3_leaves(root: SkillTreeSchema) -> list[SkillTreeSchema]:
+            """Collect all true leaves from the 3rd level."""
             if not root.children:
                 return []
             leaves: list[SkillTreeSchema] = []
-            for domain in root.children:                 
+            for domain in root.children:
                 for leaf in (domain.children or []):
-                    if not leaf.children:  # only pick true leaves
+                    if not leaf.children:
                         leaves.append(leaf)
             return leaves
 
-
         all_skill_leaves = [leaf.name for leaf in level3_leaves(state.skill_tree)]
         skills_priority_must = [leaf.name for leaf in level3_leavesp(state.skill_tree)]
-        # print(skills_priority_must)
-        # print(all_skill_leaves)
 
-        # print(state.interview_topics.model_dump())
-        focus_area_list = []
+        # Gather all unique focus-area skill names from the generated topics.
+        focus_area_list: list[str] = []
         for t in state.interview_topics.interview_topics:
             for i in t.focus_area:
-                # print(i.model_dump())
-                for j in i.model_dump():
-                    if j == "skill":
+                for key in i.model_dump():
+                    if key == "skill":
                         x = i.model_dump()
                         if x["skill"] not in focus_area_list:
-                            focus_area_list.append(x["skill"]) 
+                            focus_area_list.append(x["skill"])
 
-        total_questions_sum = sum(t.total_questions for t in state.interview_topics.interview_topics)
-        # print(f"Total Questions Sum: {total_questions_sum}\nTotal Questions in Summary: {state.generated_summary.total_questions}")
-        # print(focus_area_list)
+        # Validate total questions count.
+        total_questions_sum = sum(
+            t.total_questions for t in state.interview_topics.interview_topics
+        )
         if total_questions_sum != state.generated_summary.total_questions:
-            # print(f"Total questions in topic list does not match as decided by summary... regenerating topics... retry iteration -> {count}")
             log_retry_iteration(
-                                    agent_name=AGENT_NAME,
-                                    iteration=count,
-                                    reason="Total questions mismatch",
-                                    logger=LOGGER,
-                                    pretty_json=True,
-                                    extra={
-                                        "got_total": total_questions_sum,
-                                        "target_total": state.generated_summary.total_questions
-                                    }
-                                )
+                agent_name=AGENT_NAME,
+                iteration=count,
+                reason="Total questions mismatch",
+                logger=LOGGER,
+                pretty_json=True,
+                extra={
+                    "got_total": total_questions_sum,
+                    "target_total": state.generated_summary.total_questions,
+                },
+            )
             count += 1
             return False
-        # focus_area_list = all_focus_skills(state.interview_topics)
 
-        # print(f"Skill Tree List {all_skill_leaves}")
-
-        # print(f"\nFocus Area List {focus_area_list}")
-        for i in focus_area_list:
-            if i not in all_skill_leaves:
-                # print(f"Topic Retry Iteration -> {count}")
+        # Validate that every focus-area skill exists in the leaf set.
+        for s in focus_area_list:
+            if s not in all_skill_leaves:
                 log_retry_iteration(
-                                        agent_name=AGENT_NAME,
-                                        iteration=count,
-                                        reason="Invalid focus skill",
-                                        logger=LOGGER,
-                                        pretty_json=True,
-                                        extra={"skill": i}
-                                    )
+                    agent_name=AGENT_NAME,
+                    iteration=count,
+                    reason="Invalid focus skill",
+                    logger=LOGGER,
+                    pretty_json=True,
+                    extra={"skill": s},
+                )
                 count += 1
                 return False
 
-        skill_list = ""
-        for i in set(skills_priority_must):
-            if i not in set(focus_area_list):
-                skill_list += ", " + i
+        # Ensure all MUST-priority leaves are represented at least once.
+        missing_must = ""
+        for skill in set(skills_priority_must):
+            if skill not in set(focus_area_list):
+                missing_must += ", " + skill
 
-        feedback = ""
-        if skill_list != "":
+        if missing_must != "":
+            feedback = ""
             if state.interview_topics_feedback is not None:
                 feedback = state.interview_topics_feedback.feedback
-            feedback += f"Please keep the topic set as it is irresepective of below instructions: ```\n{state.interview_topics.model_dump()}```\n But add the list of missing `must` priority skills in this as per the \n{skill_list}\n to the focus areas of the last topic which being General Skill Assessment"
+            feedback += (
+                "Please keep the topic set as it is irresepective of below instructions: "
+                f"```\n{state.interview_topics.model_dump()}```\n "
+                "But add the list of missing `must` priority skills in this as per the \n"
+                f"{missing_must}\n "
+                "to the focus areas of the last topic which being General Skill Assessment"
+            )
             state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
-            # print(f"Topic Retry Iteration -> {count}")
-            log_retry_iteration(
-                                    agent_name=AGENT_NAME,
-                                    iteration=count,
-                                    reason="Missing MUST skills",
-                                    logger=LOGGER,
-                                    pretty_json=True,
-                                    extra={"missing_must": skill_list}
-                                )
-            count += 1
-            # print("-----------Topic retry logging-------------")
 
+            log_retry_iteration(
+                agent_name=AGENT_NAME,
+                iteration=count,
+                reason="Missing MUST skills",
+                logger=LOGGER,
+                pretty_json=True,
+                extra={"missing_must": missing_must},
+            )
+            count += 1
             return False
 
         return True
 
+    # ---------------- Outer main topic generation graph ----------------
     @staticmethod
     def get_graph(checkpointer=None):
+        """
+        Build the Topic Generation graph:
+        START -> topic_generator -> (should_regenerate ? END : topic_generator)
+        """
         graph_builder = StateGraph(state_schema=AgentInternalState)
         graph_builder.add_node("topic_generator", TopicGenerationAgent.topic_generator)
         graph_builder.add_edge(START, "topic_generator")
@@ -292,7 +293,9 @@ class TopicGenerationAgent:
             TopicGenerationAgent.should_regenerate,
             {True: END, False: "topic_generator"},
         )
-        return graph_builder.compile(checkpointer=checkpointer, name="Topic Generation Agent")
+        return graph_builder.compile(
+            checkpointer=checkpointer, name="Topic Generation Agent"
+        )
 
 
 if __name__ == "__main__":

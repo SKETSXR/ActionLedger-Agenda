@@ -2,34 +2,69 @@ from typing import Annotated
 from pydantic import BaseModel
 from langchain_core.messages import AnyMessage, RemoveMessage
 from langgraph.graph import add_messages
-from .output_schema import GeneratedSummarySchema, CollectiveInterviewTopicSchema, DiscussionSummaryPerTopicSchema, NodesSchema, QASetsSchema, CollectiveInterviewTopicFeedbackSchema
-from .input_schema import JobDescriptionSchema, SkillTreeSchema, CandidateProfileSchema, QuestionGuidelinesCompleteSchema
+
+from .output_schema import (
+    GeneratedSummarySchema,
+    CollectiveInterviewTopicSchema,
+    DiscussionSummaryPerTopicSchema,
+    NodesSchema,
+    QASetsSchema,
+    CollectiveInterviewTopicFeedbackSchema,
+)
+from .input_schema import (
+    JobDescriptionSchema,
+    SkillTreeSchema,
+    CandidateProfileSchema,
+    QuestionGuidelinesCompleteSchema,
+)
 
 
 class AgentInternalState(BaseModel):
+    """
+    Central state object threaded through the agenda-generation pipeline.
+
+    This model carries:
+      • Mongo connection details (strings only; drivers are created elsewhere)
+      • Conversation/thread id (used as a stable key for persistence)
+      • Running message list (consumed by LangGraph via `add_messages`)
+      • All inputs (JD, skill tree, candidate profile, guidelines)
+      • All intermediate/terminal artifacts (summary, topics, per-topic summaries,
+        nodes, QA blocks) and corresponding error strings/feedback, when present.
+    """
 
     class Config:
-        arbitrary_types_allowed=True
+        # Allow non-pydantic types (e.g., LangChain message objects) in the model.
+        arbitrary_types_allowed = True
 
-    mongo_client: str
-    mongo_db: str
-    mongo_jd_collection: str
-    mongo_cv_collection: str
-    mongo_skill_tree_collection: str
-    mongo_summary_collection: str
-    mongo_question_guidelines_collection: str
-    id: str
+    # -------------------- Persistence / runtime identifiers --------------------
+    mongo_client: str  # Mongo connection URI
+    mongo_db: str  # Database name
+    mongo_jd_collection: str  # Collection for Job Descriptions
+    mongo_cv_collection: str  # Collection for Candidate Profiles
+    mongo_skill_tree_collection: str  # Collection for Skill Trees
+    mongo_summary_collection: str  # Collection for Generated Summaries
+    mongo_question_guidelines_collection: str  # Collection for Question Guidelines
+    id: str  # Thread/session identifier used as a stable _id across documents
+
+    # Running message buffer used by LangGraph; `add_messages` appends new messages.
     messages: Annotated[list[AnyMessage | RemoveMessage], add_messages] = []
+
+    # -------------------- Inputs --------------------
     job_description: JobDescriptionSchema
     skill_tree: SkillTreeSchema
     candidate_profile: CandidateProfileSchema
     question_guidelines: QuestionGuidelinesCompleteSchema
+
+    # -------------------- Outputs / intermediates --------------------
     generated_summary: GeneratedSummarySchema | None = None
     interview_topics: CollectiveInterviewTopicSchema | None = None
     discussion_summary_per_topic: DiscussionSummaryPerTopicSchema | None = None
     nodes: NodesSchema | None = None
-    nodes_error: str = ""
     qa_blocks: QASetsSchema | None = None
-    qa_error: str = ""
+
+    # -------------------- Error strings / feedback channels --------------------
+    nodes_error: str = ""  # Accumulates node-generation validation or runtime issues
+    qa_error: str = ""  # Accumulates QA-block generation validation or runtime issues
     interview_topics_feedback: CollectiveInterviewTopicFeedbackSchema | None = None
+    # Appending text log of feedback prompts given to the topic generator across retries
     interview_topics_feedbacks: str = ""

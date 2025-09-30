@@ -1,12 +1,14 @@
 import json
 import asyncio
 from typing import List, Dict, Any
+
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph import MessagesState
 from langgraph.prebuilt import ToolNode
 from langchain_core.messages import SystemMessage, HumanMessage
-from src.mongo_tools import get_mongo_tools
 from string import Template
+
+from src.mongo_tools import get_mongo_tools
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import DiscussionSummaryPerTopicSchema
 from ..prompt.discussion_summary_per_topic_generation_agent_prompt import (
@@ -20,40 +22,25 @@ AGENT_NAME = "discussion_summary_agent"
 LOG_DIR = "logs"
 LOGGER = get_tool_logger(AGENT_NAME, log_dir=LOG_DIR, backup_count=365)
 
+# Global retry counter used for logging iteration counts
+count = 1
 
-count = 1 
-
-
-# # At top of file (if you added the log helpers there)
-# def _log_planned_tool_calls(ai_msg):
-#     for tc in getattr(ai_msg, "tool_calls", []) or []:
-#         try:
-#             print(f"[ToolCall] name={tc['name']} args={tc.get('args')}")
-#         except Exception:
-#             print(f"[ToolCall] {tc}")
-
-# def _log_recent_tool_results(messages):
-#     i = len(messages) - 1
-#     j = False
-#     while i >= 0 and getattr(messages[i], "type", None) == "tool":
-#         if j == False:
-#             print("----------------Nodes Tool Call logs-----------------------------------")
-#             j = True
-#         tm = messages[i]
-#         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
-#         i -= 1
 
 # ---------- Inner ReAct state for per-topic Mongo loop ----------
 class _PerTopicState(MessagesState):
+    """State container for the inner ReAct-style loop that summarizes a single topic."""
     final_response: DiscussionSummaryPerTopicSchema.DiscussionTopic
 
 
 class PerTopicDiscussionSummaryGenerationAgent:
-    llm_dts = llm_dts
+    """
+    Generates per-topic discussion summaries using a small tool-using ReAct loop.
+    The loop can call Mongo tools, and the final assistant output is coerced
+    into DiscussionSummaryPerTopicSchema.DiscussionTopic.
+    """
 
-    # Flat list of Mongo tools; bind to model for tool-calling
-    # Inside class TopicGenerationAgent
-    # make sure you have this:
+    # LLM & tools (class attributes so clients/bindings are reused)
+    llm_dts = llm_dts
     MONGO_TOOLS = get_mongo_tools(llm=llm_dts)
     _AGENT_MODEL = llm_dts.bind_tools(MONGO_TOOLS)
     _STRUCTURED_MODEL = llm_dts.with_structured_output(
@@ -63,40 +50,43 @@ class PerTopicDiscussionSummaryGenerationAgent:
     # ---------- Inner graph (agent -> tools -> agent ... -> respond) ----------
     @staticmethod
     def _agent_node(state: _PerTopicState):
-        # _log_recent_tool_results(state["messages"])   # optional logging
-        # If we just came from ToolNode, the last messages are ToolMessages → print them.
+        """
+        Invoke the tool-enabled model. If the assistant plans tool calls,
+        LangGraph will execute them via the ToolNode.
+        """
         log_tool_activity(
             messages=state["messages"],
             ai_msg=None,
             agent_name=AGENT_NAME,
             logger=LOGGER,
             header="Discussion Summary Tool Activity",
-            pretty_json=True
+            pretty_json=True,
         )
-
         ai = PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL.invoke(state["messages"])
         return {"messages": [ai]}
 
     @staticmethod
     def _respond_node(state: _PerTopicState):
+        """
+        Take the most recent assistant message without tool calls and coerce it
+        into DiscussionTopic via the structured-output model. If none exists,
+        fall back to the most recent assistant message, then to the last message.
+        """
         msgs = state["messages"]
 
-        # Find the last ASSISTANT message that does NOT request tools
         ai_content = None
         for m in reversed(msgs):
-            # LangChain AssistantMessage typically has .type == "ai"
             if getattr(m, "type", None) in ("ai", "assistant"):
-                if not getattr(m, "tool_calls", None):  # completed answer
+                if not getattr(m, "tool_calls", None):
                     ai_content = m.content
                     break
 
-        # Fallbacks: if none found, take the last assistant content even if it had tool calls,
-        # else take the last message content.
         if ai_content is None:
             for m in reversed(msgs):
                 if getattr(m, "type", None) in ("ai", "assistant"):
                     ai_content = m.content
                     break
+
         if ai_content is None:
             ai_content = msgs[-1].content
 
@@ -107,24 +97,24 @@ class PerTopicDiscussionSummaryGenerationAgent:
 
     @staticmethod
     def _should_continue(state: _PerTopicState):
-        # last = state["messages"][-1]
-        # if getattr(last, "tool_calls", None):
-        #     _log_planned_tool_calls(last)  # optional logging
-        #     return "continue"
+        """
+        Router: if the latest assistant message contains tool calls,
+        continue to the ToolNode; otherwise, proceed to respond.
+        """
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
-            # Log planned tool calls from the assistant message
             log_tool_activity(
                 messages=state["messages"],
                 ai_msg=last,
                 agent_name=AGENT_NAME,
                 logger=LOGGER,
                 header="Discussion Summary Tool Activity",
-                pretty_json=True
+                pretty_json=True,
             )
             return "continue"
         return "respond"
 
+    # Compile the inner ReAct graph once
     _workflow = StateGraph(_PerTopicState)
     _workflow.add_node("agent", _agent_node)
     _workflow.add_node("respond", _respond_node)
@@ -139,15 +129,15 @@ class PerTopicDiscussionSummaryGenerationAgent:
     _workflow.add_edge("respond", END)
     _per_topic_graph = _workflow.compile()
 
+    # ---------- Single-topic runner ----------
     @staticmethod
     async def _one_topic_call(generated_summary_json: str, topic: Dict[str, Any], thread_id):
         """
-        Drive inner graph for a single topic:
-        System prompt -> agent (may call Mongo tools) -> respond (structured DiscussionTopic)
+        Runs the inner graph for a single topic:
+        System prompt -> agent (may call Mongo tools) -> respond (structured DiscussionTopic).
         """
-
         class AtTemplate(Template):
-            delimiter = '@'
+            delimiter = "@"
 
         tpl = AtTemplate(DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT)
         content = tpl.substitute(
@@ -156,51 +146,49 @@ class PerTopicDiscussionSummaryGenerationAgent:
             thread_id=thread_id,
         )
 
-        sys_message = SystemMessage(
-            content=content
-        )
-        
-        
-        # This acts as the initial prompt to trigger the agent to start generating the summary 
-        # and use the tools described in the SystemMessage.
-        trigger_message = HumanMessage(
-            content="Based on the provided instructions please start the process"
-        )
+        sys_message = SystemMessage(content=content)
+        trigger_message = HumanMessage(content="Based on the provided instructions please start the process")
 
         result = await PerTopicDiscussionSummaryGenerationAgent._per_topic_graph.ainvoke(
-            {"messages": [sys_message, trigger_message]} # <-- Passing both System and Human messages
+            {"messages": [sys_message, trigger_message]}
         )
         return result["final_response"]
 
+    # ---------- Regeneration policy ----------
     @staticmethod
     async def should_regenerate(state: AgentInternalState):
-        global count 
+        """
+        Regenerate if the set of topics in the output does not exactly match
+        the set of input topics.
+        """
+        global count
 
         input_topics = {t.topic for t in state.interview_topics.interview_topics}
         output_topics = {dt.topic for dt in state.discussion_summary_per_topic.discussion_topics}
         if input_topics != output_topics:
             missing = input_topics - output_topics
             extra = output_topics - input_topics
-            print(f"[PerTopic] Topic mismatch: missing {missing}, extra {extra}")
-            # print(f"Topic wise Discussion Summary Retry Iteration -> {count}")
             log_retry_iteration(
-                                    agent_name=AGENT_NAME,
-                                    iteration=count,                          
-                                    reason="Topic mismatch",
-                                    logger=LOGGER,
-                                    pretty_json=True,
-                                    extra={"missing": missing, "extra": extra}
-                                )
+                agent_name=AGENT_NAME,
+                iteration=count,
+                reason="Topic mismatch",
+                logger=LOGGER,
+                pretty_json=True,
+                extra={"missing": missing, "extra": extra},
+            )
             count += 1
             return True
-        else:
-            return False
+        return False
 
+    # ---------- Generation graph node ----------
     @staticmethod
     async def discussion_summary_per_topic_generator(state: AgentInternalState) -> AgentInternalState:
         """
-        Parallel per-topic summaries using asyncio.gather (inner graph handles tool-calls and structuring).
-        Produces DiscussionSummaryPerTopicSchema with one entry per input topic.
+        Generate summaries for all topics concurrently:
+          1) Normalize the input topics
+          2) Serialize generated_summary for prompting
+          3) Launch one inner-graph run per topic via asyncio.gather
+          4) Force output topic names to match input names exactly
         """
         # Normalize topics list coming from parent state
         try:
@@ -241,9 +229,9 @@ class PerTopicDiscussionSummaryGenerationAgent:
                 or "Unknown"
             )
             try:
-                if hasattr(r, "model_copy"):           # pydantic v2
+                if hasattr(r, "model_copy"):  # pydantic v2
                     r = r.model_copy(update={"topic": in_topic})
-                elif hasattr(r, "copy"):               # pydantic v1
+                elif hasattr(r, "copy"):  # pydantic v1
                     r = r.copy(update={"topic": in_topic})
                 elif isinstance(r, dict):
                     r["topic"] = in_topic
@@ -251,15 +239,22 @@ class PerTopicDiscussionSummaryGenerationAgent:
                     setattr(r, "topic", in_topic)
                 discussion_topics.append(r)
             except Exception as e:
-                print(f"Topic {idx}: could not append structured response ({e})")
+                # Keep processing the rest; this item failed to update/append
+                LOGGER.warning("Failed to append structured response for topic index %s: %s", idx, e)
 
         state.discussion_summary_per_topic = DiscussionSummaryPerTopicSchema(
             discussion_topics=discussion_topics
         )
         return state
 
+    # ----------  Topic wise discussion summary graph ----------
     @staticmethod
     def get_graph(checkpointer=None):
+        """
+        Topic wise discussion summary graph:
+        START -> discussion_summary_per_topic_generator
+               -> (should_regenerate ? discussion_summary_per_topic_generator : END)
+        """
         gb = StateGraph(AgentInternalState)
         gb.add_node(
             "discussion_summary_per_topic_generator",
