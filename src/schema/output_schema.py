@@ -196,6 +196,7 @@ class QAItem(BaseModel):
     counter_type: Optional[QCountType] = None
     example_questions: List[str] = Field(..., min_items=5, max_items=5)
 
+
 class QABlock(BaseModel):
     block_id: str = Field(..., description="Block identifier like 'B1'")
     guideline: str = Field(..., min_length=1)

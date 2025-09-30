@@ -41,6 +41,7 @@ class SummaryGenerationAgent:
         
         state.generated_summary = summary
         return state
+
     @staticmethod
     def get_graph(checkpointer=None):
 

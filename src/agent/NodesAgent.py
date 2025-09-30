@@ -87,7 +87,6 @@ class NodesGenerationAgent:
         TopicWithNodesSchema, method="function_calling"
     )
 
-
     # ---------- Inner graph (agent -> tools -> agent ... -> respond) ----------
     @staticmethod
     def _agent_node(state: _MongoNodesState):
@@ -151,7 +150,6 @@ class NodesGenerationAgent:
     _workflow.add_edge("tools", "agent")
     _workflow.add_edge("respond", END)
     _nodes_graph = _workflow.compile()
-
 
     @staticmethod
     def _as_dict(x: Any) -> Dict[str, Any]:

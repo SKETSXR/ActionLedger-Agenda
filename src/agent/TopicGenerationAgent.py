@@ -103,7 +103,6 @@ class TopicGenerationAgent:
         )
         return {"final_response": final_obj}
 
-
     @staticmethod
     def _should_continue(state: _MongoAgentState):
         # last = state["messages"][-1]

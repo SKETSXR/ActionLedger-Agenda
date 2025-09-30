@@ -66,8 +66,10 @@ def get_tool_logger(
 def _msg_type(m: Any) -> Optional[str]:
     return getattr(m, "type", None)
 
+
 def _msg_content(m: Any) -> Any:
     return getattr(m, "content", None)
+
 
 def _tool_call_id(m: Any) -> Any:
     return getattr(m, "tool_call_id", None)

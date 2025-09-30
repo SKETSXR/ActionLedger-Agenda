@@ -42,6 +42,7 @@ LOGGER = get_tool_logger(AGENT_NAME, log_dir=LOG_DIR, backup_count=365)
 #         print(f"[ToolResult] tool_call_id={getattr(tm, 'tool_call_id', None)} result={tm.content}")
 #         i -= 1
 
+
 # ---------- Inner ReAct state for per-topic QA generation ----------
 class _QAInnerState(MessagesState):
     final_response: QASetsSchema
@@ -400,7 +401,6 @@ class QABlockGenerationAgent:
             return True
 
         return False
-
 
     @staticmethod
     def get_graph(checkpointer=None):
