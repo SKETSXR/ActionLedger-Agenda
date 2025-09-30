@@ -285,39 +285,76 @@ def _get_or_create_db(uri: str, database: str) -> MongoDBDatabase:
     return db
 
 
-# ---------- Coercion & validation helpers ----------
+# # ---------- Coercion & validation helpers ----------
+# def _coerce_query_to_dict(q: Union[Dict[str, Any], str]) -> Dict[str, Any]:
+#     """
+#     Accepts dict or JSON-string; returns dict.
+#     Handles common bad cases from some models:
+#       - Backslash-escaped JSON: "{\"_id\":\"thread_7\"}"
+#       - Single quotes: '{\'_id\': \"thread_7\"}'
+#       - Wrapped as JSON string literal => json.loads twice
+#     """
+#     if isinstance(q, dict):
+#         return q
+
+#     if not isinstance(q, str):
+#         raise ValueError("query must be a dict or JSON string")
+
+#     s = q.strip()
+
+#     # If it's a JSON string literal like "\"{...}\"", unquote once
+#     if s.startswith('"') and s.endswith('"'):
+#         try:
+#             s = json.loads(s)
+#         except Exception:
+#             # if it wasn't actually a JSON string, continue with s as-is
+#             pass
+#         if isinstance(s, str):
+#             s = s.strip()
+
+#     # Heuristic: replace lone single quotes with double quotes if no doubles exist
+#     if "'" in s and '"' not in s:
+#         s = s.replace("'", '"')
+
+#     # Remove superfluous backslashes before quotes
+#     s = re.sub(r'\\+"', '"', s)
+
+#     try:
+#         return json.loads(s)
+#     except Exception as e:
+#         raise ValueError(f"query is not valid JSON after coercion: {e}")
+
+
 def _coerce_query_to_dict(q: Union[Dict[str, Any], str]) -> Dict[str, Any]:
-    """
-    Accepts dict or JSON-string; returns dict.
-    Handles common bad cases from some models:
-      - Backslash-escaped JSON: "{\"_id\":\"thread_7\"}"
-      - Single quotes: '{\'_id\': \"thread_7\"}'
-      - Wrapped as JSON string literal => json.loads twice
-    """
     if isinstance(q, dict):
         return q
-
     if not isinstance(q, str):
         raise ValueError("query must be a dict or JSON string")
 
     s = q.strip()
 
-    # If it's a JSON string literal like "\"{...}\"", unquote once
+    # If it's \"{...}\" (a JSON string literal containing JSON), unquote once
     if s.startswith('"') and s.endswith('"'):
         try:
             s = json.loads(s)
         except Exception:
-            # if it wasn't actually a JSON string, continue with s as-is
             pass
         if isinstance(s, str):
             s = s.strip()
 
-    # Heuristic: replace lone single quotes with double quotes if no doubles exist
+    # Fast path: already looks like JSON object
+    if s.startswith('{') and s.endswith('}'):
+        try:
+            return json.loads(s)
+        except Exception:
+            pass  # fallthrough to gentle fixes
+
+    # Heuristic: single quotes only → switch to double quotes
     if "'" in s and '"' not in s:
         s = s.replace("'", '"')
 
-    # Remove superfluous backslashes before quotes
-    s = re.sub(r'\\+"', '"', s)
+    # Remove escaped quotes only (\" -> ")
+    s = re.sub(r'\\"', '"', s)
 
     try:
         return json.loads(s)
