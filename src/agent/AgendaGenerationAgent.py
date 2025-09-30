@@ -11,7 +11,6 @@ from .QABlocksAgent import QABlockGenerationAgent
 from ..schema.agent_schema import AgentInternalState
 from ..schema.input_schema import InputSchema
 from ..schema.output_schema import OutputSchema
-# from ..utils import serialize_candidate_relevance
 
 
 class AgendaGenerationAgent:
@@ -30,9 +29,6 @@ class AgendaGenerationAgent:
         if 'MONGO_SUMMARY_COLLECTION' not in AgendaGenerationAgent.env_vars.keys():
             raise ValueError("MONGO_SUMMARY_COLLECTION is not set")
 
-        # if 'MONGO_INFERRED_TOPICS_COLLECTION' not in AgendaGenerationAgent.env_vars.keys():
-        #     raise ValueError("MONGO_INFERRED_TOPICS_COLLECTION is not set")
-
         internal_state = AgentInternalState(
             job_description=state.job_description,
             skill_tree=state.skill_tree,
@@ -40,7 +36,6 @@ class AgendaGenerationAgent:
             question_guidelines=state.question_guidelines,
             mongo_client=AgendaGenerationAgent.env_vars['MONGO_CLIENT'],
             mongo_db=AgendaGenerationAgent.env_vars['MONGO_DB'],
-            # mongo_inferred_topics_collection=AgendaGenerationAgent.env_vars['MONGO_INFERRED_TOPICS_COLLECTION'],
             mongo_summary_collection=AgendaGenerationAgent.env_vars['MONGO_SUMMARY_COLLECTION'],
             mongo_jd_collection=AgendaGenerationAgent.env_vars['MONGO_JD_COLLECTION'],
             mongo_cv_collection=AgendaGenerationAgent.env_vars['MONGO_CV_COLLECTION'],
@@ -50,27 +45,6 @@ class AgendaGenerationAgent:
             id=config['configurable']['thread_id']
         )
         return internal_state
-
-
-    # @staticmethod
-    # async def store_inferred_topics_tool(state: AgentInternalState) -> AgentInternalState:
-    #     client = pymongo.MongoClient(state.mongo_client)
-    #     inferred_topics_collection = client[state.mongo_db][state.mongo_inferred_topics_collection]
-
-    #     if not state.inferred_interview_topics:
-    #         raise ValueError("`inferred_interview_topics` cannot be null")
-
-    #     inferred_topics = state.inferred_interview_topics.model_dump()
-    #     inferred_topics['_id'] = state.id
-
-    #     try:
-    #         inferred_topics_collection.insert_one(inferred_topics)
-    #     except ServerSelectionTimeoutError as server_error:
-    #         print(f"Could not communicate with MongoDB server, thus inferred interview topics were not stored.: {server_error}") # TODO: In production, use logs instead of printing
-
-    #     client.close()
-    #     return state
-
 
     @staticmethod
     async def store_inp_summary_tool(state: AgentInternalState) -> AgentInternalState:
@@ -94,7 +68,6 @@ class AgendaGenerationAgent:
         cv = state.candidate_profile.model_dump()
         skill_tree = state.skill_tree.model_dump()
         summary = state.generated_summary.model_dump()
-        # question_guidelines = state.question_guidelines.model_dump()
         jd['_id'] = state.id
         cv['_id'] = state.id
         skill_tree['_id'] = state.id
@@ -110,46 +83,11 @@ class AgendaGenerationAgent:
             cv_collection.replace_one({"_id": state.id}, cv, upsert=True)
             skill_tree_collection.replace_one({"_id": state.id}, skill_tree, upsert=True)
             summary_collection.replace_one({"_id": state.id}, summary, upsert=True)
-            # db = client[state.mongo_db]
-            # collections = db.list_collection_names()
-            # if "question_guidelines" not in collections:
-            #     question_guidelines_collection.insert_one(question_guidelines)
+
         except ServerSelectionTimeoutError as server_error:
             print(f"Could not communicate with MongoDB server, thus summary was not stored.: {server_error}")
-        
-        # # ----- question_guidelines upsert(s) -----
-        # # Pydantic will coerce your dict input; use the INSTANCE on state
-        # qg_model = state.question_guidelines
-        # guideline_text = qg_model.question_guidelines  # str
-        # type_names = qg_model.question_type_name       # list[str]
-
-        # # Optional: make sure we have a unique index on _id (implicit) or on question_type_name if you prefer that field.
-        # # qg_collection.create_index("question_type_name", unique=True)  # only if you use that as key instead of _id
-
-        # for name in type_names:
-        #     # one document per question type
-        #     doc = {
-        #         "_id": str(name),  # using the type name as the stable primary key
-        #         "question_type_name": name,
-        #         "question_guidelines": guideline_text
-        #         # "updated_at": datetime.utcnow()
-        #     }
-        #     try:
-        #         # upsert ensures idempotency
-        #         question_guidelines_collection.replace_one({"_id": doc["_id"]}, doc, upsert=True)
-        #         # print(f" Upserted guideline for '{name}'")
-        #     except Exception as e:
-        #         # print(f" Guideline '{name}' already exists with the same _id. Skipping.")
-        #         print(f"Error upserting the guidelines into the database {e}")
-        #     # except PyMongoError as e:
-        #     #     print(f" Failed to upsert guideline '{name}': {e}")
-
-        # ---- Upsert each guideline item (list[QuestionGuidelineItem]) ----
-        # Optional (safe to run repeatedly): dedicated unique index if you ever switch off _id as key
-        # qg_collection.create_index("question_type_name", unique=True, name="uq_qg_type")
 
         for raw_item in state.question_guidelines.question_guidelines:   # list of models or dicts
-            # item = _as_dict(raw_item)
             item = raw_item.model_dump()
 
             name = str(item.get("question_type_name", "")).strip()
@@ -208,9 +146,7 @@ class AgendaGenerationAgent:
         graph_builder.add_node("discussion_summary_per_topic_generator", PerTopicDiscussionSummaryGenerationAgent.get_graph())
         graph_builder.add_node("nodes_generator", NodesGenerationAgent.get_graph())
         graph_builder.add_node("qablock_generator", QABlockGenerationAgent.get_graph())
-        # graph_builder.add_node("store_inp_summary_tool", AgendaGenerationAgent.store_summary_tool)
         graph_builder.add_node("store_inp_summary_tool", AgendaGenerationAgent.store_inp_summary_tool)
-        # graph_builder.add_node("interview_topics_storage_tool", AgendaGenerationAgent.store_inferred_topics_tool)
         graph_builder.add_node("output_formatter", AgendaGenerationAgent.output_formatter)
 
         graph_builder.add_edge(START, "input_formatter")
@@ -220,10 +156,7 @@ class AgendaGenerationAgent:
         graph_builder.add_edge("topic_generation_agent", "discussion_summary_per_topic_generator")
         graph_builder.add_edge("discussion_summary_per_topic_generator", "nodes_generator")
         graph_builder.add_edge("nodes_generator", "qablock_generator")
-        # graph_builder.add_edge("nodes_generator", "output_formatter")
         graph_builder.add_edge("qablock_generator", "output_formatter")
-        # graph_builder.add_edge("discussion_summary_per_topic_generator", "output_formatter")
-        # graph_builder.add_edge("store_inp_summary_tool", "output_formatter")
         graph_builder.add_edge("output_formatter", END)
 
         graph = graph_builder.compile(checkpointer=checkpointer, name="Agenda Generation Agent")

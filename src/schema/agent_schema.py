@@ -2,7 +2,6 @@ from typing import Annotated
 from pydantic import BaseModel
 from langchain_core.messages import AnyMessage, RemoveMessage
 from langgraph.graph import add_messages
-
 from .output_schema import GeneratedSummarySchema, CollectiveInterviewTopicSchema, DiscussionSummaryPerTopicSchema, NodesSchema, QASetsSchema, CollectiveInterviewTopicFeedbackSchema
 from .input_schema import JobDescriptionSchema, SkillTreeSchema, CandidateProfileSchema, QuestionGuidelinesCompleteSchema
 
@@ -14,27 +13,22 @@ class AgentInternalState(BaseModel):
 
     mongo_client: str
     mongo_db: str
-    # mongo_relevant_evidence_collection: str
     mongo_jd_collection: str
     mongo_cv_collection: str
     mongo_skill_tree_collection: str
     mongo_summary_collection: str
     mongo_question_guidelines_collection: str
-    # mongo_inferred_topics_collection: str
     id: str
-
     messages: Annotated[list[AnyMessage | RemoveMessage], add_messages] = []
-
     job_description: JobDescriptionSchema
     skill_tree: SkillTreeSchema
     candidate_profile: CandidateProfileSchema
     question_guidelines: QuestionGuidelinesCompleteSchema
-
     generated_summary: GeneratedSummarySchema | None = None
     interview_topics: CollectiveInterviewTopicSchema | None = None
     discussion_summary_per_topic: DiscussionSummaryPerTopicSchema | None = None
     nodes: NodesSchema | None = None
-    nodes_error: str = ""  # To capture any errors during node generation
+    nodes_error: str = ""
     qa_blocks: QASetsSchema | None = None
     qa_error: str = ""
     interview_topics_feedback: CollectiveInterviewTopicFeedbackSchema | None = None

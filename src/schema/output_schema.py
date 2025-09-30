@@ -1,11 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Annotated, Optional, Dict, List, Union, Literal
-
-__all__ = [
-    "GeneratedSummarySchema",
-    "InterviewTopicsSchema",
-    "OutputSchema"
-]
+from typing import Annotated, Optional, List, Union, Literal
 
 
 class JobRequirementsSummarySchema(BaseModel):
@@ -32,71 +26,25 @@ class JobRequirementsSummarySchema(BaseModel):
         )
     ]
 
+
 class ProjectReasoningSummarySchema(BaseModel):
     what_done: Annotated[str, Field(..., description="What was built/achieved")]
     how_done: Annotated[str, Field(..., description="How it was implemented (approach/architecture)")]
     tech_stack: Annotated[str, Field(..., min_items=1, description="Technologies used")]
     walkthrough: Annotated[str, Field(..., description="Brief step-by-step of how each particular tech stack was used")]
 
+
 class CandidateProjectSummarySchema(BaseModel):
     projectwise_summary: List[ProjectReasoningSummarySchema] = Field(..., description="List of project wise summary")   
 
 
-# class AnnotatedSkillTreeSummarySchema(BaseModel):
-#     children: Optional[list['AnnotatedSkillTreeSummarySchema']] = Field(
-#         default=None,
-#         description="Child nodes; present for domains, empty or None for skills"
-#     )
-#     name: Annotated[
-#         str,
-#         Field(
-#             ...,
-#             description="Name of the skill or domain",
-#             examples=["Databases"]
-#         )
-#     ]
-#     weight: Annotated[
-#         float,
-#         Field(
-#             ...,
-#             description="Importance of this skill/domain in the overall evaluation. Value is normalized between 0 and 1",
-#             examples=[0.2]
-#         )
-#     ]
-#     priority: Literal["must", "high", "low"] = Field(..., description="Priority of the skill or domain", examples=["must", "high", "low"])
-    
-#     comment: Annotated[
-#         Optional[str],
-#         Field(
-#             default=None,
-#             description="Evidence comment required for skills (leaves), forbidden for domains",
-#             examples=[
-#                 "Integrated AI-driven document processing solutions using LangChain, Python, and cloud-native architectures",
-#                 "no such evidence"
-#             ]
-#         )
-#     ]
-
-
-# class DomainToAssessSchema(BaseModel):
-#     name: str = Field(..., description="Domain name, e.g., 'Machine Learning'")
-#     weight: float = Field(..., description="Normalized importance in [0, 1]")
-#     priority: Literal["must", "high", "low"] = Field(..., description="Priority of the skill or domain", examples=["must", "high", "low"])
-
-
-# class DomainsToAssessListSchema(BaseModel):
-#     domains: List[DomainToAssessSchema] = Field(
-#         ..., description="List of domains to be assessed"
-#     )
-
-# Level 3 (leaf): actual skills — REQUIRED fields, no children
 class SkillLeaf(BaseModel):
     name: str = Field(..., description="Leaf skill name (verbatim)")
     weight: float = Field(..., description="Normalized in [0,1]")
     priority: Literal["must", "high", "low"] = Field(..., description="Priority")
     comment: str = Field(..., description="Short evidence/comment for this skill")
 
-# Level 2 (domain): must have non-empty children of leaves
+
 class DomainNode(BaseModel):
     name: str = Field(..., description="Domain name")
     weight: float = Field(..., description="Normalized in [0,1]")
@@ -104,7 +52,7 @@ class DomainNode(BaseModel):
     comment: Optional[str] = None
     children: List[SkillLeaf] = Field(..., description="Non-empty list of leaf skills")
 
-# Level 1 (root): contains domains
+
 class AnnotatedSkillTreeSummarySchema(BaseModel):
     name: str = Field(..., description="Root label, e.g., 'L3 (Software Engineer 2)'")
     weight: float = Field(..., description="Usually 1.0")
@@ -112,7 +60,7 @@ class AnnotatedSkillTreeSummarySchema(BaseModel):
     comment: Optional[str] = None
     children: List[DomainNode] = Field(..., description="Non-empty list of domains")
 
-# Wrap in your summary payload used for Gemini structured output:
+
 class DomainsToAssessListSchema(BaseModel):
     class Domain(BaseModel):
         name: str
@@ -131,6 +79,7 @@ class TotalQuestionsSchema(BaseModel):
         )
     ]
 
+
 class GeneratedSummarySchema(TotalQuestionsSchema):
     job_requirements: JobRequirementsSummarySchema
     candidate_project_summary: CandidateProjectSummarySchema
@@ -146,7 +95,6 @@ class FocusAreaSchema(BaseModel):
 class TopicSchema(BaseModel):
     topic: Annotated[str, Field(..., description="Short name of the discussion topic")]
     why_this_topic: Annotated[str, Field(..., description="A short reason for why this discussion topic has been chosen")]
-    # focus_area: Annotated[Dict[str, str], Field(..., description="skill -> focus on this area")]
     focus_area: List[FocusAreaSchema] = Field(
         ...,
         description="List of focus skills with guidelines (each item is {skill, guideline})",
@@ -171,7 +119,6 @@ class CollectiveInterviewTopicSchema(BaseModel):
 
 class CollectiveInterviewTopicFeedbackSchema(BaseModel):
     satisfied: bool
-    # updated_topics: CollectiveInterviewTopicSchema
     feedback: str
 
 
@@ -241,46 +188,24 @@ QType = Literal["New Question", "Counter Question"]
 QDiff = Literal["Easy", "Medium", "Hard"]
 QCountType = Literal["Twist", "Interrogatory"]
 
-# class QAItem(BaseModel):
-#     qa_id: str = Field(..., description="QA identifier like 'QA1'")
-#     example_questions: List[str] = Field(..., min_items=5, max_items=5)
-
-
-# class QABlock(BaseModel):
-#     block_id: str = Field(..., description="Block identifier like 'B1'")
-#     guideline: str = Field(..., min_length=1)
-#     q_type: QType
-#     q_difficulty: QDiff
-#     counter_type: Optional[QCountType] = None  # required if q_type == "Counter Question"
-#     qa_items: List[QAItem] = Field(..., min_items=1, max_items=1)  # exactly one QA item per block
-
-
-# class QASet(BaseModel):
-#     topic: str = Field(..., min_length=1)
-#     qa_blocks: List[QABlock] = Field(..., min_items=7, max_items=7)  # exactly 7 blocks per topic
-
-
-# class QASetsSchema(BaseModel):
-#     qa_sets: List[QASet] = Field(..., min_items=1)
-
 
 class QAItem(BaseModel):
     qa_id: str = Field(..., description="QA identifier like 'QA1'")
     q_type: QType
     q_difficulty: QDiff
-    counter_type: Optional[QCountType] = None  # required iff q_type == "Counter Question"
+    counter_type: Optional[QCountType] = None
     example_questions: List[str] = Field(..., min_items=5, max_items=5)
 
 class QABlock(BaseModel):
     block_id: str = Field(..., description="Block identifier like 'B1'")
     guideline: str = Field(..., min_length=1)
-    # exactly 7 items per block: 3 New + 2 Twist (M/H) + 2 Interrogatory (M/H)
     qa_items: List[QAItem] = Field(..., min_items=7, max_items=7)
+
 
 class QASet(BaseModel):
     topic: str = Field(..., min_length=1)
-    # allow variable number; we enforce equality to deep-dive count in code
     qa_blocks: List[QABlock] = Field(..., min_items=1)
+
 
 class QASetsSchema(BaseModel):
     qa_sets: List[QASet] = Field(..., min_items=1)

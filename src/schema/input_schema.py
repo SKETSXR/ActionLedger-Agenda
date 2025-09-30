@@ -101,29 +101,6 @@ class JobDescriptionSchema(BaseModel):
             examples=["B.Tech or M.Tech in any field"]
         )
     ]
-    # cannot_skip_skills: Annotated[
-    #     list[str],
-    #     Field(
-    #         description="Mandatory skills",
-    #         examples=["Node.js (advanced services, concurrency, resilience)", "Python (AI systems integration, data flows)", "TypeScript (advanced)"]
-    #     )
-    # ]
-    # optional_topics_high_priority: Annotated[
-    #     Optional[list[str]],
-    #     Field(
-    #         default=None,
-    #         description="Optional Topics/Skills but having a High Priority",
-    #         examples=["TypeScript full-stack proficiency", "AWS ECS/ECR scaling, autoscaling policies"]
-    #     )
-    # ]
-    # optional_topics_low_priority: Annotated[
-    #     Optional[list[str]],
-    #     Field(
-    #         default=None,
-    #         description="Optional Topics/Skills but having a Low Priority",
-    #         examples=["Kubernetes (EKS) & service mesh (Istio/Linkerd)", "gRPC & streaming APIs"]
-    #     )
-    # ]
 
 
 class QuestionGuidelinesSchema(BaseModel):
