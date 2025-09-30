@@ -106,11 +106,14 @@ jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["comp
 # with open(r"parsed_cv7.json", "r", encoding='utf-8') as c:
 #     candidate_profile = json.load(c)
 
-candidate_profile = asyncio.run(parse_pdf_to_json(r"testing\Ayam\AyamHeniberMeitei_2025L - ayam heniber.pdf"))
-# print(candidate_profile)
-if candidate_profile == "CV does not contain proper text":
-    raise("Open AI API not running")
-candidate_profile = json.loads(candidate_profile)
+# candidate_profile = asyncio.run(parse_pdf_to_json(r"testing\Ayam\AyamHeniberMeitei_2025L - ayam heniber.pdf"))
+# # print(candidate_profile)
+# if candidate_profile == "CV does not contain proper text":
+#     raise("Open AI API not running")
+# candidate_profile = json.loads(candidate_profile)
+with open(r"test_cv.json", "r", encoding="utf-8") as f:
+    candidate_profile = json.load(f)
+
 cp = CandidateProfileSchema(skills=candidate_profile["skills"],
                             projects=candidate_profile["projects"],
                             experience=candidate_profile["experience"])
@@ -229,17 +232,166 @@ root = load_skill_tree(tree_data)
 #     }
 #   ]
 # }
+
+# # Running good except case studies
+# question_guidelines = {
+#   "question_guidelines": [
+#     {
+#       "question_guidelines": '''Guidelines:\n\n
+#                                 Definition:
+#                                 A case study question presents a hypothetical scenario with specific constraints and asks the candidate to analyze, design, or solve a problem. Probe on approach and reasoning, not just on the final outcome. Avoid generic "tell me about a challenge" initiations, rather anchor the case in technical detail relevant to the candidate's skill set or the job role. The first question always sets the stage with the case and constraints. Follow-up questions explore design choices, trade-offs, and decision-making. 
+#                                 Example:
+#                                 Case: "You are asked to design a system that handles online ticket booking for concerts. The system should support high traffic during peak booking times but must also minimize operational costs. The constraint is that the budget only allows use of basic cloud services, not premium enterprise ones."
+#                                 Q1: How would you design the overall system architecture to meet these constraints?
+#                                 Q2: What approach would you take to handle sudden spikes in traffic during a ticket release?
+#                                 Q3: If the system starts facing delays in payment confirmation, how would you modify the design?''',
+#       "question_type_name": "Case study type questions"
+#     },
+#     {
+#       "question_guidelines": '''Guidelines:\n\n
+#                                 Definition:
+#                                 These questions are grounded in the candidate's past projects. The interviewer picks specific aspects of the project (requirements, challenges, decisions) and explores them in detail.
+#                                 Example:
+#                                 "In your last project, you mentioned you worked on a system that processed large amounts of user data. What was the most significant performance bottleneck you faced?"
+#                                 "You said you chose a queue-based architecture. Why did you prefer that over a simpler request-response model?"
+#                                 ''',
+#       "question_type_name": "Project based questions"
+#     },
+#     {
+#       "question_guidelines": '''Guidelines:\n\n
+#                                 Counter questions build directly on the candidate's previous answer. While making the examples, implicitly create a sample candidate's response related to the focus areas then create the examples. The counter questions are of two types:
+#                                 (a) Interrogatory Counter Questions
+#                                 These dig deeper into the reasoning behind a choice the candidate made.
+#                                 Example:
+#                                 Candidate: "I would use caching to reduce response times."
+#                                 Counter: "Why did you choose caching over database optimization first? What risks does caching introduce?"
+#                                 (b) Twist Counter Questions
+#                                 These modify the scenario or constraints slightly and ask the candidate to reconsider.
+#                                 Example:
+#                                 Original Q: "How would you design a system for online ticket booking under limited budget constraints?"
+#                                 Candidate Answer: "I'd use basic cloud services with auto-scaling."
+#                                 Twist Counter: "Now suppose the budget is no longer a constraint, but strict compliance with data privacy laws is required. How does your design change?"''',
+#       "question_type_name": "Counter questions"
+#     }
+#   ]
+# }
 question_guidelines = {
   "question_guidelines": [
     {
       "question_guidelines": '''Guidelines:\n\n
                                 Definition:
                                 A case study question presents a hypothetical scenario with specific constraints and asks the candidate to analyze, design, or solve a problem. Probe on approach and reasoning, not just on the final outcome. Avoid generic "tell me about a challenge" initiations, rather anchor the case in technical detail relevant to the candidate's skill set or the job role. The first question always sets the stage with the case and constraints. Follow-up questions explore design choices, trade-offs, and decision-making. 
-                                Example:
+                                Examples:
                                 Case: "You are asked to design a system that handles online ticket booking for concerts. The system should support high traffic during peak booking times but must also minimize operational costs. The constraint is that the budget only allows use of basic cloud services, not premium enterprise ones."
                                 Q1: How would you design the overall system architecture to meet these constraints?
                                 Q2: What approach would you take to handle sudden spikes in traffic during a ticket release?
-                                Q3: If the system starts facing delays in payment confirmation, how would you modify the design?''',
+                                Q3: If the system starts facing delays in payment confirmation, how would you modify the design?
+
+                                Case: "Design a content delivery platform like YouTube that must serve millions of concurrent streams with minimal buffering. Constraint: bandwidth costs must be optimized."
+                                Q1: How would you design the architecture for scalable video streaming?
+                                Q2: How would you handle personalized recommendations without overloading latency budgets?
+                                Q3: How would you ensure reliability during regional outages?
+
+                                Case: "Design an online collaborative document editor (like Google Docs). Constraint: real-time edits must be synced across devices with <200ms delay."
+                                Q1: What data model would you use to handle concurrent edits?
+                                Q2: How would you ensure fault tolerance?
+                                Q3: How would you secure documents while maintaining low latency?
+
+                                Case: "Design a large-scale ride-hailing service (like Uber). Constraint: system must match riders and drivers in under 2 seconds."
+                                Q1: How would you design the matching algorithm and backend services?
+                                Q2: How would you ensure fair distribution of drivers during surge hours?
+                                Q3: How would you scale real-time location updates globally?
+
+                                Case: "Design an AI-powered fraud detection system for a payments company. Constraint: decisions must happen in under 100ms to avoid checkout friction."
+                                Q1: How would you structure the feature pipeline?
+                                Q2: How would you balance false positives and false negatives?
+                                Q3: How would you update models with new fraud patterns in real time?
+
+                                Case: "Design an AI assistant that summarizes long documents in regulated industries. Constraint: explanations must be human-auditable."
+                                Q1: How would you architect the pipeline from ingestion to output?
+                                Q2: What approaches would you use for explainability?
+                                Q3: How would you handle sensitive data storage and compliance?
+
+                                Case: "Design a recommendation engine for a global video streaming platform. Constraint: responses must be <100ms worldwide."
+                                Q1: How would you build the training and serving pipeline?
+                                Q2: How would you solve cold-start problems for new users?
+                                Q3: How would you ensure fairness and diversity in recommendations?
+
+                                Case: "Design a decentralized exchange (DEX) for crypto tokens. Constraint: transaction finality must occur within 5 seconds."
+                                Q1: How would you design the matching engine on-chain or off-chain?
+                                Q2: How would you mitigate front-running attacks?
+                                Q3: How would you ensure scalability under high trading volume?
+
+                                Case: "Design a blockchain-based voting system. Constraint: privacy must be preserved, but auditability is mandatory."
+                                Q1: What architecture would you use for secure vote casting?
+                                Q2: How would you balance transparency with voter anonymity?
+                                Q3: How would you prevent double voting or fraud?
+
+                                Case: "Design an in-memory key-value store like Redis. Constraint: it must support persistence without high latency penalties."
+                                Q1: How would you structure data storage and snapshots?
+                                Q2: How would you handle replication for high availability?
+                                Q3: How would you prevent memory fragmentation under heavy usage?
+
+                                Case: "Design a thread scheduler for an OS kernel. Constraint: it must optimize for both latency and throughput."
+                                Q1: What scheduling algorithm would you use?
+                                Q2: How would you manage priority inversion?
+                                Q3: How would you test your scheduler under diverse workloads?
+
+                                Case: "Design a distributed file storage system like Google Drive. Constraint: strong consistency for file versions must be maintained."
+                                Q1: How would you architect the metadata and storage layers?
+                                Q2: How would you handle concurrent edits and conflicts?
+                                Q3: How would you recover from partial data center outages?
+
+                                Case: "Design a smart home IoT network with 10,000 devices. Constraint: devices must operate with limited power and intermittent connectivity."
+                                Q1: How would you design the communication protocol?
+                                Q2: How would you secure data transmissions from edge devices?
+                                Q3: How would you handle updates to all devices efficiently?
+
+                                Case: "Design a fleet management system for autonomous delivery drones. Constraint: drones must stay connected even in poor network areas."
+                                Q1: How would you architect control and telemetry?
+                                Q2: How would you ensure safe failover when connectivity drops?
+                                Q3: How would you optimize routing in real time?
+
+                                Case: "Design a connected healthcare monitoring system. Constraint: data must be transmitted securely and in near real time."
+                                Q1: How would you design the edge device data pipeline?
+                                Q2: How would you ensure HIPAA/GDPR compliance?
+                                Q3: How would you handle network dropouts for critical alerts?
+
+                                Case: "Design a log analytics platform like Splunk. Constraint: it must ingest 10M events/sec and allow near real-time querying."
+                                Q1: How would you architect the ingestion pipeline?
+                                Q2: How would you design the storage layer for both cost and speed?
+                                Q3: How would you handle query optimization under heavy load?
+
+                                Case: "Design a recommendation system for a global e-commerce company. Constraint: responses must be <100ms for users worldwide."
+                                Q1: How would you design the serving layer with caching?
+                                Q2: How would you deal with cold start problems?
+                                Q3: How would you scale across regions while keeping personalization accurate?
+
+                                Case: "New York City has hired you to determine what optimal route or what destination taxi drivers should go to when they do not have a customer."
+                                Q1: What data sources would you use to determine hotspots of passenger demand?
+                                Q2: How would you design the system to recommend destinations in real time?
+                                Q3: How would you adapt the model as traffic, weather, and events change throughout the day?
+
+                                Case: "Design a real-time analytics dashboard for IoT devices. Constraint: latency must be <1 second for 1M events/sec."
+                                Q1: How would you design the stream processing pipeline?
+                                Q2: How would you ensure durability of raw event data?
+                                Q3: How would you allow flexible queries without affecting throughput?
+
+                                Case: "Design a secure password manager system. Constraint: all data must be zero-knowledge encrypted."
+                                Q1: How would you architect storage of secrets?
+                                Q2: How would you handle cross-device synchronization?
+                                Q3: How would you detect or prevent account takeovers?
+
+                                Case: "Design a DDoS mitigation system for a global web service. Constraint: it must absorb traffic surges 100x normal load."
+                                Q1: What layers of defense would you apply?
+                                Q2: How would you distinguish malicious vs. legitimate traffic?
+                                Q3: How would you test resilience before attacks happen?
+
+                                Case: "Design a secure multi-factor authentication (MFA) system for millions of users. Constraint: low friction while resisting phishing and SIM-swap attacks."
+                                Q1: How would you architect enrollment and verification?
+                                Q2: How would you secure secret delivery and backups?
+                                Q3: How would you balance usability with strong security guarantees?"
+                                ''',
       "question_type_name": "Case study type questions"
     },
     {

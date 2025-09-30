@@ -765,6 +765,16 @@ Valid:
   }
 }
 Invalid (do not do this): custom_mongodb_query args={"collection":"summary"}
+```A bit of explanation of the annotated skill tree in the summary:
+<annotated skill tree explanation> This skill tree will be a three-level tree, and the root is considered as level one,
+the domains are at level two, and the skills are the third-level nodes (leaf nodes) with comments for you to refer.
+- Ignore the root node, it is just a placeholder.
+- The domains are the second-level nodes, and the skills are the third-level nodes.
+- The weight of the domain is the sum of the weights of all its children (skills), always 1.0.
+- The sum of weights of the root node's children (domains) is also always 1.0.
+- Each domain and skill have a priority field as well which can be any of `must`, `high` or `low`. The priority field of any domain should be ignored although each skill's priority field should be taken into account.
+</annotated skill tree explanation>```
+
 
 Node Format
 Each node must contain:
@@ -789,7 +799,9 @@ The sequence must follow a walkthrough order for each topic.
 - The Direct nodes always have total_question_threshold = null.
 - Each Deep Dive must have total_question_threshold as an integer >= 2, 
 - QA Blocks are only for Deep Dives.
-- Each node must set the graded flag to true or false.
+- Each node must set the graded flag to true or false, but depending on the following situations:
+  A. The first direct node of any topic should always be marked as graded = false
+  B. For any subsequent nodes the graded should be true if any skill has a priority as must and also having a comment of relevant evidence (but not no such evidence etc.) in the annotated skill tree, otherwise false
 
 Use MongoDB tools per the STRICT policy above to retrieve helpful context:
 
@@ -807,7 +819,7 @@ Pattern A (Direct->QA(2)->Direct->QA(2)) - It should have first node as Direct t
     {
       "topic": "provided topic's name",
       "nodes": [
-        {"id": 1, "question_type": "Direct", "question": "...", "graded": true/false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillX"], "question_guidelines": null, "total_question_threshold": null},
+        {"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill3", "Skill4", ... , "SkillX"], "question_guidelines": null, "total_question_threshold": null},
         {"id": 2, "question_type": "Deep Dive", "question": null, "graded": true/false, "next_node": 3, "context": "...", "skills": ["SKILL_3", "SKILL_6", "SKILL_9", "SKILL_12", "SKILL_14"], "question_guidelines": "...", "total_question_threshold": 2},
         {"id": 3, "question_type": "Direct", "question": "...", "graded": true/false, "next_node": 4, "context": "...", "skills": ["Skill1", "Skill5", "Skill9", ... , "SkillY"], "question_guidelines": null, "total_question_threshold": null},
         {"id": 4, "question_type": "Deep Dive", "question": null, "graded": true/false, "next_node": null, "context": "...", "skills": ["SKILL_2", "SKILL_9"], "question_guidelines": "...", "total_question_threshold": 2}
@@ -818,7 +830,7 @@ Pattern B (Direct->QA(2)->QA(3)) -  It should have first node as Direct then its
     {
       "topic": "provided topic's name",
       "nodes": [
-        {"id": 1, "question_type": "Direct", "question": "...", "graded": true/false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill5", "Skill9", ... , "SkillZ"], "question_guidelines": null, "total_question_threshold": null},
+        {"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill5", "Skill9", ... , "SkillZ"], "question_guidelines": null, "total_question_threshold": null},
         {"id": 2, "question_type": "Deep Dive", "question": null, "graded": true/false, "next_node": 3, "context": "...", "skills": ["SKILL_5"], "question_guidelines": "...", "total_question_threshold": 2},
         {"id": 3, "question_type": "Deep Dive", "question": null, "graded": true/false, "next_node": null, "context": "...", "skills": ["SKILL_5", "SKILL_8", "Skill10"], "question_guidelines": "...", "total_question_threshold": 3}
       ]
@@ -829,7 +841,7 @@ Pattern C (Direct->QA(3)->QA(2)) - It should have first node as Direct then its 
     {
       "topic": "provided topic's name",
       "nodes": [
-        {"id": 1, "question_type": "Direct", "question": "...", "graded": true/false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill7", ... , "SkillA"], "question_guidelines": null, "total_question_threshold": null},
+        {"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill7", ... , "SkillA"], "question_guidelines": null, "total_question_threshold": null},
         {"id": 2, "question_type": "Deep Dive", "question": null, "graded": true/false, "next_node": 3, "context": "...", "skills": ["SKILL_6", "SKILL_7"], "question_guidelines": "...", "total_question_threshold": 3},
         {"id": 3, "question_type": "Deep Dive", "question": null, "graded": true/false, "next_node": null, "context": "...", "skills": ["SKILL_4"], "question_guidelines": "...", "total_question_threshold": 2}
       ]
@@ -840,7 +852,7 @@ Pattern D (Direct->QA(5)) - It should have first node as Direct then its last no
     {
       "topic": "provided topic's name",
       "nodes": [
-        {"id": 1, "question_type": "Direct", "question": "...", "graded": true/false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill7", ... , "SkillX"], "question_guidelines": null, "total_question_threshold": null},
+        {"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill7", ... , "SkillX"], "question_guidelines": null, "total_question_threshold": null},
         {"id": 2, "question_type": "Deep Dive", "question": null, "graded": true/false, "next_node": null, "context": "...", "skills": ["SKILL_C", "SKILL_D"], "question_guidelines": "...", "total_question_threshold": 5}
       ]
     }
@@ -850,7 +862,7 @@ Pattern E (Direct->Direct->QA(2)->QA(2)) - It should have first node as Direct t
     {
       "topic": "provided topic's name",
       "nodes": [
-        {"id": 1, "question_type": "Direct", "question": "...", "graded": true/false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill2", ... , "SkillL"], "question_guidelines": null, "total_question_threshold": null},
+        {"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": ["Skill1", "Skill2", ... , "SkillL"], "question_guidelines": null, "total_question_threshold": null},
         {"id": 2, "question_type": "Direct", "question": "...", "graded": true/false, "next_node": 3, "context": "...", "skills": ["Skill1", "Skill5", ... , "SkillM"], "question_guidelines": null, "total_question_threshold": null},
         {"id": 3, "question_type": "Deep Dive", "question": null, "graded": true/false, "next_node": 4, "context": "...", "skills": ["SKILL_D"], "question_guidelines": "...", "total_question_threshold": 2},
         {"id": 4, "question_type": "Deep Dive", "question": null, "graded": true/false, "next_node": null, "context": "...", "skills": ["SKILL_E"], "question_guidelines": "...", "total_question_threshold": 2}
@@ -862,7 +874,7 @@ Pattern F (Direct->Direct->QA(4)) - It should have first node as Direct then its
     {
       "topic": "provided topic's name",
       "nodes": [
-        {"id": 1, "question_type": "Direct", "question": "...", "graded": true/false, "next_node": 2, "context": "...", "skills": ["Skill9", "Skill15", ... , "SkillA"], "question_guidelines": null, "total_question_threshold": null},
+        {"id": 1, "question_type": "Direct", "question": "...", "graded": false, "next_node": 2, "context": "...", "skills": ["Skill9", "Skill15", ... , "SkillA"], "question_guidelines": null, "total_question_threshold": null},
         {"id": 2, "question_type": "Direct", "question": "...", "graded": true/false, "next_node": 3, "context": "...", "skills": ["Skill10", "Skill12", ... , "SkillB"], "question_guidelines": null, "total_question_threshold": null},
         {"id": 3, "question_type": "Deep Dive", "question": null, "graded": true/false, "next_node": 4, "context": "...", "skills": ["SKILL_D"], "question_guidelines": "...", "total_question_threshold": 4}
       ]
