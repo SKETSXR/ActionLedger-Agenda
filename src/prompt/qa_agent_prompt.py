@@ -1282,7 +1282,7 @@ You have access to MongoDB fetching tools (programmatic tools, not shell). Use t
 MONGODB USAGE (STRICT):
 - Use only these tools: mongodb_list_collections, mongodb_query_checker, custom_mongodb_query.
 - NEVER call custom_mongodb_query without "query".
-- For 'cv' and 'summary', ALWAYS use {"_id": "{thread_id}"}.
+- For 'cv' and 'summary', ALWAYS use {"_id": "@thread_id"}.
 - Do not call mongodb_list_collections or mongodb_schema.
 - Validate with mongodb_query_checker BEFORE executing.
 Valid:
@@ -1291,7 +1291,7 @@ Valid:
   "args": {
     "collection": "summary",
     "query": {
-      "_id": "thread_id"
+      "_id": "@thread_id"
     }
   }
 }
@@ -1300,7 +1300,7 @@ Valid:
   "args": {
     "collection": "summary",
     "query": {
-      "_id": "thread_id"
+      "_id": "@thread_id"
     }
   }
 }
