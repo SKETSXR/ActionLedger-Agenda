@@ -26,7 +26,7 @@ jdes = JobDescriptionSchema(job_role=jd["job_role"], company_background=jd["comp
 # if candidate_profile == "CV does not contain proper text":
 #     raise("Open AI API not running")
 # candidate_profile = json.loads(candidate_profile)
-with open(r"test_cv.json", "r", encoding="utf-8") as f:
+with open(r"testing\custom_testing_inputs\test_cv.json", "r", encoding="utf-8") as f:
     candidate_profile = json.load(f)
 
 cp = CandidateProfileSchema(skills=candidate_profile["skills"],
@@ -37,12 +37,12 @@ cp = CandidateProfileSchema(skills=candidate_profile["skills"],
 def load_skill_tree(tree_json: dict) -> SkillTreeSchema:
     return SkillTreeSchema(**tree_json)
 
-with open(r"skilltree3_priority.json", "r", encoding="utf-8") as f:
+with open(r"testing\custom_testing_inputs\skilltree3_priority.json", "r", encoding="utf-8") as f:
     tree_data = json.load(f)
 
 root = load_skill_tree(tree_data)
 
-with open(r"question_guidelines.json", "r", encoding="utf-8") as f:
+with open(r"testing\custom_testing_inputs\question_guidelines.json", "r", encoding="utf-8") as f:
   question_guidelines = json.load(f)
 
 inp = InputSchema(
