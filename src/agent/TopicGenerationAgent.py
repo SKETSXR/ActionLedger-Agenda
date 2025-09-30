@@ -556,7 +556,7 @@ class TopicGenerationAgent:
         if skill_list != "":
             if state.interview_topics_feedback is not None:
                 feedback = state.interview_topics_feedback.feedback
-            feedback += f"Please keep the topic set as it is irresepective of below instructions: ```\n{state.interview_topics.model_dump()}```\n But add the list of missing `must` priority skills: \n{skill_list}\n to the focus areas of the last topic which being General Skill Assessment"
+            feedback += f"Please keep the topic set as it is irresepective of below instructions: ```\n{state.interview_topics.model_dump()}```\n But add the list of missing `must` priority skills in this as per the \n{skill_list}\n to the focus areas of the last topic which being General Skill Assessment"
             state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
             # print(f"Topic Retry Iteration -> {count}")
             log_retry_iteration(

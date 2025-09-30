@@ -699,9 +699,12 @@ def get_tool_logger(
     ch.setLevel(level)
     ch.setFormatter(logging.Formatter("%(message)s"))
 
-    fh = TimedRotatingFileHandler(
-        file_path, when=when, interval=interval, backupCount=backup_count, encoding="utf-8"
-    )
+    # fh = TimedRotatingFileHandler(
+    #     file_path, when=when, interval=interval, backupCount=backup_count, encoding="utf-8"
+    # )
+
+    fh = logging.FileHandler(file_path, encoding="utf-8")
+
     fh.setLevel(level)
     fh.setFormatter(logging.Formatter("%(message)s"))
 
