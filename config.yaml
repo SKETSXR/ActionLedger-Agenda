@@ -1,37 +1,45 @@
 configurable:
-  # Open AI models
+  # Job Description extraction
   model_provider_jd: openai
   model_jd: gpt-4o
-  # reasoning_effort_jd: minimal
   temperature_jd: 0
+  # reasoning_effort_jd: minimal   # optional, commented
 
+  # CV extraction
   model_provider_cv: openai
   model_cv: gpt-4o
-  # reasoning_effort_cv: minimal
   temperature_cv: 0
+  # reasoning_effort_cv: minimal
 
+  # Summary Generation
   model_provider_sg: openai
   model_sg: gpt-4o
-  # reasoning_effort_sg: minimal
   temperature_sg: 0
+  # reasoning_effort_sg: minimal
+
+  # Topic Generation
   model_provider_tg: openai
   model_tg: gpt-4o
-  # reasoning_effort_tg: minimal
   temperature_tg: 0
+  # reasoning_effort_tg: minimal
 
+  # Discussion per Topic Summary
   model_provider_dts: openai
   model_dts: gpt-4o
-  # reasoning_effort_dts: minimal
   temperature_dts: 0
+  # reasoning_effort_dts: minimal
 
+  # Nodes generation
   model_provider_n: openai
   model_n: gpt-4o
-  # reasoning_effort_n: minimal
   temperature_n: 0
+  # reasoning_effort_n: minimal
 
+  # QA blocks
   model_provider_qa: openai
   model_qa: gpt-4o
-  # reasoning_effort_qa: minimal
   temperature_qa: 0
+  # reasoning_effort_qa: minimal
 
+  # Unique identifier for this run
   thread_id: thread_11

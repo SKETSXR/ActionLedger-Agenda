@@ -1,11 +1,14 @@
 import argparse
 import json
 import re
-import fitz
 import asyncio
+from pathlib import Path
+
+import fitz  # PyMuPDF
 from langchain_core.messages import HumanMessage
 from rich import print as rprint
 from rich.console import Console
+
 from ..model_handling import llm_cv
 
 SYSTEM_PROMPT = '''
@@ -39,47 +42,62 @@ Guidelines:
 - If fields are missing, use null or an empty array — never guess or add fields that don't match the format.
 - Do NOT include any notes, markdown, or explanation — return only the JSON object.'''
 
-
-# ----------------------------
-# Convert Resume to Markdown
-# ----------------------------
-async def extract_cv_text_from_pdf(pdf_path):
-    doc=fitz.open(pdf_path, filetype="pdf") 
-    all_text = ""
-    for page in doc:
-        all_text += page.get_text().strip() + "\n"
-    doc.close()
-    cv_text = all_text.strip()
-
-    return cv_text
+# Precompiled regexes to strip optional fenced code blocks around model JSON
+_CODE_FENCE_START = re.compile(r"^```(?:json)?\s*", re.IGNORECASE)
+_CODE_FENCE_END = re.compile(r"\s*```$")
 
 
-# ----------------------------
-# Parse pdf text and then send Markdown to Model
-# ----------------------------
-async def parse_pdf_to_json(pdf_path):
-    
+async def extract_cv_text_from_pdf(pdf_path: str) -> str:
+    """
+    Extract plain text from a PDF resume and return a single concatenated string.
+    """
+    path = Path(pdf_path)
+    with fitz.open(path, filetype="pdf") as doc:
+        parts = []
+        for page in doc:
+            parts.append((page.get_text() or "").strip())
+        return "\n".join(filter(None, parts)).strip()
+
+
+async def parse_pdf_to_json(pdf_path: str) -> str:
+    """
+    Parse a resume PDF into structured JSON via the LLM.
+    On error, returns: "CV does not contain proper text"
+    """
     markdown_text = await extract_cv_text_from_pdf(pdf_path)
     try:
-        response = await llm_cv.ainvoke([HumanMessage(content=SYSTEM_PROMPT.format(markdown_text=markdown_text))])
-        # cleaning and converting into pure json format.
-        json_text = response.content.strip()
-        if json_text.startswith("```"):
-            json_text = re.sub(r"^```(?:json)?\s*", "", json_text)
-            json_text = re.sub(r"\s*```$", "", json_text)
-        return json_text
+        response = await llm_cv.ainvoke(
+            [HumanMessage(content=SYSTEM_PROMPT.format(markdown_text=markdown_text))]
+        )
+        json_text = (response.content or "").strip()
 
-    except:
+        # Remove leading/trailing code fences if present
+        if json_text.startswith("```"):
+            json_text = _CODE_FENCE_START.sub("", json_text)
+            json_text = _CODE_FENCE_END.sub("", json_text)
+
+        return json_text.strip()
+    except Exception:
         return "CV does not contain proper text"
 
 
-# ----------------------------
-# CLI Entry Point
-# ----------------------------
-async def main():
+async def main() -> None:
+    """
+    CLI entry:
+      --pdf_path : resume PDF path
+      --save     : path to save the JSON string output
+    """
     parser = argparse.ArgumentParser(description="Resume Parser CLI")
-    parser.add_argument("--pdf_path", help="Path to the resume PDF file", default=r"C:\Users\akshivk\Desktop\sample resumes\Sourav_s_CV.pdf")
-    parser.add_argument("--save", help="Path to save parsed JSON output", default=r"C:\Users\akshivk\Desktop\agenda_fsd_data\sourav_fsd_cv.json")
+    parser.add_argument(
+        "--pdf_path",
+        help="Path to the resume PDF file",
+        default=r"C:\Users\akshivk\Desktop\sample resumes\Sourav_s_CV.pdf",
+    )
+    parser.add_argument(
+        "--save",
+        help="Path to save parsed JSON output",
+        default=r"C:\Users\akshivk\Desktop\agenda_fsd_data\sourav_fsd_cv.json",
+    )
     args = parser.parse_args()
 
     console = Console()
@@ -91,7 +109,10 @@ async def main():
     rprint(parsed_json)
 
     if args.save:
-        with open(args.save, "w", encoding="utf-8") as f:
+        save_path = Path(args.save)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        # Preserve behavior: write the JSON string (not parsed) to file
+        with save_path.open("w", encoding="utf-8") as f:
             json.dump(parsed_json, f, indent=4)
         console.print(f"\n[bold yellow] Saved output to:[/bold yellow] {args.save}")
 
