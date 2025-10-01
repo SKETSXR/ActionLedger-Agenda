@@ -30,7 +30,7 @@ Instructions
 
 3. For each sequence item, output with this structure:  
 - Opening step:  
-  {{"Opening": {{ "description": "...", "guidelines": "...", "focus_areas": ["Skill1", "Skill3", "Skill4", ... , "SkillX"], "reference_sources": ["Source1", "Source3", ..., "SourceP"], "graded": false }}}}  
+  {{"Opening": {{ "description": "...", "guidelines": "...", "focus_areas": ["Skill1", "Skill3", "Skill4", ... , "SkillX"], "reference_sources": ["Source1", "Source3", ..., "SourceP"], "graded": true }}}}  
 - Direct step:  
   {{"DirectQuestion": {{ "description": "...", "guidelines": "...", "focus_areas": ["Skill1", "Skill6", ... , "SkillY"], "reference_sources": ["Source3", "Source6", ..., "SourceQ"], "graded": true }}}}  
 - Deep Dive step:  
@@ -41,7 +41,7 @@ Instructions
    - `"reference_sources"` is always an array (even one).  
    - `"reference_material"` must be only the union of all `reference_sources`. Do not inject anything extra. Also give me that only as the given keys like P1, P2 etc for project references, E1 or E2 etc for experience related references and summary key (S) or skill tree (T) or domains (D) for there respective references. 
    - Skills must be copied verbatim from `focus_area.skill`. Do not rename or paraphrase.
-   - Opening step must always have `"graded": false`.  
+   - Opening step must always have `"graded": true`.  
    - All keys must appear for each step with no omissions.  
 
 5. Tool usage guidelines:
@@ -96,7 +96,7 @@ Return a JSON with this exact structure:
 {{
   "topic": "short name",
   "sequence": [
-    {{ "type": "Opening", "description": "...", "guidelines": "...", "focus_areas": ["Skill1", "Skill3", "Skill4"], "reference_sources": ["Source1"], "graded": false }},
+    {{ "type": "Opening", "description": "...", "guidelines": "...", "focus_areas": ["Skill1", "Skill3", "Skill4"], "reference_sources": ["Source1"], "graded": true }},
     {{ "type": "Direct Question", "description": "...", "guidelines": "...", "focus_areas": ["Skill1", "Skill2"], "reference_sources": ["Source1"], "graded": true }},
     {{ "type": "Deep Dive", "description": "...", "guidelines": "...", "focus_areas": ["Skill2", "Skill6", "Skill9"], "reference_sources": ["Source1", "Source2", "Source3"], "graded": true }}
   ],
