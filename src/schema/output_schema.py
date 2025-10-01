@@ -17,7 +17,7 @@ class JobRequirementsSummarySchema(BaseModel):
             ],
         ),
     ]
-    about_companyorproduct: Annotated[
+    about_company_or_product: Annotated[
         str,
         Field(
             ...,
