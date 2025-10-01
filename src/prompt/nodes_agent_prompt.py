@@ -9,7 +9,14 @@ Inputs:
 
 Discussion Summary for a topic:
 \n```@per_topic_summary_json```\n
-Here, Opening means a starting question about the candidate's background relevant to this topic. Direct questions are only about the topic itself. Deep Dive(s) are QA blocks that probe a specific sub-area more thoroughly. Other fields are self-explanatory.
+Opening / Direct / Deep Dive (conditional behavior):
+- Only for Case study topic (topic title contains "Case Study"):
+  - Opening = scenario set-up (NOT candidate background): a fresh, concrete problem with explicit constraints, phrased as a live scenario (e.g., "Imagine you are…", "Suppose you are…", "You are the lead engineer for…").
+  - Direct = explicit continuation of the same scenario (no restarts).
+  - Deep Dive = QA blocks that continue the same scenario to probe trade-offs, edge cases, scaling, failure modes, security/compliance, etc.
+- Non-case-study topics:
+  - Opening may be a concise topic-relevant background/context lead-in (avoid generic biography).
+  - Direct/Deep Dive continue the same thread (no random jumps) wherein Direct questions are only about the topic itself. Deep Dive(s) are QA blocks that probe a specific sub-area more thoroughly.
 
 Use any previous schema validation errors below as feedback to fix your output:
 \n```@nodes_error```\n
@@ -108,8 +115,17 @@ Sequencing Rules
 The sequence must follow a walkthrough order for each topic.
 
 - Each topic produces its own ordered set of nodes.
-- Every first direct node should use the things related to opening in the discussion summary of the given topic and is basically asks about the candidate background as given to you, although you need to follow the data related to opening as given in the discussion summary
-- Every direct node after the first direct node should ask about the given topic 
+- First Direct node (conditional):
+  - If the topic is a Case study topic then you MUST convert the Opening scenario into a concise, scenario-framed question asking for the candidate's initial approach/architecture under the given constraints. Also:
+    - It MUST begin with one of ["Imagine you are", "Suppose you are", "You are tasked with", "You are the lead engineer for"].
+    - It MUST NOT ask about prior experience or biography.
+  - If the topic is not a case-study topic then:
+    - Every first direct node should use the things related to opening in the discussion summary of the given topic and is basically asks about the candidate background as given to you, although you need to follow the data related to opening as given in the discussion summary
+
+- Subsequent Direct nodes:
+  - If the topic is a Case study topic then you MUST explicitly continue the same scenario (e.g., "Building on your design…", "Given your approach…", "If your system encounters X…"); no restarts.
+  - If the topic is not a Case Study topic then the direct node after the first direct node should ask about the given topic 
+
 - The Direct nodes always have total_question_threshold = null.
 - Each Deep Dive must have total_question_threshold as an integer >= 2, 
 - QA Blocks are only for Deep Dives.
