@@ -42,8 +42,6 @@ Instructions
    - `"reference_material"` must be only the union of all `reference_sources`. Do not inject anything extra. Also give me that only as the given keys like P1, P2 etc for project references, E1 or E2 etc for experience related references and summary key (S) or skill tree (T) or domains (D) for there respective references. 
    - Skills must be copied verbatim from `focus_area.skill`. Do not rename or paraphrase.
    - Opening step must always have `"graded": false`.  
-   - Case study Opening phrasing rule (Only for case study topic): The Opening "description" should begin with one of ["Imagine you are", "Suppose you are", "You are tasked with", "You are the lead engineer for"].
-   - Case study continuity rule: For case study topic, all Direct and Deep Dive steps must explicitly continue the Opening scenario; do not restart or introduce a new scenario later.
    - All keys must appear for each step with no omissions.  
 
 5. Tool usage guidelines:
