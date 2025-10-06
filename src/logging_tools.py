@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 from datetime import datetime, date
+from logging.handlers import TimedRotatingFileHandler
 from typing import Any, Optional, Sequence
 
 
@@ -17,14 +18,6 @@ def log_retry_iteration(
 ) -> None:
     """
     Record a retry attempt for an agent, including the reason and any extra context.
-
-    Args:
-        agent_name: Logical name of the agent performing the retry.
-        iteration: Monotonic retry counter for this agent flow.
-        reason: Short reason for the retry decision.
-        logger: Optional preconfigured logger; falls back to get_tool_logger(agent_name).
-        pretty_json: If True, emit indented JSON for readability (larger logs).
-        extra: Optional additional fields to include under the 'extra' key.
     """
     log = logger or get_tool_logger(agent_name)
     payload = {"iteration": iteration, "reason": reason}
@@ -43,29 +36,20 @@ def log_retry_iteration(
 def get_tool_logger(
     agent_name: str,
     log_dir: str = "logs",
-    when: str = "midnight",  # kept for caller's compatibility; not used by FileHandler
-    interval: int = 1,       # kept for caller's compatibility; not used by FileHandler
-    backup_count: int = 365, # kept for caller's compatibility; not used by FileHandler
+    when: str = "midnight",
+    interval: int = 1,
+    backup_count: int = 365,
     level: int = logging.INFO,
 ) -> logging.Logger:
     """
     Return a process-wide logger for a given agent, creating it on first use.
 
-    The logger writes JSON lines to both stdout and a rotating file under `log_dir`.
-    Rotation parameters are accepted for compatibility but not applied here because
-    we use a basic FileHandler to preserve behavior.
-
-    Args:
-        agent_name: Logical agent name; also used to name the log file.
-        log_dir: Directory where the log file is stored.
-        when, interval, backup_count: Unused placeholders to preserve signature.
-        level: Minimum log level.
-
-    Returns:
-        A configured Logger instance. Reuses existing handlers if already set up.
+    Writes JSON lines to stdout and to a time-rotating file under `log_dir`.
+    Subsequent calls reuse the same configured logger.
     """
     logger_name = f"tool_activity::{agent_name}"
     logger = logging.getLogger(logger_name)
+
     if logger.handlers:
         return logger
 
@@ -75,13 +59,15 @@ def get_tool_logger(
     os.makedirs(log_dir, exist_ok=True)
     file_path = os.path.join(log_dir, f"{agent_name}.log")
 
-    # Console handler (stdout) for quick inspection in containerized runs
+    # Console handler (stdout)
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(level)
     ch.setFormatter(logging.Formatter("%(message)s"))
 
-    # File handler (JSON lines)
-    fh = logging.FileHandler(file_path, encoding="utf-8")
+    # Timed rotating file handler
+    fh = TimedRotatingFileHandler(
+        file_path, when=when, interval=interval, backupCount=backup_count, encoding="utf-8", utc=False
+    )
     fh.setLevel(level)
     fh.setFormatter(logging.Formatter("%(message)s"))
 
@@ -93,28 +79,23 @@ def get_tool_logger(
 # ---------- Safe getters for LangChain message-like objects ----------
 
 def _msg_type(m: Any) -> Optional[str]:
-    """Return message type if present (e.g., 'ai', 'human', 'tool'), else None."""
     return getattr(m, "type", None)
 
 
 def _msg_content(m: Any) -> Any:
-    """Return message content if present, else None."""
     return getattr(m, "content", None)
 
 
 def _tool_call_id(m: Any) -> Any:
-    """Return tool_call_id from a ToolMessage if present, else None."""
     return getattr(m, "tool_call_id", None)
 
 
-# ---------- JSON normalizers (stable, safe, single-pass) ----------
+# ---------- JSON normalizers ----------
 
 def _maybe_parse_json(val: Any) -> Any:
     """
     If `val` is a JSON-looking string (object/array), attempt to parse once.
     Otherwise return it unchanged.
-
-    This is useful when upstream tools serialize nested JSON into strings.
     """
     if isinstance(val, str):
         s = val.strip()
@@ -130,29 +111,25 @@ def _json_sanitize(x: Any) -> Any:
     """
     Convert arbitrary Python objects into JSON-serializable structures:
       - Datetimes -> ISO8601 strings
-      - Sets -> sorted lists (deterministic)
+      - Sets -> sorted lists
       - Pydantic models -> dicts via model_dump()/dict()
       - Generic objects -> vars(__dict__)
       - Fallback -> str(x)
 
-    Also attempts to de-stringify nested JSON for common keys such as args/result.
+    Also de-stringifies nested JSON for common keys like args/result.
     """
-    # Primitives
     if x is None or isinstance(x, (str, int, float, bool)):
         return x
 
-    # Sets -> sorted lists for deterministic output
     if isinstance(x, set):
         try:
             return sorted(x)
         except Exception:
             return list(x)
 
-    # Lists / tuples
     if isinstance(x, (list, tuple)):
         return [_json_sanitize(v) for v in x]
 
-    # Dicts
     if isinstance(x, dict):
         parsed = {}
         for k, v in x.items():
@@ -161,7 +138,6 @@ def _json_sanitize(x: Any) -> Any:
             parsed[str(k)] = _json_sanitize(v)
         return parsed
 
-    # Datetimes
     if isinstance(x, (datetime, date)):
         return x.isoformat()
 
@@ -179,15 +155,13 @@ def _json_sanitize(x: Any) -> Any:
         except Exception:
             pass
 
-    # Generic objects
     if hasattr(x, "__dict__"):
         return _json_sanitize(vars(x))
 
-    # Final fallback
     return str(x)
 
 
-# ---------- Emit helper (unified interface) ----------
+# ---------- Emit helper ----------
 
 def _emit(
     logger: logging.Logger,
@@ -200,18 +174,6 @@ def _emit(
 ) -> None:
     """
     Emit a single JSON log record with a consistent envelope.
-
-    Args:
-        logger: Destination logger instance.
-        event: Short event type (e.g., 'tool_call_planned', 'tool_result').
-        agent: Agent name for scoping.
-        data: Arbitrary payload; will be sanitized for JSON.
-        ts: Optional timestamp override; defaults to now in ISO8601.
-        pretty_json: If True, indent JSON for readability.
-
-    Behavior:
-        - Performs a single sanitize pass so nested strings holding JSON are parsed.
-        - Emits one line per record (pretty or compact).
     """
     record = {
         "event": event,
@@ -236,25 +198,16 @@ def log_tool_activity(
     pretty_json: bool = False,
 ) -> None:
     """
-    Log planned tool calls (from the latest assistant message) and any recent
-    tool results located at the tail of `messages`.
-
-    Args:
-        messages: Conversation transcript; recent tool results are expected at the tail.
-        ai_msg: The assistant message that potentially contains planned tool calls.
-        agent_name: Agent identifier for the log stream and file naming.
-        logger: Optional preconfigured logger; falls back to get_tool_logger(agent_name).
-        header: Human-readable section title used in banner events.
-        pretty_json: If True, emit indented JSON.
-
-    Notes:
-        - Only examines trailing ToolMessages for results to avoid scanning entire history.
-        - Uses a consistent 'banner' / 'banner_end' pair to demarcate sections.
+    Log planned tool calls (from the latest assistant message) and recent tool
+    results found at the end of `messages`.
     """
+    if messages is None:
+        return
+
     log = logger or get_tool_logger(agent_name)
     now = datetime.now().isoformat(timespec="seconds")
 
-    # Planned tool calls (from the assistant's message)
+    # Planned tool calls
     tool_calls = getattr(ai_msg, "tool_calls", None)
     if tool_calls:
         _emit(
@@ -266,7 +219,7 @@ def log_tool_activity(
             pretty_json=pretty_json,
         )
 
-        for tc in tool_calls or []:
+        for tc in tool_calls:
             try:
                 if isinstance(tc, dict):
                     name = tc.get("name")
@@ -295,9 +248,10 @@ def log_tool_activity(
             pretty_json=pretty_json,
         )
 
-    # Recent tool results (walk backward while tail messages are tool outputs)
+    # Recent tool results (walk backward while trailing messages are tool outputs)
     i = len(messages) - 1
     printed_results = False
+
     while i >= 0 and _msg_type(messages[i]) == "tool":
         if not printed_results:
             _emit(
