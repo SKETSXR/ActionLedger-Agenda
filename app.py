@@ -49,7 +49,7 @@ if __name__ == "__main__":
     skill_tree_json_path = Path(r"testing\custom_testing_inputs\skilltree3_priority.json")
     qg_json_path = Path(r"testing\custom_testing_inputs\question_guidelines1.json")
     config_yaml_path = Path("config.yaml")
-    output_txt_path = Path(r"testing\op1.txt")
+    output_txt_path = Path(r"testing\op7.txt")
 
     # --- JD parse ---
     jd_inp_text = _load_text(jd_txt_path)
