@@ -173,7 +173,7 @@ class TopicGenerationAgent:
         def _canon(s: str) -> str:
             return (s or "").strip().lower()
 
-        # depth-agnostic leaf gatherers (recursive) + must-only view
+        # depth-agnostic leaf gatherers (recursive) + skills with a must-only priority view
         def _all_leaves(root: SkillTreeSchema) -> list[SkillTreeSchema]:
             leaves: list[SkillTreeSchema] = []
             def dfs(n: SkillTreeSchema):
@@ -200,7 +200,7 @@ class TopicGenerationAgent:
                 if v and v not in focus_area_list:
                     focus_area_list.append(v)
 
-        # 1) totals
+        # 1) total question count must match summary total question count
         total_questions_sum = sum(t.total_questions for t in state.interview_topics.interview_topics)
         if total_questions_sum != state.generated_summary.total_questions:
             log_retry_iteration(
