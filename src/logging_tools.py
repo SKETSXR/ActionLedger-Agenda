@@ -76,7 +76,7 @@ def get_tool_logger(
     return logger
 
 
-# ---------- Safe getters for LangChain message-like objects ----------
+# ---------- Getters for fetching LangChain message-like objects ----------
 
 def _msg_type(m: Any) -> Optional[str]:
     return getattr(m, "type", None)
@@ -173,7 +173,7 @@ def _emit(
     pretty_json: bool = False,
 ) -> None:
     """
-    Emit a single JSON log record with a consistent envelope.
+    Emit a single JSON log record with a consistent format.
     """
     record = {
         "event": event,
@@ -187,7 +187,7 @@ def _emit(
         logger.info(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
 
 
-# ---------- Public interface: unified activity logger ----------
+# ---------- Activity logger ----------
 
 def log_tool_activity(
     messages: Sequence[Any],
@@ -248,7 +248,7 @@ def log_tool_activity(
             pretty_json=pretty_json,
         )
 
-    # Recent tool results (walk backward while trailing messages are tool outputs)
+    # Recent tool results are added at the end of messages
     i = len(messages) - 1
     printed_results = False
 
