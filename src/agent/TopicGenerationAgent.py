@@ -168,115 +168,81 @@ class TopicGenerationAgent:
     # ---------------- Graph router: should regenerate? ----------------
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
-        """
-        Decide whether to regenerate topics based on:
-        1) Total question count matching the generated summary's target.
-        2) All focus-area skills belonging to the leaf set of the skill tree.
-        3) Ensuring all 'must' priority leaf skills are included at least once.
-        When missing MUST skills, feedback is injected to add them to the
-        'General Skill Assessment' topic's focus areas.
-        """
         global count
 
-        def level3_leavesp(root: SkillTreeSchema) -> list[SkillTreeSchema]:
-            """Collect true leaves with priority == 'must' from the 3rd level."""
-            if not root.children:
-                return []
-            skills_priority_must: list[SkillTreeSchema] = []
-            for domain in root.children:
-                for leaf in (domain.children or []):
-                    if not leaf.children and leaf.priority == "must":
-                        skills_priority_must.append(leaf)
-            return skills_priority_must
+        def _canon(s: str) -> str:
+            return (s or "").strip().lower()
 
-        def level3_leaves(root: SkillTreeSchema) -> list[SkillTreeSchema]:
-            """Collect all true leaves from the 3rd level."""
-            if not root.children:
-                return []
+        # depth-agnostic leaf gatherers (recursive) + must-only view
+        def _all_leaves(root: SkillTreeSchema) -> list[SkillTreeSchema]:
             leaves: list[SkillTreeSchema] = []
-            for domain in root.children:
-                for leaf in (domain.children or []):
-                    if not leaf.children:
-                        leaves.append(leaf)
+            def dfs(n: SkillTreeSchema):
+                if not getattr(n, "children", None):
+                    leaves.append(n)
+                    return
+                for c in (n.children or []):
+                    dfs(c)
+            dfs(root)
             return leaves
 
-        all_skill_leaves = [leaf.name for leaf in level3_leaves(state.skill_tree)]
-        skills_priority_must = [leaf.name for leaf in level3_leavesp(state.skill_tree)]
+        def _must_leaves(root: SkillTreeSchema) -> list[SkillTreeSchema]:
+            return [l for l in _all_leaves(root) if getattr(l, "priority", None) == "must"]
+
+        all_skill_leaves = [_canon(leaf.name) for leaf in _all_leaves(state.skill_tree)]
+        skills_priority_must = [_canon(leaf.name) for leaf in _must_leaves(state.skill_tree)]
 
         # Gather all unique focus-area skill names from the generated topics.
         focus_area_list: list[str] = []
         for t in state.interview_topics.interview_topics:
             for i in t.focus_area:
-                for key in i.model_dump():
-                    if key == "skill":
-                        x = i.model_dump()
-                        if x["skill"] not in focus_area_list:
-                            focus_area_list.append(x["skill"])
+                x = i.model_dump()
+                v = _canon(x.get("skill", ""))
+                if v and v not in focus_area_list:
+                    focus_area_list.append(v)
 
-        # Validate total questions count.
-        total_questions_sum = sum(
-            t.total_questions for t in state.interview_topics.interview_topics
-        )
+        # 1) totals
+        total_questions_sum = sum(t.total_questions for t in state.interview_topics.interview_topics)
         if total_questions_sum != state.generated_summary.total_questions:
             log_retry_iteration(
-                agent_name=AGENT_NAME,
-                iteration=count,
-                reason="Total questions mismatch",
-                logger=LOGGER,
-                pretty_json=True,
-                extra={
-                    "got_total": total_questions_sum,
-                    "target_total": state.generated_summary.total_questions,
-                },
+                agent_name=AGENT_NAME, iteration=count, reason="Total questions mismatch",
+                logger=LOGGER, pretty_json=True,
+                extra={"got_total": total_questions_sum, "target_total": state.generated_summary.total_questions},
             )
             count += 1
-            return False
+            return False  # retry
 
-        # Validate that every focus-area skill exists in the leaf set.
+        # 2) every focus skill must exist in leaves
+        leaf_set = set(all_skill_leaves)
         for s in focus_area_list:
-            if s not in all_skill_leaves:
+            if s not in leaf_set:
                 log_retry_iteration(
-                    agent_name=AGENT_NAME,
-                    iteration=count,
-                    reason="Invalid focus skill",
-                    logger=LOGGER,
-                    pretty_json=True,
-                    extra={"skill": s},
+                    agent_name=AGENT_NAME, iteration=count, reason="Invalid focus skill",
+                    logger=LOGGER, pretty_json=True, extra={"skill": s},
                 )
                 count += 1
-                return False
+                return False  # retry
 
-        # Ensure all MUST-priority leaves are represented at least once.
-        missing_must = ""
-        for skill in set(skills_priority_must):
-            if skill not in set(focus_area_list):
-                missing_must += ", " + skill
-
-        if missing_must != "":
-            feedback = ""
-            if state.interview_topics_feedback is not None:
-                feedback = state.interview_topics_feedback.feedback
-            feedback += (
-                "Please keep the topic set as it is irresepective of below instructions: "
-                f"```\n{state.interview_topics.model_dump()}```\n "
-                "But add the list of missing `must` priority skills in this as per the \n"
-                f"{missing_must}\n "
-                "to the focus areas of the last topic which being General Skill Assessment"
+        # 3) every MUST leaf must appear at least once
+        missing = sorted(set(skills_priority_must) - set(focus_area_list))
+        if missing:
+            fb = state.interview_topics_feedback.feedback if state.interview_topics_feedback else ""
+            fb += (
+                "Please keep the topic set as is irrespective of below instructions:\n"
+                f"```\n{state.interview_topics.model_dump()}\n```\n"
+                "But add the list of missing `must` priority skills below to the focus areas of the last topic "
+                "(General Skill Assessment):\n"
+                + ", ".join(missing)
             )
-            state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
+            state.interview_topics_feedback = {"satisfied": False, "feedback": fb}
 
             log_retry_iteration(
-                agent_name=AGENT_NAME,
-                iteration=count,
-                reason="Missing MUST skills",
-                logger=LOGGER,
-                pretty_json=True,
-                extra={"missing_must": missing_must},
+                agent_name=AGENT_NAME, iteration=count, reason="Missing MUST skills",
+                logger=LOGGER, pretty_json=True, extra={"missing_must": missing},
             )
             count += 1
-            return False
+            return False  # retry
 
-        return True
+        return True  # satisfied
 
     # ---------------- Outer main topic generation graph ----------------
     @staticmethod

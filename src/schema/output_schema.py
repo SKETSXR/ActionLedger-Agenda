@@ -39,7 +39,7 @@ class ProjectReasoningSummarySchema(BaseModel):
     """Short reasoning summary per project: what, how, stack, and a brief walkthrough."""
     what_done: Annotated[str, Field(..., description="What was built/achieved")]
     how_done: Annotated[str, Field(..., description="How it was implemented (approach/architecture)")]
-    tech_stack: Annotated[str, Field(..., min_items=1, description="Technologies used")]
+    tech_stack: Annotated[str, Field(..., min_length=1, description="Technologies used")]
     walkthrough: Annotated[str, Field(..., description="Brief step-by-step of how each particular tech stack was used")]
 
 
@@ -225,7 +225,7 @@ class NodeSchema(BaseModel):
     graded: bool
     next_node: Optional[int] = Field(None, ge=1)
     context: str = Field(..., min_length=1)
-    skills: List[str] = Field(..., min_items=1)
+    skills: List[str] = Field(..., min_length=1)
     total_question_threshold: Optional[int] = Field(None, ge=2)
     question_guidelines: Optional[str] = None
 
@@ -233,12 +233,12 @@ class NodeSchema(BaseModel):
 class TopicWithNodesSchema(BaseModel):
     """A topic with its ordered list of nodes."""
     topic: str
-    nodes: List[NodeSchema] = Field(..., min_items=1)
+    nodes: List[NodeSchema] = Field(..., min_length=1)
 
 
 class NodesSchema(BaseModel):
     """Container for topic-node flows across all topics."""
-    topics_with_nodes: List[TopicWithNodesSchema] = Field(..., min_items=1)
+    topics_with_nodes: List[TopicWithNodesSchema] = Field(..., min_length=1)
 
 
 # ============================== QA BLOCKS (QUESTION SETS) ============================== #
@@ -253,25 +253,25 @@ class QAItem(BaseModel):
     q_type: QType
     q_difficulty: QDiff
     counter_type: Optional[QCountType] = None
-    example_questions: List[str] = Field(..., min_items=5, max_items=5)
+    example_questions: List[str] = Field(..., min_length=5, max_length=5)
 
 
 class QABlock(BaseModel):
     """A block groups related QA items under a single guideline."""
     block_id: str = Field(..., description="Block identifier like 'B1'")
     guideline: str = Field(..., min_length=1)
-    qa_items: List[QAItem] = Field(..., min_items=7, max_items=7)
+    qa_items: List[QAItem] = Field(..., min_length=7, max_length=7)
 
 
 class QASet(BaseModel):
     """All blocks generated for a single topic."""
     topic: str = Field(..., min_length=1)
-    qa_blocks: List[QABlock] = Field(..., min_items=1)
+    qa_blocks: List[QABlock] = Field(..., min_length=1)
 
 
 class QASetsSchema(BaseModel):
     """Top-level collection of QA sets across topics."""
-    qa_sets: List[QASet] = Field(..., min_items=1)
+    qa_sets: List[QASet] = Field(..., min_length=1)
 
 
 # ============================== OUTPUT ROOT ============================== #

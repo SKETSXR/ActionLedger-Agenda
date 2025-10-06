@@ -1,5 +1,5 @@
 from typing import Annotated
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from langchain_core.messages import AnyMessage, RemoveMessage
 from langgraph.graph import add_messages
 
@@ -32,9 +32,8 @@ class AgentInternalState(BaseModel):
         nodes, QA blocks) and corresponding error strings/feedback, when present.
     """
 
-    class Config:
-        # Allow non-pydantic types (e.g., LangChain message objects) in the model.
-        arbitrary_types_allowed = True
+    # Allow usage of non-Pydantic (arbitrary) types such as LangChain message objects.
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # -------------------- Persistence / runtime identifiers --------------------
     mongo_client: str  # Mongo connection URI
