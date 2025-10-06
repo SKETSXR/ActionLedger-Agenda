@@ -66,7 +66,7 @@ Invalid (do not do this): custom_mongodb_query args={"collection":"summary"}
 Topic Generation Instructions and Constraints:
 - Output must contain exactly three discussion topics.
 - Each topic should be one of the following types <try to cover all of these types if possible>:
-   - Project-related discussion  <This topic should mention the given project's name as mentioned and don't use keys like P1 or P2 or P3 etc. Also here if making this type of topic then a relevant project is selected which has most number of skills written with a priority as must in the annotated skill tree>
+   - Project-related discussion  <This topic should mention the given project's name as mentioned and don't use keys like P1 or P2 or P3 etc. Also here, for this type of topic then a relevant project is selected which has most number of skills written with a priority as must in the annotated skill tree>
    - Case study based on company's profile
    - Coding question
    - General skill assessment  <This type of topic should always be there as a last topic and all the skills/leaves from the annotated skill tree having a must priority that were left out in any of your other topics should be written in this topic's focus area>
