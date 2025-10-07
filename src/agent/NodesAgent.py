@@ -1,8 +1,12 @@
-# Running with schema check and regenerate
 import json
 import copy
-from typing import List, Any, Dict
+import logging
+import os
+import sys
+from typing import List, Any, Dict, Optional, Sequence
+from datetime import datetime, date
 
+from logging.handlers import TimedRotatingFileHandler
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph import MessagesState
 from langgraph.prebuilt import ToolNode
@@ -15,15 +19,146 @@ from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
 from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
 from ..model_handling import llm_n
-from ..logging_tools import get_tool_logger, log_tool_activity, log_retry_iteration
 
+
+# ==============================
+# Config (env-overridable)
+# ==============================
+
+AGENT_NAME = "nodes_agent"
+
+LOG_DIR = os.getenv("NODES_AGENT_LOG_DIR", "logs")
+LOG_LEVEL = getattr(
+    logging,
+    os.getenv("NODES_AGENT_LOG_LEVEL", "INFO").upper(),
+    logging.INFO,
+)
+LOG_FILE = os.getenv("NODES_AGENT_LOG_FILE", f"{AGENT_NAME}.log")
+LOG_ROTATE_WHEN = os.getenv("NODES_AGENT_LOG_ROTATE_WHEN", "midnight")
+LOG_ROTATE_INTERVAL = int(os.getenv("NODES_AGENT_LOG_ROTATE_INTERVAL", "1"))
+LOG_BACKUP_COUNT = int(os.getenv("NODES_AGENT_LOG_BACKUP_COUNT", "365"))
 
 # Global retry counter used only for logging iteration counts.
 count = 1
 
-AGENT_NAME = "nodes_agent"
-LOG_DIR = "logs"
-LOGGER = get_tool_logger(AGENT_NAME, log_dir=LOG_DIR, backup_count=365)
+
+# ==============================
+# Human-style logging
+# ==============================
+
+def _build_logger(
+    name: str,
+    log_dir: str,
+    level: int,
+    filename: str,
+    when: str,
+    interval: int,
+    backup_count: int,
+) -> logging.Logger:
+    logger = logging.getLogger(name)
+    if logger.handlers:
+        return logger
+
+    logger.setLevel(level)
+    logger.propagate = False
+
+    os.makedirs(log_dir, exist_ok=True)
+    file_path = os.path.join(log_dir, filename)
+
+    # Console handler
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setLevel(level)
+    ch.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
+
+    # Rotating file handler
+    fh = TimedRotatingFileHandler(
+        file_path, when=when, interval=interval, backupCount=backup_count, encoding="utf-8", utc=False
+    )
+    fh.setLevel(level)
+    fh.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
+
+    logger.addHandler(ch)
+    logger.addHandler(fh)
+    return logger
+
+
+LOGGER = _build_logger(
+    name=AGENT_NAME,
+    log_dir=LOG_DIR,
+    level=LOG_LEVEL,
+    filename=LOG_FILE,
+    when=LOG_ROTATE_WHEN,
+    interval=LOG_ROTATE_INTERVAL,
+    backup_count=LOG_BACKUP_COUNT,
+)
+
+def log_info(msg: str) -> None:
+    LOGGER.info(msg)
+
+def log_warning(msg: str) -> None:
+    LOGGER.warning(msg)
+
+def log_error(msg: str) -> None:
+    LOGGER.error(msg)
+
+def _fmt_full(val: Any) -> str:
+    """Return full string; pretty-print JSON strings/objects when possible."""
+    try:
+        if isinstance(val, (dict, list)):
+            import json as _json
+            return _json.dumps(val, ensure_ascii=False, indent=2)
+        if isinstance(val, str):
+            s = val.strip()
+            if (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]")):
+                import json as _json
+                return _json.dumps(_json.loads(s), ensure_ascii=False, indent=2)
+        return str(val)
+    except Exception:
+        return str(val)
+
+def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> None:
+    """
+    Human-readable tool activity:
+      - plans (from the assistant msg's tool_calls)
+      - results (returns the tool messages at the end)
+    """
+    if not messages:
+        return
+
+    # Planned tool calls
+    tool_calls = getattr(ai_msg, "tool_calls", None)
+    if tool_calls:
+        log_info("Tool plan:")
+        for tc in tool_calls:
+            try:
+                if isinstance(tc, dict):
+                    name = tc.get("name")
+                    args = tc.get("args")
+                else:
+                    name = getattr(tc, "name", None)
+                    args = getattr(tc, "args", None)
+            except Exception:
+                name, args = str(tc), None
+            log_info(f"  planned -> {name} args={_fmt_full(args)}")
+
+    # Recent tool results (messages end with tool outputs)
+    i = len(messages) - 1
+    printed = False
+    while i >= 0 and getattr(messages[i], "type", None) == "tool":
+        if not printed:
+            log_info("Tool results:")
+            printed = True
+        tm = messages[i]
+        log_info(
+            f"  result <- id={getattr(tm, 'tool_call_id', None)} "
+            f"data={_fmt_full(getattr(tm, 'content', None))}"
+        )
+        i -= 1
+
+def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = None) -> None:
+    """Human-format retry line."""
+    suffix = f" | extra={extra}" if extra else ""
+    log_warning(f"Retry {iteration}: {reason}{suffix}")
 
 
 # ---------- Inner ReAct state for Mongo loop (per-topic) ----------
@@ -55,15 +190,10 @@ class NodesGenerationAgent:
         Invoke the tool-enabled model. If the assistant plans tool calls,
         LangGraph will execute them via the ToolNode.
         """
-        log_tool_activity(
-            state["messages"],
-            ai_msg=None,
-            agent_name=AGENT_NAME,
-            logger=LOGGER,
-            header="Nodes Tool Activity",
-            pretty_json=True,
-        )
+        log_info("Calling LLM (agent)")
+        log_tool_activity(state["messages"], ai_msg=None)
         ai = NodesGenerationAgent._AGENT_MODEL.invoke(state["messages"])
+        log_info("LLM (agent) call succeeded")
         return {"messages": [ai]}
 
     @staticmethod
@@ -91,25 +221,20 @@ class NodesGenerationAgent:
         if ai_content is None:
             ai_content = msgs[-1].content
 
+        log_info("Calling LLM (structured)")
         final_obj = NodesGenerationAgent._STRUCTURED_MODEL.invoke([HumanMessage(content=ai_content)])
+        log_info("LLM (structured) call succeeded")
         return {"final_response": final_obj}
 
     @staticmethod
     def _should_continue(state: _MongoNodesState):
         """
         Router node: if the latest assistant message contains tool calls,
-        continue to the ToolNode; otherwise, proceed to respond.
+        continue to the ToolNode, otherwise, proceed to respond.
         """
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
-            log_tool_activity(
-                state["messages"],
-                ai_msg=last,
-                agent_name=AGENT_NAME,
-                logger=LOGGER,
-                header="Nodes Tool Activity",
-                pretty_json=True,
-            )
+            log_tool_activity(state["messages"], ai_msg=last)
             return "continue"
         return "respond"
 
@@ -131,7 +256,7 @@ class NodesGenerationAgent:
     # ----------------- utilities -----------------
     @staticmethod
     def _as_dict(x: Any) -> Dict[str, Any]:
-        """Best-effort conversion to a dict without altering semantics."""
+        """Best-effort conversion to a dict."""
         if hasattr(x, "model_dump"):
             return x.model_dump()
         if hasattr(x, "dict"):
@@ -148,34 +273,48 @@ class NodesGenerationAgent:
                 return v.strip()
         return "Unknown"
 
+    # ----------------- utilities -----------------
     @staticmethod
-    def _to_json_one(x: Any) -> str:
-        """Deep-copy an object into a stable JSON string without mutating upstream structures."""
+    def _to_primitive(x: Any) -> Any:
+        """Recursively convert Pydantic models and other objects to JSON-serializable primitives."""
+        # Pydantic v2
         if hasattr(x, "model_dump"):
-            return json.dumps(copy.deepcopy(x.model_dump()))
+            try:
+                return NodesGenerationAgent._to_primitive(x.model_dump())
+            except Exception:
+                pass
+        # Pydantic v1
         if hasattr(x, "dict"):
-            return json.dumps(copy.deepcopy(x.dict()))
-        return json.dumps(copy.deepcopy(x))
+            try:
+                return NodesGenerationAgent._to_primitive(x.dict())
+            except Exception:
+                pass
+
+        if isinstance(x, dict):
+            return {k: NodesGenerationAgent._to_primitive(v) for k, v in x.items()}
+        if isinstance(x, (list, tuple, set)):
+            return [NodesGenerationAgent._to_primitive(v) for v in x]
+        if isinstance(x, (datetime, date)):
+            return x.isoformat()
+        # Basic JSON types pass through
+        if isinstance(x, (str, int, float, bool)) or x is None:
+            return x
+        # Fallback: try __dict__ or string
+        if hasattr(x, "__dict__"):
+            return NodesGenerationAgent._to_primitive(vars(x))
+        return str(x)
 
     @staticmethod
-    def _get_total_questions(topic_obj: Any, _dspt_obj: Any) -> int:
-        """
-        Return the per-topic total_questions from the interview_topics entry ONLY.
-        Enforces >= 4 because at least one Deep Dive (threshold >= 2) is required:
-          total_questions = 1 (Opening) + 1 (Direct) + sum(Deep Dive thresholds >= 2) → minimum 4.
-        """
-        d = NodesGenerationAgent._as_dict(topic_obj)
-        tq = d.get("total_questions")
-        if not isinstance(tq, int) or tq < 4:
-            raise ValueError(
-                "Each topic must set total_questions >= 4 because at least 1 Deep Dive (min threshold 2) is required."
-            )
-        return tq
+    def _to_json_one(x: Any) -> str:
+        """Stable JSON for an arbitrary object (handles nested Pydantic models)."""
+        return json.dumps(NodesGenerationAgent._to_primitive(copy.deepcopy(x)), ensure_ascii=False)
+
+
+    # ----------------- utilities -----------------
 
     @staticmethod
     async def _gen_once(
         per_topic_summary_json: str,
-        total_no_questions_topic,  # kept for interface compatibility
         thread_id,
         nodes_error,
     ) -> TopicWithNodesSchema:
@@ -234,12 +373,11 @@ class NodesGenerationAgent:
 
         out: List[TopicWithNodesSchema] = []
 
-        for topic_obj, dspt_obj in zip(topics_list, summaries_list):
-            total_no_questions_topic = NodesGenerationAgent._get_total_questions(topic_obj, dspt_obj)
+        for dspt_obj in zip(topics_list, summaries_list):
             per_topic_summary_json = NodesGenerationAgent._to_json_one(dspt_obj)
 
             resp = await NodesGenerationAgent._gen_once(
-                per_topic_summary_json, total_no_questions_topic, state.id, state.nodes_error
+                per_topic_summary_json, state.id, state.nodes_error
             )
             out.append(resp)
 
@@ -254,6 +392,7 @@ class NodesGenerationAgent:
         state.nodes = NodesSchema(
             topics_with_nodes=[t.model_dump() if hasattr(t, "model_dump") else t for t in out]
         )
+        log_info("Nodes generation completed")
         return state
 
     @staticmethod
@@ -283,11 +422,8 @@ class NodesGenerationAgent:
                 + "\n"
             )
             log_retry_iteration(
-                agent_name=AGENT_NAME,
-                iteration=count,
                 reason=f"[NodesGen][ValidationError] Container NodesSchema invalid\n {ve}",
-                logger=LOGGER,
-                pretty_json=True,
+                iteration=count,
             )
             count += 1
             return True
@@ -302,11 +438,8 @@ class NodesGenerationAgent:
         except Exception as e:
             state.nodes_error += "\n[NodesSchema Payload Error]\n" + str(e) + "\n"
             log_retry_iteration(
-                agent_name=AGENT_NAME,
-                iteration=count,
                 reason=f"[NodesGen][ValidationError] Could not read topics_with_nodes: {e}",
-                logger=LOGGER,
-                pretty_json=True,
+                iteration=count,
             )
             count += 1
             return True
@@ -323,11 +456,8 @@ class NodesGenerationAgent:
 
         if any_invalid:
             log_retry_iteration(
-                agent_name=AGENT_NAME,
-                iteration=count,
                 reason="node schema error",
-                logger=LOGGER,
-                pretty_json=True,
+                iteration=count,
             )
             count += 1
         return any_invalid
