@@ -57,12 +57,14 @@ class JsonLogFormatter(logging.Formatter):
             payload["exc_type"] = record.exc_info[0].__name__
         return json.dumps(payload, ensure_ascii=False)
 
+
 def _ensure_log_dir(path: str) -> None:
     try:
         os.makedirs(path, exist_ok=True)
     except Exception:
         # Fall back to current directory if we cannot make log dir.
         pass
+
 
 def get_logger(name: str = "summary_generation_agent") -> logging.Logger:
     """

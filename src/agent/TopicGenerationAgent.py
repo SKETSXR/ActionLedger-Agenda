@@ -99,14 +99,18 @@ LOGGER = _build_logger(
     backup_count=LOG_BACKUP_COUNT,
 )
 
+
 def log_info(msg: str) -> None:
     LOGGER.info(msg)
+
 
 def log_warning(msg: str) -> None:
     LOGGER.warning(msg)
 
+
 def log_error(msg: str) -> None:
     LOGGER.error(msg)
+
 
 # Helper to pretty-print JSON strings/objects
 def _fmt_full(val: Any) -> str:
