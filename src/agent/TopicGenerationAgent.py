@@ -3,6 +3,8 @@ import logging
 import os
 import sys
 import time
+import json
+from typing import Any, Sequence, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from string import Template
 from typing import Any, Callable, Coroutine, List, Optional, Sequence
@@ -112,55 +114,101 @@ def log_error(msg: str) -> None:
     LOGGER.error(msg)
 
 
-# Helper to pretty-print JSON strings/objects
-def _fmt_full(val: Any) -> str:
-    """Return full string; pretty-print JSON strings/objects when possible."""
+# ---------- config ----------
+RAW_TEXT_FIELDS = {
+    "question_guidelines", "guidelines", "template", "prompt",
+    "policy", "notes", "rubric", "examples", "description_md",
+}
+
+
+# ---------- tiny utils ----------
+def _looks_like_json(s: str) -> bool:
+    s = s.strip()
+    return (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]"))
+
+
+def _jsonish(x: Any) -> Any:
+    if isinstance(x, str) and _looks_like_json(x):
+        try:
+            return json.loads(x)
+        except Exception:
+            return x
+    if isinstance(x, dict):
+        return {k: _jsonish(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_jsonish(v) for v in x]
+    return x
+
+
+def _compact(x: Any) -> str:
     try:
-        # If it's already a dict/list, pretty print
-        if isinstance(val, (dict, list)):
-            import json as _json
-            return _json.dumps(val, ensure_ascii=False, indent=2)
-        # If it's a JSON-looking string, parse and pretty print
-        if isinstance(val, str):
-            s = val.strip()
-            if (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]")):
-                import json as _json
-                return _json.dumps(_json.loads(s), ensure_ascii=False, indent=2)
-        return str(val)
+        return json.dumps(x, ensure_ascii=False, indent=2) if isinstance(x, (dict, list)) else str(x)
     except Exception:
-        return str(val)
+        return str(x)
 
 
-# Tool activity, printed in human like style
+def _walk(o: Any, path: Tuple[Any, ...] = ()):
+    if isinstance(o, dict):
+        for k, v in o.items():
+            yield from _walk(v, path + (k,))
+    elif isinstance(o, (list, tuple)):
+        for i, v in enumerate(o):
+            yield from _walk(v, path + (i,))
+    else:
+        yield path, o
+
+
+# ---------- redaction for compact logs ----------
+def _redact(o: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
+    o = _jsonish(o)
+    if isinstance(o, dict):
+        out = {}
+        for k, v in o.items():
+            key = k.lower() if isinstance(k, str) else k
+            if isinstance(k, str) and key in RAW_TEXT_FIELDS and isinstance(v, str):
+                if omit_fields:
+                    continue
+                head = (v.strip().splitlines() or [""])[0]
+                head = head[:preview_len] + ("…" if len(head) > preview_len else "")
+                out[k] = f"<{k}: {len(v)} chars; see raw block below — \"{head}\">"
+            else:
+                out[k] = _redact(v, omit_fields=omit_fields, preview_len=preview_len)
+        return out
+    if isinstance(o, (list, tuple)):
+        return [_redact(v, omit_fields=omit_fields, preview_len=preview_len) for v in o]
+    return o
+
+
+# ---------- main entry ----------
 def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> None:
     if not messages:
         return
-    tool_calls = getattr(ai_msg, "tool_calls", None)
-    if tool_calls:
-        log_info("Tool plan:")
-        for tc in tool_calls:
-            try:
-                if isinstance(tc, dict):
-                    name = tc.get("name")
-                    args = tc.get("args")
-                else:
-                    name = getattr(tc, "name", None)
-                    args = getattr(tc, "args", None)
-            except Exception:
-                name, args = str(tc), None
-            log_info(f"  planned -> {name} args={_fmt_full(args)}")
 
+    # Planned tool calls
+    tcalls = getattr(ai_msg, "tool_calls", None)
+    if tcalls:
+        log_info("Tool plan:")
+        for tc in tcalls:
+            name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+            args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
+            LOGGER.info(f"  planned -> {name} args={_compact(_redact(_jsonish(args), omit_fields=False))}")
+
+    # Trailing tool results
+    tool_msgs = []
     i = len(messages) - 1
-    any_results = False
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
-        if not any_results:
-            log_info("Tool results:")
-            any_results = True
-        tm = messages[i]
-        log_info(
-            f"  result -> id={getattr(tm, 'tool_call_id', None)} data={_fmt_full(getattr(tm, 'content', None))}"
-        )
+        tool_msgs.append(messages[i])
         i -= 1
+    if not tool_msgs:
+        return
+
+    log_info("Tool results:")
+
+    # 1) Compact (omit long-text fields) for all results
+    for tm in tool_msgs:
+        content = getattr(tm, "content", None)
+        compact = _redact(_jsonish(content), omit_fields=True)
+        LOGGER.info(f"  result <- id={getattr(tm, 'tool_call_id', None)} data={_compact(compact)}")
 
 
 def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = None) -> None:
