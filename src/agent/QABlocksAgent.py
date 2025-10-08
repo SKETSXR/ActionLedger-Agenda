@@ -418,15 +418,15 @@ class QABlockGenerationAgent:
             return "continue"
         return "respond"
 
-    # ---------- RunnableLambda wrappers & lazy compile ----------
+    # ---------- RunnableLambda wrappers & compile ----------
     @classmethod
     def _get_inner_graph(cls):
         if cls._compiled_inner_graph is not None:
             return cls._compiled_inner_graph
 
         workflow = StateGraph(_QAInnerState)
-        workflow.add_node("agent", RunnableLambda(cls._agent_node))     # wrap async -> awaited
-        workflow.add_node("respond", RunnableLambda(cls._respond_node)) # wrap async -> awaited
+        workflow.add_node("agent", RunnableLambda(cls._agent_node))     
+        workflow.add_node("respond", RunnableLambda(cls._respond_node)) 
         workflow.add_node("tools", ToolNode(cls.MONGO_TOOLS, tags=["mongo-tools"]))
         workflow.set_entry_point("agent")
         workflow.add_conditional_edges("agent", cls._should_continue, {"continue": "tools", "respond": "respond"})
