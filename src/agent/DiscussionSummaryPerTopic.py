@@ -3,14 +3,19 @@ import asyncio
 import logging
 import os
 import sys
+import time
 from string import Template
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
 from logging.handlers import TimedRotatingFileHandler
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph import MessagesState
 from langgraph.prebuilt import ToolNode
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.tools import BaseTool
+from langchain_core.runnables import RunnableLambda
+from pydantic import PrivateAttr
 
 from src.mongo_tools import get_mongo_tools
 from ..schema.agent_schema import AgentInternalState
@@ -37,6 +42,17 @@ LOG_FILE = os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_FILE", f"{AGENT_NAME}.log")
 LOG_ROTATE_WHEN = os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_ROTATE_WHEN", "midnight")
 LOG_ROTATE_INTERVAL = int(os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_ROTATE_INTERVAL", "1"))
 LOG_BACKUP_COUNT = int(os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_BACKUP_COUNT", "365"))
+
+# Retry/timeout knobs (namespaced for this agent)
+LLM_TIMEOUT_SECONDS: float = float(os.getenv("DISC_AGENT_LLM_TIMEOUT_SECONDS", "90"))
+LLM_RETRIES: int = int(os.getenv("DISC_AGENT_LLM_RETRIES", "2"))
+LLM_BACKOFF_SECONDS: float = float(os.getenv("DISC_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5"))
+
+TOOL_TIMEOUT_SECONDS: float = float(os.getenv("DISC_AGENT_TOOL_TIMEOUT_SECONDS", "30"))
+TOOL_RETRIES: int = int(os.getenv("DISC_AGENT_TOOL_RETRIES", "2"))
+TOOL_BACKOFF_SECONDS: float = float(os.getenv("DISC_AGENT_TOOL_RETRY_BACKOFF_SECONDS", "1.5"))
+
+_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("DISC_AGENT_TOOL_MAX_WORKERS", "8")))
 
 # ---------- clean log redaction config ----------
 RAW_TEXT_FIELDS = {
@@ -109,13 +125,6 @@ def log_warning(msg: str) -> None:
 
 def log_error(msg: str) -> None:
     LOGGER.error(msg)
-
-
-# ---------- config ----------
-RAW_TEXT_FIELDS = {
-    "question_guidelines", "guidelines", "template", "prompt",
-    "policy", "notes", "rubric", "examples", "description_md",
-}
 
 
 # ---------- tiny utils ----------
@@ -200,8 +209,6 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
         return
 
     log_info("Tool results:")
-
-    # 1) Compact (omit long-text fields) for all results
     for tm in tool_msgs:
         content = getattr(tm, "content", None)
         compact = _redact(_jsonish(content), omit_fields=True)
@@ -214,106 +221,226 @@ def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = Non
     log_warning(f"Retry {iteration}: {reason}{suffix}")
 
 
+# ======================================
+# Retry / timeout helper for async ops
+# ======================================
+
+async def _retry_async(
+    op_factory,
+    *,
+    retries: int,
+    timeout_s: float,
+    backoff_base_s: float,
+    retry_reason: str,
+    iteration_start: int = 1,
+):
+    attempt = 0
+    last_exc = None
+    while attempt <= retries:
+        try:
+            return await asyncio.wait_for(op_factory(), timeout=timeout_s)
+        except Exception as exc:
+            last_exc = exc
+            log_retry_iteration(retry_reason, iteration_start + attempt, {"error": str(exc)})
+            attempt += 1
+            if attempt > retries:
+                break
+            await asyncio.sleep(backoff_base_s * (2 ** (attempt - 1)))
+    raise last_exc
+
+
+# ======================================================
+# Tool wrapper with timeout + retry
+# ======================================================
+
+class RetryTool(BaseTool):
+    _inner: BaseTool = PrivateAttr()
+    _retries: int = PrivateAttr()
+    _timeout_s: float = PrivateAttr()
+    _backoff: float = PrivateAttr()
+
+    def __init__(self, inner: BaseTool, *, retries: int, timeout_s: float, backoff_base_s: float) -> None:
+        name = getattr(inner, "name", inner.__class__.__name__)
+        description = getattr(inner, "description", "") or "Retried tool wrapper"
+        args_schema = getattr(inner, "args_schema", None)
+        super().__init__(name=name, description=description, args_schema=args_schema)
+        self._inner = inner
+        self._retries = retries
+        self._timeout_s = timeout_s
+        self._backoff = backoff_base_s
+
+    def _run(self, *args, **kwargs):
+        config = kwargs.pop("config", None)
+
+        def _call_once():
+            return self._inner._run(*args, **{**kwargs, "config": config})
+
+        attempt = 0
+        last_exc = None
+        while attempt <= self._retries:
+            fut = _EXECUTOR.submit(_call_once)
+            try:
+                return fut.result(timeout=self._timeout_s)
+            except FuturesTimeout as exc:
+                last_exc = exc
+                log_retry_iteration(f"tool_timeout:{self.name}", attempt + 1)
+            except BaseException as exc:
+                last_exc = exc
+                log_retry_iteration(f"tool_error:{self.name}", attempt + 1, {"error": str(exc)})
+            attempt += 1
+            if attempt <= self._retries:
+                time.sleep(self._backoff * (2 ** (attempt - 1)))
+        raise last_exc
+
+    async def _arun(self, *args, **kwargs):
+        config = kwargs.pop("config", None)
+
+        async def _call_once():
+            if hasattr(self._inner, "_arun"):
+                return await self._inner._arun(*args, **{**kwargs, "config": config})
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, lambda: self._inner._run(*args, **{**kwargs, "config": config}))
+
+        return await _retry_async(
+            _call_once,
+            retries=self._retries,
+            timeout_s=self._timeout_s,
+            backoff_base_s=self._backoff,
+            retry_reason=f"tool_async:{self.name}",
+        )
+
+
 # ---------- Inner ReAct state for per-topic Mongo loop ----------
 class _PerTopicState(MessagesState):
-    """State container for the inner ReAct-style loop that summarizes a single topic."""
     final_response: DiscussionSummaryPerTopicSchema.DiscussionTopic
 
 
 class PerTopicDiscussionSummaryGenerationAgent:
-    """
-    Generates per-topic discussion summaries using a small tool-using ReAct loop.
-    The loop can call Mongo tools, and the final assistant output is coerced
-    into DiscussionSummaryPerTopicSchema.DiscussionTopic.
-    """
-
-    # LLM & tools (class attributes so clients/bindings are reused)
     llm_dts = llm_dts
-    MONGO_TOOLS = get_mongo_tools(llm=llm_dts)
+
+    # wrap Mongo tools with retry/timeout
+    _RAW_MONGO_TOOLS = get_mongo_tools(llm=llm_dts)
+    MONGO_TOOLS = [
+        RetryTool(t, retries=TOOL_RETRIES, timeout_s=TOOL_TIMEOUT_SECONDS, backoff_base_s=TOOL_BACKOFF_SECONDS)
+        for t in _RAW_MONGO_TOOLS
+    ]
+
     _AGENT_MODEL = llm_dts.bind_tools(MONGO_TOOLS)
     _STRUCTURED_MODEL = llm_dts.with_structured_output(
         DiscussionSummaryPerTopicSchema.DiscussionTopic, method="function_calling"
     )
 
-    # ---------- Inner graph (agent -> tools -> agent ... -> respond) ----------
+    _compiled_graph = None  # cache for inner graph
+
+    # ---------- LLM helpers ----------
     @staticmethod
-    def _agent_node(state: _PerTopicState):
-        """
-        Invoke the tool-enabled model. If the assistant plans tool calls,
-        LangGraph will execute them via the ToolNode.
-        """
+    async def _invoke_agent(messages: Sequence[Any]) -> Any:
+        async def _call():
+            if hasattr(PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL, "ainvoke"):
+                return await PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL.ainvoke(messages)
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL.invoke, messages)
+
         log_info("Calling LLM (agent)")
-        log_tool_activity(state["messages"], ai_msg=None)
-        ai = PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL.invoke(state["messages"])
+        ai = await _retry_async(
+            _call,
+            retries=LLM_RETRIES,
+            timeout_s=LLM_TIMEOUT_SECONDS,
+            backoff_base_s=LLM_BACKOFF_SECONDS,
+            retry_reason="llm:agent",
+        )
         log_info("LLM (agent) call succeeded")
+        return ai
+
+    @staticmethod
+    async def _invoke_structured(ai_content: str) -> DiscussionSummaryPerTopicSchema.DiscussionTopic:
+        payload = [HumanMessage(content=ai_content)]
+
+        async def _call():
+            if hasattr(PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL, "ainvoke"):
+                return await PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL.ainvoke(payload)
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL.invoke, payload)
+
+        log_info("Calling LLM (structured)")
+        obj = await _retry_async(
+            _call,
+            retries=LLM_RETRIES,
+            timeout_s=LLM_TIMEOUT_SECONDS,
+            backoff_base_s=LLM_BACKOFF_SECONDS,
+            retry_reason="llm:structured",
+        )
+        log_info("LLM (structured) call succeeded")
+        return obj
+
+    # ---------- ASYNC NODE IMPLS (called by wrappers below) ----------
+    @staticmethod
+    async def _agent_node(state: _PerTopicState):
+        log_tool_activity(state["messages"], ai_msg=None)
+        ai = await PerTopicDiscussionSummaryGenerationAgent._invoke_agent(state["messages"])
         return {"messages": [ai]}
 
     @staticmethod
-    def _respond_node(state: _PerTopicState):
-        """
-        Take the most recent assistant message without tool calls and coerce it
-        into DiscussionTopic via the structured-output model. If none exists,
-        fall back to the most recent assistant message, then to the last message.
-        """
+    async def _respond_node(state: _PerTopicState):
         msgs = state["messages"]
-
         ai_content = None
         for m in reversed(msgs):
             if getattr(m, "type", None) in ("ai", "assistant"):
                 if not getattr(m, "tool_calls", None):
                     ai_content = m.content
                     break
-
         if ai_content is None:
             for m in reversed(msgs):
                 if getattr(m, "type", None) in ("ai", "assistant"):
                     ai_content = m.content
                     break
-
         if ai_content is None:
             ai_content = msgs[-1].content
 
-        log_info("Calling LLM (structured)")
-        final_obj = PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL.invoke(
-            [HumanMessage(content=ai_content)]
-        )
-        log_info("LLM (structured) call succeeded")
+        final_obj = await PerTopicDiscussionSummaryGenerationAgent._invoke_structured(ai_content)
         return {"final_response": final_obj}
 
     @staticmethod
     def _should_continue(state: _PerTopicState):
-        """
-        Router: if the latest assistant message contains tool calls,
-        continue to the ToolNode, otherwise, proceed to respond.
-        """
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
             log_tool_activity(state["messages"], ai_msg=last)
             return "continue"
         return "respond"
 
-    # Compile the inner ReAct graph once
-    _workflow = StateGraph(_PerTopicState)
-    _workflow.add_node("agent", _agent_node)
-    _workflow.add_node("respond", _respond_node)
-    _workflow.add_node("tools", ToolNode(MONGO_TOOLS, tags=["mongo-tools"]))
-    _workflow.set_entry_point("agent")
-    _workflow.add_conditional_edges(
-        "agent",
-        _should_continue,
-        {"continue": "tools", "respond": "respond"},
-    )
-    _workflow.add_edge("tools", "agent")
-    _workflow.add_edge("respond", END)
-    _per_topic_graph = _workflow.compile()
+    # ---------- RunnableLambda top-level async wrappers ----------
+    # (avoids any staticmethod/class-binding ambiguity)
+    @staticmethod
+    async def _agent_node_async(state: _PerTopicState):
+        return await PerTopicDiscussionSummaryGenerationAgent._agent_node(state)
 
-    # ---------- Single-topic runner ----------
+    @staticmethod
+    async def _respond_node_async(state: _PerTopicState):
+        return await PerTopicDiscussionSummaryGenerationAgent._respond_node(state)
+
+    # ---------- Lazy compile inner ReAct graph ----------
+    @classmethod
+    def _get_graph(cls):
+        if cls._compiled_graph is not None:
+            return cls._compiled_graph
+
+        workflow = StateGraph(_PerTopicState)
+        workflow.add_node("agent", RunnableLambda(cls._agent_node_async))
+        workflow.add_node("respond", RunnableLambda(cls._respond_node_async))
+        workflow.add_node("tools", ToolNode(cls.MONGO_TOOLS, tags=["mongo-tools"]))
+        workflow.set_entry_point("agent")
+        workflow.add_conditional_edges(
+            "agent",
+            cls._should_continue,
+            {"continue": "tools", "respond": "respond"},
+        )
+        workflow.add_edge("tools", "agent")
+        workflow.add_edge("respond", END)
+        cls._compiled_graph = workflow.compile()
+        return cls._compiled_graph
+
     @staticmethod
     async def _one_topic_call(generated_summary_json: str, topic: Dict[str, Any], thread_id):
-        """
-        Runs the inner graph for a single topic:
-        System prompt -> agent (may call Mongo tools) -> respond (structured DiscussionTopic).
-        """
         class AtTemplate(Template):
             delimiter = "@"
 
@@ -327,9 +454,8 @@ class PerTopicDiscussionSummaryGenerationAgent:
         sys_message = SystemMessage(content=content)
         trigger_message = HumanMessage(content="Based on the provided instructions please start the process")
 
-        result = await PerTopicDiscussionSummaryGenerationAgent._per_topic_graph.ainvoke(
-            {"messages": [sys_message, trigger_message]}
-        )
+        graph = PerTopicDiscussionSummaryGenerationAgent._get_graph()
+        result = await graph.ainvoke({"messages": [sys_message, trigger_message]})
         return result["final_response"]
 
     # ---------- Regeneration policy ----------
@@ -337,9 +463,18 @@ class PerTopicDiscussionSummaryGenerationAgent:
     async def should_regenerate(state: AgentInternalState):
         """
         Regenerate if the set of topics in the output does not exactly match
-        the set of input topics.
+        the set of input topics. Includes a guard to avoid infinite loops if
+        nothing was produced.
         """
         global count
+
+        # Guard: if nothing produced, allow at most 1 retry in this condition
+        if not getattr(state, "discussion_summary_per_topic", None) or \
+           not getattr(state.discussion_summary_per_topic, "discussion_topics", None):
+            log_retry_iteration("No discussion topics produced; retrying once", count)
+            count += 1
+            # retry only once under this specific condition
+            return count <= 2
 
         input_topics = {t.topic for t in state.interview_topics.interview_topics}
         output_topics = {dt.topic for dt in state.discussion_summary_per_topic.discussion_topics}
@@ -395,7 +530,6 @@ class PerTopicDiscussionSummaryGenerationAgent:
         discussion_topics = []
         for idx, r in enumerate(results):
             if isinstance(r, Exception):
-                # keep behavior: skip failed topic silently, but log it
                 log_warning(f"Topic {idx} summarization failed: {r}")
                 continue
 

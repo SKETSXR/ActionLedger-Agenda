@@ -3,15 +3,20 @@ import copy
 import logging
 import os
 import sys
-from typing import List, Any, Dict, Optional, Tuple, Sequence
+import time
+import asyncio
+from typing import List, Any, Dict, Optional, Tuple, Sequence, Callable, Coroutine
 from datetime import datetime, date
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
 from logging.handlers import TimedRotatingFileHandler
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph import MessagesState
 from langgraph.prebuilt import ToolNode
 from langchain_core.messages import SystemMessage, HumanMessage
-from pydantic import ValidationError
+from langchain_core.tools import BaseTool
+from langchain_core.runnables import RunnableLambda
+from pydantic import ValidationError, PrivateAttr
 from string import Template
 
 from src.mongo_tools import get_mongo_tools
@@ -37,6 +42,17 @@ LOG_FILE = os.getenv("NODES_AGENT_LOG_FILE", f"{AGENT_NAME}.log")
 LOG_ROTATE_WHEN = os.getenv("NODES_AGENT_LOG_ROTATE_WHEN", "midnight")
 LOG_ROTATE_INTERVAL = int(os.getenv("NODES_AGENT_LOG_ROTATE_INTERVAL", "1"))
 LOG_BACKUP_COUNT = int(os.getenv("NODES_AGENT_LOG_BACKUP_COUNT", "365"))
+
+# Retry/timeout knobs (namespaced for this agent)
+LLM_TIMEOUT_SECONDS: float = float(os.getenv("NODES_AGENT_LLM_TIMEOUT_SECONDS", "90"))
+LLM_RETRIES: int = int(os.getenv("NODES_AGENT_LLM_RETRIES", "2"))
+LLM_BACKOFF_SECONDS: float = float(os.getenv("NODES_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5"))
+
+TOOL_TIMEOUT_SECONDS: float = float(os.getenv("NODES_AGENT_TOOL_TIMEOUT_SECONDS", "30"))
+TOOL_RETRIES: int = int(os.getenv("NODES_AGENT_TOOL_RETRIES", "2"))
+TOOL_BACKOFF_SECONDS: float = float(os.getenv("NODES_AGENT_TOOL_RETRY_BACKOFF_SECONDS", "1.5"))
+
+_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("NODES_AGENT_TOOL_MAX_WORKERS", "8")))
 
 RAW_TEXT_FIELDS = {
     "question_guidelines", "guidelines", "template", "prompt",
@@ -70,12 +86,10 @@ def _build_logger(
     os.makedirs(log_dir, exist_ok=True)
     file_path = os.path.join(log_dir, filename)
 
-    # Console handler
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(level)
     ch.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
 
-    # Rotating file handler
     fh = TimedRotatingFileHandler(
         file_path, when=when, interval=interval, backupCount=backup_count, encoding="utf-8", utc=False
     )
@@ -108,13 +122,6 @@ def log_warning(msg: str) -> None:
 
 def log_error(msg: str) -> None:
     LOGGER.error(msg)
-
-
-# ---------- config ----------
-RAW_TEXT_FIELDS = {
-    "question_guidelines", "guidelines", "template", "prompt",
-    "policy", "notes", "rubric", "examples", "description_md",
-}
 
 
 # ---------- tiny utils ----------
@@ -180,7 +187,6 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
     if not messages:
         return
 
-    # Planned tool calls
     tcalls = getattr(ai_msg, "tool_calls", None)
     if tcalls:
         log_info("Tool plan:")
@@ -189,7 +195,6 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
             args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
             LOGGER.info(f"  planned -> {name} args={_compact(_redact(_jsonish(args), omit_fields=False))}")
 
-    # Trailing tool results
     tool_msgs = []
     i = len(messages) - 1
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
@@ -199,8 +204,6 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
         return
 
     log_info("Tool results:")
-
-    # 1) Compact (omit long-text fields) for all results
     for tm in tool_msgs:
         content = getattr(tm, "content", None)
         compact = _redact(_jsonish(content), omit_fields=True)
@@ -208,9 +211,112 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
 
 
 def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = None) -> None:
-    """Human-format retry line."""
     suffix = f" | extra={extra}" if extra else ""
     log_warning(f"Retry {iteration}: {reason}{suffix}")
+
+
+# ======================================
+# Retry / timeout helper for async ops
+# ======================================
+
+async def _retry_async(
+    op_factory: Callable[[], Coroutine[Any, Any, Any]],
+    *,
+    retries: int,
+    timeout_s: float,
+    backoff_base_s: float,
+    retry_reason: str,
+    iteration_start: int = 1,
+) -> Any:
+    attempt = 0
+    last_exc: Optional[BaseException] = None
+    while attempt <= retries:
+        try:
+            return await asyncio.wait_for(op_factory(), timeout=timeout_s)
+        except Exception as exc:
+            last_exc = exc
+            log_retry_iteration(retry_reason, iteration_start + attempt, {"error": str(exc)})
+            attempt += 1
+            if attempt > retries:
+                break
+            await asyncio.sleep(backoff_base_s * (2 ** (attempt - 1)))
+    assert last_exc is not None
+    raise last_exc
+
+
+# ======================================================
+# Tool wrapper compatible with bind_tools & ToolNode
+# ======================================================
+
+class RetryTool(BaseTool):
+    """
+    Delegates to an inner BaseTool but adds timeout + retry for both sync and async paths.
+    Preserves name/description/args_schema for bind_tools & ToolNode compatibility.
+    """
+
+    _inner: BaseTool = PrivateAttr()
+    _retries: int = PrivateAttr()
+    _timeout_s: float = PrivateAttr()
+    _backoff: float = PrivateAttr()
+
+    def __init__(
+        self,
+        inner: BaseTool,
+        *,
+        retries: int,
+        timeout_s: float,
+        backoff_base_s: float,
+    ) -> None:
+        name = getattr(inner, "name", inner.__class__.__name__)
+        description = getattr(inner, "description", "") or "Retried tool wrapper"
+        args_schema = getattr(inner, "args_schema", None)
+
+        super().__init__(name=name, description=description, args_schema=args_schema)
+        self._inner = inner
+        self._retries = retries
+        self._timeout_s = timeout_s
+        self._backoff = backoff_base_s
+
+    def _run(self, *args: Any, **kwargs: Any) -> Any:
+        config = kwargs.pop("config", None)
+
+        def _call_once():
+            return self._inner._run(*args, **{**kwargs, "config": config})
+
+        attempt = 0
+        last_exc: Optional[BaseException] = None
+        while attempt <= self._retries:
+            future = _EXECUTOR.submit(_call_once)
+            try:
+                return future.result(timeout=self._timeout_s)
+            except FuturesTimeout as exc:
+                last_exc = exc
+                log_retry_iteration(f"tool_timeout:{self.name}", attempt + 1)
+            except BaseException as exc:
+                last_exc = exc
+                log_retry_iteration(f"tool_error:{self.name}", attempt + 1, {"error": str(exc)})
+            attempt += 1
+            if attempt <= self._retries:
+                time.sleep(self._backoff * (2 ** (attempt - 1)))
+        assert last_exc is not None
+        raise last_exc
+
+    async def _arun(self, *args: Any, **kwargs: Any) -> Any:
+        config = kwargs.pop("config", None)
+
+        async def _call_once():
+            if hasattr(self._inner, "_arun"):
+                return await getattr(self._inner, "_arun")(*args, **{**kwargs, "config": config})
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, lambda: self._inner._run(*args, **{**kwargs, "config": config}))
+
+        return await _retry_async(
+            _call_once,
+            retries=self._retries,
+            timeout_s=self._timeout_s,
+            backoff_base_s=self._backoff,
+            retry_reason=f"tool_async:{self.name}",
+        )
 
 
 # ---------- Inner ReAct state for Mongo loop (per-topic) ----------
@@ -226,35 +332,78 @@ class NodesGenerationAgent:
     TopicWithNodesSchema, and validating the overall NodesSchema container.
     """
 
-    # LLM & tools (kept as class attributes to reuse clients and bindings)
     llm_n = llm_n
-    MONGO_TOOLS = get_mongo_tools(llm=llm_n)
+
+    # Wrap Mongo tools with retry/timeout
+    _RAW_MONGO_TOOLS: List[BaseTool] = get_mongo_tools(llm=llm_n)
+    MONGO_TOOLS: List[BaseTool] = [
+        RetryTool(
+            t,
+            retries=TOOL_RETRIES,
+            timeout_s=TOOL_TIMEOUT_SECONDS,
+            backoff_base_s=TOOL_BACKOFF_SECONDS,
+        )
+        for t in _RAW_MONGO_TOOLS
+    ]
 
     _AGENT_MODEL = llm_n.bind_tools(MONGO_TOOLS)
     _STRUCTURED_MODEL = llm_n.with_structured_output(
         TopicWithNodesSchema, method="function_calling"
     )
 
-    # ---------- Inner graph (agent -> tools -> agent ... -> respond) ----------
+    _compiled_graph = None  # cache inner graph
+
+    # ---------- LLM helpers with retries ----------
+
     @staticmethod
-    def _agent_node(state: _MongoNodesState):
-        """
-        Invoke the tool-enabled model. If the assistant plans tool calls,
-        LangGraph will execute them via the ToolNode.
-        """
+    async def _invoke_agent(messages: Sequence[Any]) -> Any:
+        async def _call():
+            if hasattr(NodesGenerationAgent._AGENT_MODEL, "ainvoke"):
+                return await NodesGenerationAgent._AGENT_MODEL.ainvoke(messages)
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, NodesGenerationAgent._AGENT_MODEL.invoke, messages)
+
         log_info("Calling LLM (agent)")
-        log_tool_activity(state["messages"], ai_msg=None)
-        ai = NodesGenerationAgent._AGENT_MODEL.invoke(state["messages"])
+        result = await _retry_async(
+            _call,
+            retries=LLM_RETRIES,
+            timeout_s=LLM_TIMEOUT_SECONDS,
+            backoff_base_s=LLM_BACKOFF_SECONDS,
+            retry_reason="llm:agent",
+        )
         log_info("LLM (agent) call succeeded")
+        return result
+
+    @staticmethod
+    async def _invoke_structured(ai_content: str) -> TopicWithNodesSchema:
+        payload = [HumanMessage(content=ai_content)]
+
+        async def _call():
+            if hasattr(NodesGenerationAgent._STRUCTURED_MODEL, "ainvoke"):
+                return await NodesGenerationAgent._STRUCTURED_MODEL.ainvoke(payload)
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, NodesGenerationAgent._STRUCTURED_MODEL.invoke, payload)
+
+        log_info("Calling LLM (structured)")
+        result = await _retry_async(
+            _call,
+            retries=LLM_RETRIES,
+            timeout_s=LLM_TIMEOUT_SECONDS,
+            backoff_base_s=LLM_BACKOFF_SECONDS,
+            retry_reason="llm:structured",
+        )
+        log_info("LLM (structured) call succeeded")
+        return result
+
+    # ---------- Async node impls ----------
+    @staticmethod
+    async def _agent_node(state: _MongoNodesState):
+        log_tool_activity(state["messages"], ai_msg=None)
+        ai = await NodesGenerationAgent._invoke_agent(state["messages"])
         return {"messages": [ai]}
 
     @staticmethod
-    def _respond_node(state: _MongoNodesState):
-        """
-        Take the most recent assistant message without tool calls and coerce it
-        into TopicWithNodesSchema using the structured-output model. If none exists,
-        fall back to the most recent assistant message, then to the last message.
-        """
+    async def _respond_node(state: _MongoNodesState):
         msgs = state["messages"]
 
         ai_content = None
@@ -273,42 +422,50 @@ class NodesGenerationAgent:
         if ai_content is None:
             ai_content = msgs[-1].content
 
-        log_info("Calling LLM (structured)")
-        final_obj = NodesGenerationAgent._STRUCTURED_MODEL.invoke([HumanMessage(content=ai_content)])
-        log_info("LLM (structured) call succeeded")
+        final_obj = await NodesGenerationAgent._invoke_structured(ai_content)
         return {"final_response": final_obj}
 
     @staticmethod
     def _should_continue(state: _MongoNodesState):
-        """
-        Router node: if the latest assistant message contains tool calls,
-        continue to the ToolNode, otherwise, proceed to respond.
-        """
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
             log_tool_activity(state["messages"], ai_msg=last)
             return "continue"
         return "respond"
 
-    # Compile inner ReAct graph once
-    _workflow = StateGraph(_MongoNodesState)
-    _workflow.add_node("agent", _agent_node)
-    _workflow.add_node("respond", _respond_node)
-    _workflow.add_node("tools", ToolNode(MONGO_TOOLS, tags=["mongo-tools+arith-tools"]))
-    _workflow.set_entry_point("agent")
-    _workflow.add_conditional_edges(
-        "agent",
-        _should_continue,
-        {"continue": "tools", "respond": "respond"},
-    )
-    _workflow.add_edge("tools", "agent")
-    _workflow.add_edge("respond", END)
-    _nodes_graph = _workflow.compile()
+    # ---------- RunnableLambda wrappers (avoid coroutine return) ----------
+    @staticmethod
+    async def _agent_node_async(state: _MongoNodesState):
+        return await NodesGenerationAgent._agent_node(state)
+
+    @staticmethod
+    async def _respond_node_async(state: _MongoNodesState):
+        return await NodesGenerationAgent._respond_node(state)
+
+    # ---------- Lazy compile inner graph ----------
+    @classmethod
+    def _get_inner_graph(cls):
+        if cls._compiled_graph is not None:
+            return cls._compiled_graph
+
+        workflow = StateGraph(_MongoNodesState)
+        workflow.add_node("agent", RunnableLambda(cls._agent_node_async))
+        workflow.add_node("respond", RunnableLambda(cls._respond_node_async))
+        workflow.add_node("tools", ToolNode(cls.MONGO_TOOLS, tags=["mongo-tools+arith-tools"]))
+        workflow.set_entry_point("agent")
+        workflow.add_conditional_edges(
+            "agent",
+            cls._should_continue,
+            {"continue": "tools", "respond": "respond"},
+        )
+        workflow.add_edge("tools", "agent")
+        workflow.add_edge("respond", END)
+        cls._compiled_graph = workflow.compile()
+        return cls._compiled_graph
 
     # ----------------- utilities -----------------
     @staticmethod
     def _as_dict(x: Any) -> Dict[str, Any]:
-        """Best-effort conversion to a dict."""
         if hasattr(x, "model_dump"):
             return x.model_dump()
         if hasattr(x, "dict"):
@@ -317,7 +474,6 @@ class NodesGenerationAgent:
 
     @staticmethod
     def _get_topic_name(obj: Any) -> str:
-        """Extract a human-friendly topic name from common keys; default to 'Unknown'."""
         d = NodesGenerationAgent._as_dict(obj)
         for k in ("topic", "name", "title", "label"):
             v = d.get(k)
@@ -325,44 +481,33 @@ class NodesGenerationAgent:
                 return v.strip()
         return "Unknown"
 
-    # ----------------- utilities -----------------
     @staticmethod
     def _to_primitive(x: Any) -> Any:
-        """Recursively convert Pydantic models and other objects to JSON-serializable primitives."""
-        # Pydantic v2
         if hasattr(x, "model_dump"):
             try:
                 return NodesGenerationAgent._to_primitive(x.model_dump())
             except Exception:
                 pass
-        # Pydantic v1
         if hasattr(x, "dict"):
             try:
                 return NodesGenerationAgent._to_primitive(x.dict())
             except Exception:
                 pass
-
         if isinstance(x, dict):
             return {k: NodesGenerationAgent._to_primitive(v) for k, v in x.items()}
         if isinstance(x, (list, tuple, set)):
             return [NodesGenerationAgent._to_primitive(v) for v in x]
         if isinstance(x, (datetime, date)):
             return x.isoformat()
-        # Basic JSON types pass through
         if isinstance(x, (str, int, float, bool)) or x is None:
             return x
-        # Fallback: try __dict__ or string
         if hasattr(x, "__dict__"):
             return NodesGenerationAgent._to_primitive(vars(x))
         return str(x)
 
     @staticmethod
     def _to_json_one(x: Any) -> str:
-        """Stable JSON for an arbitrary object (handles nested Pydantic models)."""
         return json.dumps(NodesGenerationAgent._to_primitive(copy.deepcopy(x)), ensure_ascii=False)
-
-
-    # ----------------- utilities -----------------
 
     @staticmethod
     async def _gen_once(
@@ -370,10 +515,6 @@ class NodesGenerationAgent:
         thread_id,
         nodes_error,
     ) -> TopicWithNodesSchema:
-        """
-        Generate one TopicWithNodesSchema by running the inner ReAct loop with a
-        system prompt constructed from the per-topic summary.
-        """
         class AtTemplate(Template):
             delimiter = "@"
 
@@ -387,21 +528,13 @@ class NodesGenerationAgent:
         sys_message = SystemMessage(content=content)
         trigger_message = HumanMessage(content="Based on the provided instructions please start the process")
 
-        # Runs inner graph: agent <-> tools ... -> respond (structured)
-        result = await NodesGenerationAgent._nodes_graph.ainvoke(
-            {"messages": [sys_message, trigger_message]}
-        )
+        graph = NodesGenerationAgent._get_inner_graph()
+        result = await graph.ainvoke({"messages": [sys_message, trigger_message]})
         return result["final_response"]
 
     # ----------------------------- Main node generation -----------------------------
     @staticmethod
     async def nodes_generator(state: AgentInternalState) -> AgentInternalState:
-        """
-        For each (topic, summary) pair:
-          - validate total_questions per topic
-          - run the inner ReAct loop to produce TopicWithNodesSchema
-        Aggregates results into NodesSchema on the state.
-        """
         if state.interview_topics is None or not getattr(state.interview_topics, "interview_topics", None):
             raise ValueError("No interview topics to summarize.")
         if state.discussion_summary_per_topic is None:
@@ -417,7 +550,6 @@ class NodesGenerationAgent:
         if pair_count == 0:
             raise ValueError("No topics/summaries to process.")
 
-        # Snapshot upstream summaries to ensure no mutation occurs
         snapshot = json.dumps(
             [s.model_dump() if hasattr(s, "model_dump") else s for s in summaries_list],
             sort_keys=True,
@@ -427,13 +559,11 @@ class NodesGenerationAgent:
 
         for dspt_obj in zip(topics_list, summaries_list):
             per_topic_summary_json = NodesGenerationAgent._to_json_one(dspt_obj)
-
             resp = await NodesGenerationAgent._gen_once(
                 per_topic_summary_json, state.id, state.nodes_error
             )
             out.append(resp)
 
-        # Verify upstream summary wasn’t mutated
         after = json.dumps(
             [s.model_dump() if hasattr(s, "model_dump") else s for s in summaries_list],
             sort_keys=True,
@@ -449,18 +579,11 @@ class NodesGenerationAgent:
 
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
-        """
-        Decide whether to regenerate node structures. Retries when:
-          - no nodes were produced yet
-          - container schema (NodesSchema) is invalid
-          - any TopicWithNodesSchema item inside is invalid
-        """
         global count
 
         if getattr(state, "nodes", None) is None:
             return True
 
-        # Validate NodesSchema (container)
         try:
             NodesSchema.model_validate(
                 state.nodes.model_dump() if hasattr(state.nodes, "model_dump") else state.nodes
@@ -480,7 +603,6 @@ class NodesGenerationAgent:
             count += 1
             return True
 
-        # Validate each topic payload
         try:
             topics_payload = (
                 state.nodes.topics_with_nodes
@@ -507,10 +629,7 @@ class NodesGenerationAgent:
                 state.nodes_error += f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n{ve}\n"
 
         if any_invalid:
-            log_retry_iteration(
-                reason="node schema error",
-                iteration=count,
-            )
+            log_retry_iteration("node schema error", iteration=count)
             count += 1
         return any_invalid
 

@@ -3,15 +3,20 @@ import copy
 import re
 import os
 import sys
+import time
+import asyncio
 import logging
-from logging.handlers import TimedRotatingFileHandler
-from typing import List, Any, Dict, Optional, Tuple, Sequence
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from typing import List, Any, Dict, Optional, Tuple, Sequence, Callable, Coroutine
 
+from logging.handlers import TimedRotatingFileHandler
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph import MessagesState
 from langgraph.prebuilt import ToolNode
 from langchain_core.messages import SystemMessage, HumanMessage
-from pydantic import ValidationError
+from langchain_core.tools import BaseTool
+from langchain_core.runnables import RunnableLambda
+from pydantic import ValidationError, PrivateAttr
 from langchain_core.exceptions import OutputParserException
 from string import Template
 
@@ -35,10 +40,19 @@ LOG_ROTATE_WHEN = os.getenv("QA_AGENT_LOG_ROTATE_WHEN", "midnight")
 LOG_ROTATE_INTERVAL = int(os.getenv("QA_AGENT_LOG_ROTATE_INTERVAL", "1"))
 LOG_BACKUP_COUNT = int(os.getenv("QA_AGENT_LOG_BACKUP_COUNT", "365"))
 
+# Retry/timeout knobs (namespaced for this agent)
+LLM_TIMEOUT_SECONDS: float = float(os.getenv("QA_AGENT_LLM_TIMEOUT_SECONDS", "90"))
+LLM_RETRIES: int = int(os.getenv("QA_AGENT_LLM_RETRIES", "2"))
+LLM_BACKOFF_SECONDS: float = float(os.getenv("QA_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5"))
+
+TOOL_TIMEOUT_SECONDS: float = float(os.getenv("QA_AGENT_TOOL_TIMEOUT_SECONDS", "30"))
+TOOL_RETRIES: int = int(os.getenv("QA_AGENT_TOOL_RETRIES", "2"))
+TOOL_BACKOFF_SECONDS: float = float(os.getenv("QA_AGENT_TOOL_RETRY_BACKOFF_SECONDS", "1.5"))
+_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("QA_AGENT_TOOL_MAX_WORKERS", "8")))
+
 # Global retry counter used only for logging iteration counts.
 count = 1
 SHOW_FULL_TEXT = os.getenv("QA_LOG_SHOW_FULL_TEXT", "0") == "1"
-# Optionally restrict to specific keys (comma-separated), e.g. "question_guidelines"
 SHOW_FULL_FIELDS = {
     k.strip().lower()
     for k in os.getenv("QA_LOG_SHOW_FULL_FIELDS", "").split(",")
@@ -69,12 +83,10 @@ def _build_logger(
     os.makedirs(log_dir, exist_ok=True)
     file_path = os.path.join(log_dir, filename)
 
-    # Console handler
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(level)
     ch.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
 
-    # Rotating file handler
     fh = TimedRotatingFileHandler(
         file_path, when=when, interval=interval, backupCount=backup_count, encoding="utf-8", utc=False
     )
@@ -162,15 +174,11 @@ def _redact(o: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
             key = k.lower() if isinstance(k, str) else k
 
             if isinstance(k, str) and key in RAW_TEXT_FIELDS and isinstance(v, str):
-                # If we're omitting long text fields entirely
                 if omit_fields:
                     continue
-
-                # If we are allowed to show full text (globally or for selected fields)
                 if SHOW_FULL_TEXT or (SHOW_FULL_FIELDS and key in SHOW_FULL_FIELDS):
-                    out[k] = v  # print the raw, full text
+                    out[k] = v
                 else:
-                    # fallback: short, clean preview (no angle brackets, no "see raw block below")
                     head = (v.strip().splitlines() or [""])[0]
                     if len(head) > preview_len:
                         head = head[:preview_len].rstrip() + "…"
@@ -212,7 +220,6 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
     log_info("Tool results:")
     for tm in tool_msgs:
         content = getattr(tm, "content", None)
-        # use preview, not omission
         compact = _redact(_jsonish(content), omit_fields=False)
         LOGGER.info(f"  result -> id={getattr(tm, 'tool_call_id', None)} data={_compact(compact)}")
 
@@ -222,45 +229,166 @@ def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = Non
     log_warning(f"Retry {iteration}: {reason}{suffix}")
 
 
+# ======================================
+# Retry / timeout helper for async ops
+# ======================================
+
+async def _retry_async(
+    op_factory: Callable[[], Coroutine[Any, Any, Any]],
+    *,
+    retries: int,
+    timeout_s: float,
+    backoff_base_s: float,
+    retry_reason: str,
+    iteration_start: int = 1,
+) -> Any:
+    attempt = 0
+    last_exc: Optional[BaseException] = None
+    while attempt <= retries:
+        try:
+            return await asyncio.wait_for(op_factory(), timeout=timeout_s)
+        except Exception as exc:
+            last_exc = exc
+            log_retry_iteration(retry_reason, iteration_start + attempt, {"error": str(exc)})
+            attempt += 1
+            if attempt > retries:
+                break
+            await asyncio.sleep(backoff_base_s * (2 ** (attempt - 1)))
+    assert last_exc is not None
+    raise last_exc
+
+
+# ======================================================
+# Tool wrapper compatible with bind_tools & ToolNode
+# ======================================================
+
+class RetryTool(BaseTool):
+    _inner: BaseTool = PrivateAttr()
+    _retries: int = PrivateAttr()
+    _timeout_s: float = PrivateAttr()
+    _backoff: float = PrivateAttr()
+
+    def __init__(self, inner: BaseTool, *, retries: int, timeout_s: float, backoff_base_s: float) -> None:
+        name = getattr(inner, "name", inner.__class__.__name__)
+        description = getattr(inner, "description", "") or "Retried tool wrapper"
+        args_schema = getattr(inner, "args_schema", None)
+        super().__init__(name=name, description=description, args_schema=args_schema)
+        self._inner = inner
+        self._retries = retries
+        self._timeout_s = timeout_s
+        self._backoff = backoff_base_s
+
+    def _run(self, *args: Any, **kwargs: Any) -> Any:
+        config = kwargs.pop("config", None)
+
+        def _call_once():
+            return self._inner._run(*args, **{**kwargs, "config": config})
+
+        attempt = 0
+        last_exc: Optional[BaseException] = None
+        while attempt <= self._retries:
+            future = _EXECUTOR.submit(_call_once)
+            try:
+                return future.result(timeout=self._timeout_s)
+            except FuturesTimeout as exc:
+                last_exc = exc
+                log_retry_iteration(f"tool_timeout:{self.name}", attempt + 1)
+            except BaseException as exc:
+                last_exc = exc
+                log_retry_iteration(f"tool_error:{self.name}", attempt + 1, {"error": str(exc)})
+            attempt += 1
+            if attempt <= self._retries:
+                time.sleep(self._backoff * (2 ** (attempt - 1)))
+        assert last_exc is not None
+        raise last_exc
+
+    async def _arun(self, *args: Any, **kwargs: Any) -> Any:
+        config = kwargs.pop("config", None)
+
+        async def _call_once():
+            if hasattr(self._inner, "_arun"):
+                return await getattr(self._inner, "_arun")(*args, **{**kwargs, "config": config})
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, lambda: self._inner._run(*args, **{**kwargs, "config": config}))
+
+        return await _retry_async(
+            _call_once,
+            retries=self._retries,
+            timeout_s=self._timeout_s,
+            backoff_base_s=self._backoff,
+            retry_reason=f"tool_async:{self.name}",
+        )
+
+
 # ---------- Inner ReAct state for per-topic QA generation ----------
 class _QAInnerState(MessagesState):
-    """State container for the inner ReAct loop that generates QA blocks."""
     final_response: QASetsSchema
 
 
 class QABlockGenerationAgent:
-    """
-    Generates structured QA blocks for each topic's deep-dive nodes by running a
-    tool-using inner ReAct loop (with Mongo tools), coercing the final assistant
-    content into the QASetsSchema, and validating basic constraints.
-    """
-
-    # LLM & tools (kept as class attributes to reuse model clients and tool bindings)
     llm_qa = llm_qa
-    MONGO_TOOLS = get_mongo_tools(llm=llm_qa)
+
+    _RAW_MONGO_TOOLS: List[BaseTool] = get_mongo_tools(llm=llm_qa)
+    MONGO_TOOLS: List[BaseTool] = [
+        RetryTool(t, retries=TOOL_RETRIES, timeout_s=TOOL_TIMEOUT_SECONDS, backoff_base_s=TOOL_BACKOFF_SECONDS)
+        for t in _RAW_MONGO_TOOLS
+    ]
+
     _AGENT_MODEL = llm_qa.bind_tools(MONGO_TOOLS)
     _STRUCTURED_MODEL = llm_qa.with_structured_output(QASetsSchema, method="function_calling")
 
-    # ---------- Inner graph nodes ----------
+    _compiled_inner_graph = None  # lazy cache
+
+    # ---------- LLM helpers with retries ----------
     @staticmethod
-    def _agent_node(state: _QAInnerState):
-        """
-        Invoke the tool-enabled model. If the assistant plans tool calls,
-        LangGraph will execute them via the ToolNode.
-        """
+    async def _invoke_agent(messages: Sequence[Any]) -> Any:
+        async def _call():
+            if hasattr(QABlockGenerationAgent._AGENT_MODEL, "ainvoke"):
+                return await QABlockGenerationAgent._AGENT_MODEL.ainvoke(messages)
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, QABlockGenerationAgent._AGENT_MODEL.invoke, messages)
+
         log_info("Calling LLM (agent)")
-        log_tool_activity(messages=state["messages"], ai_msg=None)
-        ai = QABlockGenerationAgent._AGENT_MODEL.invoke(state["messages"])
+        result = await _retry_async(
+            _call,
+            retries=LLM_RETRIES,
+            timeout_s=LLM_TIMEOUT_SECONDS,
+            backoff_base_s=LLM_BACKOFF_SECONDS,
+            retry_reason="llm:agent",
+        )
         log_info("LLM (agent) call succeeded")
+        return result
+
+    @staticmethod
+    async def _invoke_structured(ai_content: str) -> QASetsSchema:
+        payload = [HumanMessage(content=ai_content)]
+
+        async def _call():
+            if hasattr(QABlockGenerationAgent._STRUCTURED_MODEL, "ainvoke"):
+                return await QABlockGenerationAgent._STRUCTURED_MODEL.ainvoke(payload)
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, QABlockGenerationAgent._STRUCTURED_MODEL.invoke, payload)
+
+        log_info("Calling LLM (structured)")
+        result = await _retry_async(
+            _call,
+            retries=LLM_RETRIES,
+            timeout_s=LLM_TIMEOUT_SECONDS,
+            backoff_base_s=LLM_BACKOFF_SECONDS,
+            retry_reason="llm:structured",
+        )
+        log_info("LLM (structured) call succeeded")
+        return result
+
+    # ---------- Async node impls ----------
+    @staticmethod
+    async def _agent_node(state: _QAInnerState):
+        log_tool_activity(messages=state["messages"], ai_msg=None)
+        ai = await QABlockGenerationAgent._invoke_agent(state["messages"])
         return {"messages": [ai]}
 
     @staticmethod
-    def _respond_node(state: _QAInnerState):
-        """
-        Take the most recent assistant message without tool calls and coerce it
-        into QASetsSchema using the structured-output model. If none exists,
-        fall back to the most recent assistant message, then to the last message.
-        """
+    async def _respond_node(state: _QAInnerState):
         msgs = state["messages"]
 
         ai_content = None
@@ -279,42 +407,37 @@ class QABlockGenerationAgent:
         if ai_content is None:
             ai_content = msgs[-1].content
 
-        log_info("Calling LLM (structured)")
-        final_obj = QABlockGenerationAgent._STRUCTURED_MODEL.invoke([HumanMessage(content=ai_content)])
-        log_info("LLM (structured) call succeeded")
+        final_obj = await QABlockGenerationAgent._invoke_structured(ai_content)
         return {"final_response": final_obj}
 
     @staticmethod
     def _should_continue(state: _QAInnerState):
-        """
-        Router node: if the latest assistant message contains tool calls,
-        continue to the ToolNode; otherwise, proceed to respond.
-        """
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
             log_tool_activity(messages=state["messages"], ai_msg=last)
             return "continue"
         return "respond"
 
-    # ---------- Compile inner ReAct graph once ----------
-    _workflow = StateGraph(_QAInnerState)
-    _workflow.add_node("agent", _agent_node)
-    _workflow.add_node("respond", _respond_node)
-    _workflow.add_node("tools", ToolNode(MONGO_TOOLS, tags=["mongo-tools"]))
-    _workflow.set_entry_point("agent")
-    _workflow.add_conditional_edges(
-        "agent",
-        _should_continue,
-        {"continue": "tools", "respond": "respond"},
-    )
-    _workflow.add_edge("tools", "agent")
-    _workflow.add_edge("respond", END)
-    _qa_inner_graph = _workflow.compile()
+    # ---------- RunnableLambda wrappers & lazy compile ----------
+    @classmethod
+    def _get_inner_graph(cls):
+        if cls._compiled_inner_graph is not None:
+            return cls._compiled_inner_graph
+
+        workflow = StateGraph(_QAInnerState)
+        workflow.add_node("agent", RunnableLambda(cls._agent_node))     # wrap async -> awaited
+        workflow.add_node("respond", RunnableLambda(cls._respond_node)) # wrap async -> awaited
+        workflow.add_node("tools", ToolNode(cls.MONGO_TOOLS, tags=["mongo-tools"]))
+        workflow.set_entry_point("agent")
+        workflow.add_conditional_edges("agent", cls._should_continue, {"continue": "tools", "respond": "respond"})
+        workflow.add_edge("tools", "agent")
+        workflow.add_edge("respond", END)
+        cls._compiled_inner_graph = workflow.compile()
+        return cls._compiled_inner_graph
 
     # ----------------- utilities -----------------
     @staticmethod
     def _as_dict(x: Any) -> Dict[str, Any]:
-        """Best-effort conversion to a dict without altering semantics."""
         if hasattr(x, "model_dump"):
             return x.model_dump()
         if hasattr(x, "dict"):
@@ -323,7 +446,6 @@ class QABlockGenerationAgent:
 
     @staticmethod
     def _get_topic_name(obj: Any) -> str:
-        """Extract a human-friendly topic name from common keys; default to 'Unknown'."""
         d = QABlockGenerationAgent._as_dict(obj)
         for k in ("topic", "name", "title", "label"):
             v = d.get(k)
@@ -333,7 +455,6 @@ class QABlockGenerationAgent:
 
     @staticmethod
     def _can(s: str) -> str:
-        """Canonicalize a string for lookup (lowercase, collapse spaces, remove punctuation)."""
         s = (s or "").strip().lower()
         s = re.sub(r"\s+", " ", s)
         s = re.sub(r"[^\w\s]", "", s)
@@ -341,7 +462,6 @@ class QABlockGenerationAgent:
 
     @staticmethod
     def _extract_topic_name_from_summary(summary_obj: Any) -> str:
-        """Extract the topic name from known summary keys; default to 'Unknown'."""
         d = QABlockGenerationAgent._as_dict(summary_obj)
         for k in ("topic", "name", "title", "label", "discussion_topic", "heading"):
             v = d.get(k)
@@ -357,14 +477,6 @@ class QABlockGenerationAgent:
         thread_id: str,
         qa_error: str = "",
     ) -> Tuple[Dict[str, Any], str]:
-        """
-        Generate a single QA set for a topic. The number of QA blocks must match
-        the number of deep-dive nodes. Performs strict post-generation checks:
-          - block count equals deep-dive count
-          - each block has exactly 7 qa_items
-          - no Easy difficulty for Counter Question items
-        Returns: (qa_set_dict, error_message) where error_message == "" if OK.
-        """
         class AtTemplate(Template):
             delimiter = "@"
 
@@ -388,10 +500,8 @@ class QABlockGenerationAgent:
         trigger_message = HumanMessage(content="Based on the provided instructions please start the process")
 
         try:
-            # Run inner ReAct loop (tools + LLM), then coerce to QASetsSchema via _respond_node.
-            result = await QABlockGenerationAgent._qa_inner_graph.ainvoke(
-                {"messages": [sys_message, trigger_message]}
-            )
+            graph = QABlockGenerationAgent._get_inner_graph()
+            result = await graph.ainvoke({"messages": [sys_message, trigger_message]})
             schema = result["final_response"]  # QASetsSchema
 
             obj = schema.model_dump() if hasattr(schema, "model_dump") else schema
@@ -403,7 +513,6 @@ class QABlockGenerationAgent:
             one["topic"] = topic_name
             blocks = one.get("qa_blocks", []) or []
 
-            # Hard validations
             errs = []
             if len(blocks) != n_blocks:
                 errs.append(f"Expected {n_blocks} blocks, got {len(blocks)}.")
@@ -427,13 +536,6 @@ class QABlockGenerationAgent:
 
     @staticmethod
     async def qablock_generator(state: AgentInternalState) -> AgentInternalState:
-        """
-        For each topic in state.nodes.topics_with_nodes:
-          - locate its discussion summary
-          - collect its deep-dive nodes
-          - run the inner ReAct loop to produce QA blocks
-        Aggregates results into state.qa_blocks (QASetsSchema) or records errors.
-        """
         if state.interview_topics is None or not getattr(state.interview_topics, "interview_topics", None):
             raise ValueError("No interview topics to summarize.")
         if state.discussion_summary_per_topic is None:
@@ -441,7 +543,6 @@ class QABlockGenerationAgent:
         if state.nodes is None or not getattr(state.nodes, "topics_with_nodes", None):
             raise ValueError("nodes (topics_with_nodes) are required before QA block generation.")
 
-        # Normalize summaries_list
         raw = state.discussion_summary_per_topic
         if hasattr(raw, "discussion_topics"):
             summaries_list = list(raw.discussion_topics)
@@ -455,19 +556,16 @@ class QABlockGenerationAgent:
         final_sets: List[Dict[str, Any]] = []
         accumulated_errs: List[str] = []
 
-        # Quick index by canonicalized topic name
         summaries_by_can: Dict[str, Any] = {}
         for s in summaries_list:
             nm = QABlockGenerationAgent._extract_topic_name_from_summary(s)
             summaries_by_can[QABlockGenerationAgent._can(nm)] = s
 
-        # Aliases that count as "deep-dive" nodes
         DEEP_DIVE_ALIASES = {"deep dive", "deep_dive", "deep-dive", "probe", "follow up", "follow-up"}
         covered = set()
 
         log_info("QA block generation started")
 
-        # -------- Pass A: generate QA blocks for topics with deep-dive nodes --------
         for topic_entry in state.nodes.topics_with_nodes:
             topic_dict = topic_entry.model_dump() if hasattr(topic_entry, "model_dump") else dict(topic_entry)
             topic_name = topic_dict.get("topic") or QABlockGenerationAgent._get_topic_name(topic_entry) or "Unknown"
@@ -479,7 +577,6 @@ class QABlockGenerationAgent:
                 covered.add(ckey)
                 continue
 
-            # Collect deep-dive nodes (preserve order)
             deep_dive_nodes: List[dict] = []
             for node in (topic_dict.get("nodes") or []):
                 qtype = str(node.get("question_type", "")).strip().lower()
@@ -511,19 +608,16 @@ class QABlockGenerationAgent:
                 accumulated_errs.append(f"[{topic_name}] model returned 0 QA blocks; will retry.")
             covered.add(ckey)
 
-        # ---- finalize ----
         if final_sets:
             state.qa_blocks = QASetsSchema(qa_sets=final_sets)
             log_info("QA block generation completed")
         else:
-            # No valid blocks this pass; set None to trigger regeneration.
             state.qa_blocks = None
             log_warning("QA block generation produced no valid blocks this pass")
             if not accumulated_errs:
                 accumulated_errs.append("[QABlocks] No topics produced QA blocks this attempt.")
 
         if accumulated_errs:
-            # Append all accumulated errors to state.qa_error (fallback-friendly)
             prev = getattr(state, "qa_error", "") or ""
             state.qa_error = (prev + ("\n" if prev else "") + "\n".join(accumulated_errs)).strip()
 
@@ -531,24 +625,13 @@ class QABlockGenerationAgent:
 
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
-        """
-        Decide whether to retry QA generation. Retries when:
-          - qa_blocks is None (no valid blocks produced yet)
-          - schema validation fails
-          - at least one topic has 0 blocks after validation
-        """
         global count
 
         if getattr(state, "qa_blocks", None) is None:
-            log_retry_iteration(
-                reason="qa_blocks is None (no valid blocks yet); retrying",
-                iteration=count,
-                extra=None,
-            )
+            log_retry_iteration("qa_blocks is None (no valid blocks yet); retrying", count)
             count += 1
             return True
 
-        # Validate container schema
         try:
             QASetsSchema.model_validate(
                 state.qa_blocks.model_dump() if hasattr(state.qa_blocks, "model_dump") else state.qa_blocks
@@ -561,31 +644,18 @@ class QABlockGenerationAgent:
                 "[QABlockGen ValidationError]\n "
                 f"{ve}"
             )
-            log_retry_iteration(
-                reason="Schema validation failed",
-                iteration=count,
-                extra={"error": str(ve)},
-            )
+            log_retry_iteration("Schema validation failed", count, {"error": str(ve)})
             count += 1
             return True
 
-        # Ensure every QA set has at least one block
         try:
             sets = state.qa_blocks.qa_sets if hasattr(state.qa_blocks, "qa_sets") else state.qa_blocks.get("qa_sets", [])
             if any(not (qs.get("qa_blocks") if isinstance(qs, dict) else qs.qa_blocks) for qs in sets):
-                log_retry_iteration(
-                    reason="At least one topic has 0 qa_blocks after validation; retrying",
-                    iteration=count,
-                    extra=None,
-                )
+                log_retry_iteration("At least one topic has 0 qa_blocks after validation; retrying", count)
                 count += 1
                 return True
         except Exception as e:
-            log_retry_iteration(
-                reason="Introspection failed while checking qa_sets; allowing retry",
-                iteration=count,
-                extra={"error": str(e)},
-            )
+            log_retry_iteration("Introspection failed while checking qa_sets; allowing retry", count, {"error": str(e)})
             count += 1
             return True
 
