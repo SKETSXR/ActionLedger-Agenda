@@ -155,7 +155,7 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
             printed = True
         tm = messages[i]
         log_info(
-            f"  result <- id={getattr(tm, 'tool_call_id', None)} "
+            f"  result -> id={getattr(tm, 'tool_call_id', None)} "
             f"data={_fmt_full(getattr(tm, 'content', None))}"
         )
         i -= 1
