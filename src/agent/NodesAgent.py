@@ -92,14 +92,18 @@ LOGGER = _build_logger(
     backup_count=LOG_BACKUP_COUNT,
 )
 
+
 def log_info(msg: str) -> None:
     LOGGER.info(msg)
+
 
 def log_warning(msg: str) -> None:
     LOGGER.warning(msg)
 
+
 def log_error(msg: str) -> None:
     LOGGER.error(msg)
+
 
 def _fmt_full(val: Any) -> str:
     """Return full string; pretty-print JSON strings/objects when possible."""
@@ -115,6 +119,7 @@ def _fmt_full(val: Any) -> str:
         return str(val)
     except Exception:
         return str(val)
+
 
 def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> None:
     """
@@ -154,6 +159,7 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
             f"data={_fmt_full(getattr(tm, 'content', None))}"
         )
         i -= 1
+
 
 def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = None) -> None:
     """Human-format retry line."""
