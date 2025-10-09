@@ -62,13 +62,11 @@
 
 
 import asyncio
-import json
 import logging
 import os
 import sys
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from typing import Optional, Sequence, List
 
@@ -105,22 +103,6 @@ CONFIG = SummaryAgentConfig()
 # Logging
 # ==============================
 
-class JsonLogFormatter(logging.Formatter):
-    """Emit log records as JSON for easy ingestion."""
-    def format(self, record: logging.LogRecord) -> str:
-        payload = {
-            "ts": datetime.now().isoformat(timespec="seconds") + "Z",
-            "logger": record.name,
-            "level": record.levelname,
-            "message": record.getMessage(),
-        }
-        for key in ("request_id", "agent", "event", "node"):
-            if hasattr(record, key):
-                payload[key] = getattr(record, key)
-        if record.exc_info:
-            payload["exc_type"] = record.exc_info[0].__name__
-        return json.dumps(payload, ensure_ascii=False)
-
 
 def _ensure_directory(path: str) -> None:
     """Create a directory if it does not exist (best-effort)."""
@@ -131,33 +113,36 @@ def _ensure_directory(path: str) -> None:
 
 
 def get_logger(name: str = "summary_generation_agent") -> logging.Logger:
-    """Return a configured logger; idempotent (won't duplicate handlers)."""
     logger = logging.getLogger(name)
     if getattr(logger, "_initialized", False):
         return logger
 
-    logger.setLevel(logging.DEBUG)  # capture everything; handlers filter below
+    logger.setLevel(logging.DEBUG)
     _ensure_directory(CONFIG.log_dir)
+
+    # 1) Use the SAME plain formatter for file + console
+    plain_fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 
     file_handler = TimedRotatingFileHandler(
         filename=os.path.join(CONFIG.log_dir, CONFIG.log_file),
-        when="midnight",
-        backupCount=CONFIG.log_backup_days,
+        when="midnight",      # rotates daily at local midnight
+        interval=1,           # (explicit) every 1 'when'
+        backupCount=CONFIG.log_backup_days,  # keep up to 365 old files
         encoding="utf-8",
+        utc=False,            # rotate by local time (match your other agents)
     )
     file_handler.setLevel(getattr(logging, CONFIG.log_level_file.upper(), logging.INFO))
-    file_handler.setFormatter(JsonLogFormatter())
+    file_handler.setFormatter(plain_fmt)
 
     console_handler = logging.StreamHandler(stream=sys.stdout)
     console_handler.setLevel(getattr(logging, CONFIG.log_level_console.upper(), logging.INFO))
-    console_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
+    console_handler.setFormatter(plain_fmt)
 
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
     logger.propagate = False
     logger._initialized = True  # type: ignore[attr-defined]
     return logger
-
 
 LOGGER = get_logger()
 
