@@ -70,7 +70,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
-from typing import Optional, Sequence, List
+from typing import Optional, Sequence
 
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, START
@@ -82,7 +82,7 @@ from ..model_handling import llm_sg as _llm_client
 
 
 # ==============================
-# Configuration
+# Config
 # ==============================
 
 @dataclass(frozen=True)
@@ -92,7 +92,6 @@ class SummaryAgentConfig:
     log_level_console: str = os.getenv("SUMMARY_AGENT_LOG_LEVEL_CONSOLE", "INFO")
     log_level_file: str = os.getenv("SUMMARY_AGENT_LOG_LEVEL_FILE", "INFO")
     log_backup_days: int = int(os.getenv("SUMMARY_AGENT_LOG_BACKUP_DAYS", "365"))
-
     llm_timeout_seconds: float = float(os.getenv("SUMMARY_AGENT_LLM_TIMEOUT_SECONDS", "90"))
     llm_retries: int = int(os.getenv("SUMMARY_AGENT_LLM_RETRIES", "2"))
     llm_retry_backoff_seconds: float = float(os.getenv("SUMMARY_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5"))
@@ -106,7 +105,6 @@ CONFIG = SummaryAgentConfig()
 # ==============================
 
 class JsonLogFormatter(logging.Formatter):
-    """Emit log records as JSON for easy ingestion."""
     def format(self, record: logging.LogRecord) -> str:
         payload = {
             "ts": datetime.now().isoformat(timespec="seconds") + "Z",
@@ -114,6 +112,7 @@ class JsonLogFormatter(logging.Formatter):
             "level": record.levelname,
             "message": record.getMessage(),
         }
+        # Include extras if present
         for key in ("request_id", "agent", "event", "node"):
             if hasattr(record, key):
                 payload[key] = getattr(record, key)
@@ -122,69 +121,76 @@ class JsonLogFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
-def _ensure_directory(path: str) -> None:
-    """Create a directory if it does not exist (best-effort)."""
+def _ensure_log_dir(path: str) -> None:
     try:
         os.makedirs(path, exist_ok=True)
     except Exception:
+        # Fall back to current directory if we cannot make log dir.
         pass
 
 
 def get_logger(name: str = "summary_generation_agent") -> logging.Logger:
-    """Return a configured logger; idempotent (won’t duplicate handlers)."""
+    """
+    Returns a configured logger. Safe to call multiple times without adding duplicate handlers.
+    """
     logger = logging.getLogger(name)
     if getattr(logger, "_initialized", False):
         return logger
 
-    logger.setLevel(logging.DEBUG)  # capture everything; handlers filter below
-    _ensure_directory(CONFIG.log_dir)
+    logger.setLevel(logging.DEBUG)  # capture everything; handlers filter levels
+    _ensure_log_dir(CONFIG.log_dir)
 
-    file_handler = TimedRotatingFileHandler(
+    # File handler (rotates daily)
+    fh = TimedRotatingFileHandler(
         filename=os.path.join(CONFIG.log_dir, CONFIG.log_file),
         when="midnight",
         backupCount=CONFIG.log_backup_days,
-        encoding="utf-8",
+        encoding="utf-8"
     )
-    file_handler.setLevel(getattr(logging, CONFIG.log_level_file.upper(), logging.INFO))
-    file_handler.setFormatter(JsonLogFormatter())
+    fh.setLevel(getattr(logging, CONFIG.log_level_file.upper(), logging.INFO))
+    fh.setFormatter(JsonLogFormatter())
 
-    console_handler = logging.StreamHandler(stream=sys.stdout)
-    console_handler.setLevel(getattr(logging, CONFIG.log_level_console.upper(), logging.INFO))
-    console_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
+    # Console handler (human-readable)
+    ch = logging.StreamHandler(stream=sys.stdout)
+    ch.setLevel(getattr(logging, CONFIG.log_level_console.upper(), logging.INFO))
+    ch.setFormatter(logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    ))
 
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
+    logger.addHandler(fh)
+    logger.addHandler(ch)
     logger.propagate = False
     logger._initialized = True  # type: ignore[attr-defined]
     return logger
 
-
-LOGGER = get_logger()
+logger = get_logger()
 
 
 # ==============================
-# Prompt construction & LLM call
+# Utilities
 # ==============================
 
-def build_prompt_messages(state: AgentInternalState) -> List[SystemMessage | HumanMessage]:
+def _build_messages(state: AgentInternalState) -> Sequence:
     """
-    Build the System + Human messages for the LLM call.
-    Uses JSON-serialized inputs to avoid formatting issues.
+    Builds the System + Human messages for the LLM call.
+    Uses explicit JSON dumps to guarantee valid strings.
     """
-    system_msg = SystemMessage(
+    system = SystemMessage(
         content=SUMMARY_GENERATION_AGENT_PROMPT.format(
             job_description=state.job_description.model_dump_json(),
             skill_tree=state.skill_tree.model_dump_json(),
             candidate_profile=state.candidate_profile.model_dump_json(),
         )
     )
-    human_msg = HumanMessage(content="Begin the summary generation per the instructions and input payload.")
-    return [system_msg, human_msg]
+    trigger = HumanMessage(
+        content="Begin the summary generation per the instructions and input payload."
+    )
+    return [system, trigger]
 
 
-async def call_llm_with_retries(messages: Sequence[SystemMessage | HumanMessage], request_id: str) -> GeneratedSummarySchema:
+async def _call_llm_with_retries(messages: Sequence, request_id: str) -> GeneratedSummarySchema:
     """
-    Call the LLM with structured output and retry on error/timeout using exponential backoff.
+    Calls the LLM with structured output, applying timeout and simple exponential backoff.
     Raises the last exception if all retries fail.
     """
     attempt = 0
@@ -192,27 +198,40 @@ async def call_llm_with_retries(messages: Sequence[SystemMessage | HumanMessage]
 
     while attempt <= CONFIG.llm_retries:
         try:
-            LOGGER.info("Calling LLM", extra={"request_id": request_id, "event": "llm_call_start"})
+            logger.info(
+                "Calling LLM", extra={"request_id": request_id, "event": "llm_call_start"}
+            )
             coro = _llm_client.with_structured_output(
                 GeneratedSummarySchema, method="function_calling"
             ).ainvoke(messages)
 
-            result: GeneratedSummarySchema = await asyncio.wait_for(coro, timeout=CONFIG.llm_timeout_seconds)
+            result: GeneratedSummarySchema = await asyncio.wait_for(
+                coro, timeout=CONFIG.llm_timeout_seconds
+            )
 
-            LOGGER.info("LLM call succeeded", extra={"request_id": request_id, "event": "llm_call_success"})
+            logger.info(
+                "LLM call succeeded",
+                extra={"request_id": request_id, "event": "llm_call_success"}
+            )
             return result
 
-        except asyncio.TimeoutError as e:
-            last_exc = e
-            LOGGER.error("LLM call timed out", extra={"request_id": request_id, "event": "llm_timeout"})
+        except asyncio.TimeoutError as te:
+            last_exc = te
+            logger.error(
+                "LLM call timed out",
+                extra={"request_id": request_id, "event": "llm_timeout"}
+            )
         except Exception as e:
             last_exc = e
-            LOGGER.error("LLM call failed", extra={"request_id": request_id, "event": "llm_error"})
+            logger.error(
+                "LLM call failed",
+                extra={"request_id": request_id, "event": "llm_error"}
+            )
 
         attempt += 1
         if attempt <= CONFIG.llm_retries:
-            sleep_seconds = CONFIG.llm_retry_backoff_seconds * (2 ** (attempt - 1))
-            await asyncio.sleep(sleep_seconds)
+            backoff = CONFIG.llm_retry_backoff_seconds * (2 ** (attempt - 1))
+            await asyncio.sleep(backoff)
 
     assert last_exc is not None
     raise last_exc
@@ -229,12 +248,12 @@ class SummaryGenerationAgent:
       - skill_tree
       - candidate_profile
 
-    The LLM is instructed via a SystemMessage and triggered with a HumanMessage.
-    The output is coerced to GeneratedSummarySchema and stored on
-    AgentInternalState.generated_summary.
+    The LLM is instructed via a SystemMessage and triggered with a minimal HumanMessage.
+    Output is coerced to GeneratedSummarySchema and stored on AgentInternalState.generated_summary.
     """
 
-    llm_client = _llm_client  # kept for API symmetry/swappability
+    # Share one llm client across the class (taken via import), but keep interface swappable if needed.
+    llm_client = _llm_client
 
     @staticmethod
     async def summary_generator(state: AgentInternalState) -> AgentInternalState:
@@ -245,35 +264,41 @@ class SummaryGenerationAgent:
         request_id = getattr(state, "request_id", None) or str(uuid.uuid4())
         node_name = "summary_generator"
 
-        # Defensive state validation
-        for field_name in ("job_description", "skill_tree", "candidate_profile"):
-            if getattr(state, field_name, None) is None:
-                LOGGER.error(
-                    "Missing required field on state: %s",
-                    field_name,
-                    extra={"request_id": request_id, "node": node_name, "event": "state_validation_error"},
+        # Validate state fields (defensive)
+        for attr in ("job_description", "skill_tree", "candidate_profile"):
+            if getattr(state, attr, None) is None:
+                logger.error(
+                    "Missing required field on state: %s", attr,
+                    extra={"request_id": request_id, "node": node_name, "event": "state_validation_error"}
                 )
-                return state  # or raise ValueError if you prefer failing fast
+                return state  # or raise ValueError to fail fast
 
-        messages = build_prompt_messages(state)
+        messages = _build_messages(state)
 
         try:
-            summary = await call_llm_with_retries(messages, request_id)
+            summary: GeneratedSummarySchema = await _call_llm_with_retries(messages, request_id)
             state.generated_summary = summary
-            LOGGER.info(
+            logger.info(
                 "Summary generation completed",
-                extra={"request_id": request_id, "node": node_name, "event": "summary_generated"},
+                extra={
+                    "request_id": request_id,
+                    "node": node_name,
+                    "event": "summary_generated",
+                },
             )
-        except Exception:
-            LOGGER.error(
+        except Exception as e:
+            # If required in your schema, you could attach an error object here.
+            logger.error(
                 "Summary generation failed",
-                extra={"request_id": request_id, "node": node_name, "event": "summary_failed"},
+                extra={"request_id": request_id, "node": node_name, "event": "summary_failed"}
             )
         return state
 
     @staticmethod
     def get_graph(checkpointer=None):
-        """Build the LangGraph for summary generation: START -> summary_generator."""
+        """
+        Build the LangGraph for summary generation: START -> summary_generator
+        """
         graph_builder = StateGraph(state_schema=AgentInternalState)
         graph_builder.add_node("summary_generator", SummaryGenerationAgent.summary_generator)
         graph_builder.add_edge(START, "summary_generator")
@@ -281,17 +306,20 @@ class SummaryGenerationAgent:
 
 
 # ==============================
-# CLI helper
+# CLI helper (optional)
 # ==============================
 
-def draw_graph_ascii() -> None:
-    """CLI preview of the compiled graph."""
+def _draw_graph_ascii() -> None:
+    """
+    Safe CLI preview of the compiled graph.
+    """
     try:
         graph = SummaryGenerationAgent.get_graph()
         print(graph.get_graph().draw_ascii())
     except Exception:
+        # Avoid crashing on import-time issues in CLI contexts.
         logging.getLogger(__name__).exception("Unable to draw ASCII graph.")
 
 
 if __name__ == "__main__":
-    draw_graph_ascii()
+    _draw_graph_ascii()
