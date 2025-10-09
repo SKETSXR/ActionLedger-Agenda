@@ -93,7 +93,7 @@ TOOL_BACKOFF_SECONDS: float = float(os.getenv("QA_AGENT_TOOL_RETRY_BACKOFF_SECON
 _EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("QA_AGENT_TOOL_MAX_WORKERS", "8")))
 
 # Global retry counter used only for logging iteration counts.
-retry_counter = 1
+qa_retry_counter = 1
 
 # Controls for logging raw text fields
 SHOW_FULL_TEXT = os.getenv("QA_LOG_SHOW_FULL_TEXT", "0") == "1"
@@ -703,11 +703,11 @@ class QABlockGenerationAgent:
           - schema validation fails
           - at least one topic has 0 blocks after validation
         """
-        global retry_counter
+        global qa_retry_counter
 
         if getattr(state, "qa_blocks", None) is None:
-            log_retry_iteration("qa_blocks is None (no valid blocks yet); retrying", retry_counter)
-            retry_counter += 1
+            log_retry_iteration("qa_blocks is None (no valid blocks yet); retrying", qa_retry_counter)
+            qa_retry_counter += 1
             return True
 
         # Validate container schema
@@ -723,20 +723,20 @@ class QABlockGenerationAgent:
                 "[QABlockGen ValidationError]\n "
                 f"{ve}"
             )
-            log_retry_iteration("Schema validation failed", retry_counter, {"error": str(ve)})
-            retry_counter += 1
+            log_retry_iteration("Schema validation failed", qa_retry_counter, {"error": str(ve)})
+            qa_retry_counter += 1
             return True
 
         # Ensure every QA set has at least one block
         try:
             sets = state.qa_blocks.qa_sets if hasattr(state.qa_blocks, "qa_sets") else state.qa_blocks.get("qa_sets", [])
             if any(not (qs.get("qa_blocks") if isinstance(qs, dict) else qs.qa_blocks) for qs in sets):
-                log_retry_iteration("At least one topic has 0 qa_blocks after validation; retrying", retry_counter)
-                retry_counter += 1
+                log_retry_iteration("At least one topic has 0 qa_blocks after validation; retrying", qa_retry_counter)
+                qa_retry_counter += 1
                 return True
         except Exception as e:
-            log_retry_iteration("Introspection failed while checking qa_sets; allowing retry", retry_counter, {"error": str(e)})
-            retry_counter += 1
+            log_retry_iteration("Introspection failed while checking qa_sets; allowing retry", qa_retry_counter, {"error": str(e)})
+            qa_retry_counter += 1
             return True
 
         return False

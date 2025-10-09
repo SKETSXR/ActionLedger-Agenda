@@ -113,7 +113,7 @@ GUIDELINE_KEY_CANDIDATES = {
 }
 
 # Global retry counter used only for logging iteration counts
-retry_counter = 1
+disc_retry_counter = 1
 
 
 # ==============================
@@ -549,14 +549,14 @@ class PerTopicDiscussionSummaryGenerationAgent:
         the set of input topics. Includes a guard to avoid infinite loops if
         nothing was produced (single extra retry).
         """
-        global retry_counter
+        global disc_retry_counter
 
         # Guard: if nothing produced, allow at most 1 retry under this condition
         if not getattr(state, "discussion_summary_per_topic", None) or \
            not getattr(state.discussion_summary_per_topic, "discussion_topics", None):
-            log_retry_iteration("No discussion topics produced; retrying once", retry_counter)
-            retry_counter += 1
-            return retry_counter <= 2  # retry only once for the "no output" case
+            log_retry_iteration("No discussion topics produced; retrying once", disc_retry_counter)
+            disc_retry_counter += 1
+            return disc_retry_counter <= 2  # retry only once for the "no output" case
 
         input_topics = {t.topic for t in state.interview_topics.interview_topics}
         output_topics = {dt.topic for dt in state.discussion_summary_per_topic.discussion_topics}
@@ -565,10 +565,10 @@ class PerTopicDiscussionSummaryGenerationAgent:
             extra = output_topics - input_topics
             log_retry_iteration(
                 reason="Topic mismatch",
-                iteration=retry_counter,
+                iteration=disc_retry_counter,
                 extra={"missing": missing, "extra": extra},
             )
-            retry_counter += 1
+            disc_retry_counter += 1
             return True
         return False
 

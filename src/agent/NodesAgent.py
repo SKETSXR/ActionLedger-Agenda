@@ -109,7 +109,7 @@ RAW_TEXT_FIELDS = {
 }
 
 # Global retry counter used only for logging iteration counts.
-retry_counter = 1
+nodes_retry_counter = 1
 
 
 # ==============================
@@ -640,7 +640,7 @@ class NodesGenerationAgent:
 
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
-        global retry_counter
+        global nodes_retry_counter
 
         if getattr(state, "nodes", None) is None:
             return True
@@ -659,9 +659,9 @@ class NodesGenerationAgent:
             )
             log_retry_iteration(
                 reason=f"[NodesGen][ValidationError] Container NodesSchema invalid\n {ve}",
-                iteration=retry_counter,
+                iteration=nodes_retry_counter,
             )
-            retry_counter += 1
+            nodes_retry_counter += 1
             return True
 
         try:
@@ -674,9 +674,9 @@ class NodesGenerationAgent:
             state.nodes_error += "\n[NodesSchema Payload Error]\n" + str(e) + "\n"
             log_retry_iteration(
                 reason=f"[NodesGen][ValidationError] Could not read topics_with_nodes: {e}",
-                iteration=retry_counter,
+                iteration=nodes_retry_counter,
             )
-            retry_counter += 1
+            nodes_retry_counter += 1
             return True
 
         any_invalid = False
@@ -690,8 +690,8 @@ class NodesGenerationAgent:
                 state.nodes_error += f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n{ve}\n"
 
         if any_invalid:
-            log_retry_iteration("node schema error", iteration=retry_counter)
-            retry_counter += 1
+            log_retry_iteration("node schema error", iteration=nodes_retry_counter)
+            nodes_retry_counter += 1
         return any_invalid
 
     @staticmethod
