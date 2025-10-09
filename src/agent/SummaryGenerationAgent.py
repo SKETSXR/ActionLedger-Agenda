@@ -131,7 +131,7 @@ def _ensure_directory(path: str) -> None:
 
 
 def get_logger(name: str = "summary_generation_agent") -> logging.Logger:
-    """Return a configured logger; idempotent (won’t duplicate handlers)."""
+    """Return a configured logger; idempotent (won't duplicate handlers)."""
     logger = logging.getLogger(name)
     if getattr(logger, "_initialized", False):
         return logger
