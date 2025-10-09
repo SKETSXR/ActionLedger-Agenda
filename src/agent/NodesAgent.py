@@ -1,3 +1,47 @@
+# =============================================================================
+# Module: nodes_generation_agent
+# =============================================================================
+# Overview
+#   Production-ready LangGraph agent that builds per-topic “nodes” (question
+#   nodes, deep-dive nodes, etc.) from previously generated per-topic discussion
+#   summaries. It runs a compact ReAct-style inner loop with Mongo-backed tools
+#   and coerces the final assistant content into typed schemas:
+#     - TopicWithNodesSchema (per topic)
+#     - NodesSchema (container across topics)
+#
+# Responsibilities
+#   - For each (topic, per-topic summary) pair, construct a System prompt.
+#   - Invoke an LLM bound to Mongo tools (via ToolNode) in an inner ReAct loop.
+#   - Convert the final tool-free assistant message to TopicWithNodesSchema.
+#   - Aggregate all topic results into a NodesSchema on the shared state.
+#   - Validate container + per-topic schemas; retry if invalid.
+#
+# Data Flow
+#   Outer Graph:
+#     START ──► nodes_generator
+#                ├─► nodes_generator (should_regenerate=True)
+#                └─► END              (should_regenerate=False)
+#
+#   Inner Graph (per topic):
+#     agent ─► (tools)* ─► respond
+#       1) agent: tool-enabled LLM plans tools if needed
+#       2) tools: ToolNode executes planned tool calls
+#       3) respond: coerce last tool-free assistant message to schema
+#
+# Reliability & Observability
+#   - Timeouts + retries (exponential backoff) for both LLM and tools.
+#   - Console + rotating file logs with compact redaction for large fields.
+#
+# Configuration (Environment Variables)
+#   NODES_AGENT_LOG_DIR, NODES_AGENT_LOG_FILE, NODES_AGENT_LOG_LEVEL,
+#   NODES_AGENT_LOG_ROTATE_WHEN, NODES_AGENT_LOG_ROTATE_INTERVAL,
+#   NODES_AGENT_LOG_BACKUP_COUNT,
+#   NODES_AGENT_LLM_TIMEOUT_SECONDS, NODES_AGENT_LLM_RETRIES,
+#   NODES_AGENT_LLM_RETRY_BACKOFF_SECONDS,
+#   NODES_AGENT_TOOL_TIMEOUT_SECONDS, NODES_AGENT_TOOL_RETRIES,
+#   NODES_AGENT_TOOL_RETRY_BACKOFF_SECONDS, NODES_AGENT_TOOL_MAX_WORKERS
+# =============================================================================
+
 import json
 import copy
 import logging
@@ -5,13 +49,12 @@ import os
 import sys
 import time
 import asyncio
-from typing import List, Any, Dict, Optional, Tuple, Sequence, Callable, Coroutine
+from typing import List, Any, Dict, Optional, Sequence, Callable, Coroutine
 from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
 from logging.handlers import TimedRotatingFileHandler
-from langgraph.graph import StateGraph, START, END
-from langgraph.graph import MessagesState
+from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.prebuilt import ToolNode
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import BaseTool
@@ -23,7 +66,7 @@ from src.mongo_tools import get_mongo_tools
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import NodesSchema, TopicWithNodesSchema
 from ..prompt.nodes_agent_prompt import NODES_AGENT_PROMPT
-from ..model_handling import llm_n
+from ..model_handling import llm_n as _llm_client
 
 
 # ==============================
@@ -33,11 +76,7 @@ from ..model_handling import llm_n
 AGENT_NAME = "nodes_agent"
 
 LOG_DIR = os.getenv("NODES_AGENT_LOG_DIR", "logs")
-LOG_LEVEL = getattr(
-    logging,
-    os.getenv("NODES_AGENT_LOG_LEVEL", "INFO").upper(),
-    logging.INFO,
-)
+LOG_LEVEL = getattr(logging, os.getenv("NODES_AGENT_LOG_LEVEL", "INFO").upper(), logging.INFO)
 LOG_FILE = os.getenv("NODES_AGENT_LOG_FILE", f"{AGENT_NAME}.log")
 LOG_ROTATE_WHEN = os.getenv("NODES_AGENT_LOG_ROTATE_WHEN", "midnight")
 LOG_ROTATE_INTERVAL = int(os.getenv("NODES_AGENT_LOG_ROTATE_INTERVAL", "1"))
@@ -60,14 +99,14 @@ RAW_TEXT_FIELDS = {
 }
 
 # Global retry counter used only for logging iteration counts.
-count = 1
+retry_counter = 1
 
 
 # ==============================
-# Human-style logging
+# Logging
 # ==============================
 
-def _build_logger(
+def build_logger(
     name: str,
     log_dir: str,
     level: int,
@@ -86,22 +125,22 @@ def _build_logger(
     os.makedirs(log_dir, exist_ok=True)
     file_path = os.path.join(log_dir, filename)
 
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(level)
-    ch.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
+    console = logging.StreamHandler(sys.stdout)
+    console.setLevel(level)
+    console.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
 
-    fh = TimedRotatingFileHandler(
+    rotating_file = TimedRotatingFileHandler(
         file_path, when=when, interval=interval, backupCount=backup_count, encoding="utf-8", utc=False
     )
-    fh.setLevel(level)
-    fh.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
+    rotating_file.setLevel(level)
+    rotating_file.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
 
-    logger.addHandler(ch)
-    logger.addHandler(fh)
+    logger.addHandler(console)
+    logger.addHandler(rotating_file)
     return logger
 
 
-LOGGER = _build_logger(
+logger = build_logger(
     name=AGENT_NAME,
     log_dir=LOG_DIR,
     level=LOG_LEVEL,
@@ -112,89 +151,78 @@ LOGGER = _build_logger(
 )
 
 
-def log_info(msg: str) -> None:
-    LOGGER.info(msg)
+def log_info(message: str) -> None:
+    logger.info(message)
 
 
-def log_warning(msg: str) -> None:
-    LOGGER.warning(msg)
+def log_warning(message: str) -> None:
+    logger.warning(message)
 
 
-def log_error(msg: str) -> None:
-    LOGGER.error(msg)
+# ==============================
+# Helpers (redaction + compact)
+# ==============================
+
+def _looks_like_json(text: str) -> bool:
+    text = text.strip()
+    return (text.startswith("{") and text.endswith("}")) or (text.startswith("[") and text.endswith("]"))
 
 
-# ---------- tiny utils ----------
-def _looks_like_json(s: str) -> bool:
-    s = s.strip()
-    return (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]"))
-
-
-def _jsonish(x: Any) -> Any:
-    if isinstance(x, str) and _looks_like_json(x):
+def _jsonish(value: Any) -> Any:
+    if isinstance(value, str) and _looks_like_json(value):
         try:
-            return json.loads(x)
+            return json.loads(value)
         except Exception:
-            return x
-    if isinstance(x, dict):
-        return {k: _jsonish(v) for k, v in x.items()}
-    if isinstance(x, (list, tuple)):
-        return [_jsonish(v) for v in x]
-    return x
+            return value
+    if isinstance(value, dict):
+        return {k: _jsonish(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonish(v) for v in value]
+    return value
 
 
-def _compact(x: Any) -> str:
+def _compact(value: Any) -> str:
     try:
-        return json.dumps(x, ensure_ascii=False, indent=2) if isinstance(x, (dict, list)) else str(x)
+        return json.dumps(value, ensure_ascii=False, indent=2) if isinstance(value, (dict, list)) else str(value)
     except Exception:
-        return str(x)
+        return str(value)
 
 
-def _walk(o: Any, path: Tuple[Any, ...] = ()):
-    if isinstance(o, dict):
-        for k, v in o.items():
-            yield from _walk(v, path + (k,))
-    elif isinstance(o, (list, tuple)):
-        for i, v in enumerate(o):
-            yield from _walk(v, path + (i,))
-    else:
-        yield path, o
-
-
-# ---------- redaction for compact logs ----------
-def _redact(o: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
-    o = _jsonish(o)
-    if isinstance(o, dict):
+def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
+    """Redact long raw text fields for compact logging."""
+    value = _jsonish(value)
+    if isinstance(value, dict):
         out = {}
-        for k, v in o.items():
+        for k, v in value.items():
             key = k.lower() if isinstance(k, str) else k
             if isinstance(k, str) and key in RAW_TEXT_FIELDS and isinstance(v, str):
                 if omit_fields:
                     continue
                 head = (v.strip().splitlines() or [""])[0]
                 head = head[:preview_len] + ("…" if len(head) > preview_len else "")
-                out[k] = f"<{k}: {len(v)} chars; see raw block below — \"{head}\">"
+                out[k] = f"<{k}: {len(v)} chars; \"{head}\">"
             else:
                 out[k] = _redact(v, omit_fields=omit_fields, preview_len=preview_len)
         return out
-    if isinstance(o, (list, tuple)):
-        return [_redact(v, omit_fields=omit_fields, preview_len=preview_len) for v in o]
-    return o
+    if isinstance(value, (list, tuple)):
+        return [_redact(v, omit_fields=omit_fields, preview_len=preview_len) for v in value]
+    return value
 
 
-# ---------- main entry ----------
 def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> None:
+    """Log planned tool calls and trailing tool results in a compact, redacted form."""
     if not messages:
         return
 
-    tcalls = getattr(ai_msg, "tool_calls", None)
-    if tcalls:
+    planned = getattr(ai_msg, "tool_calls", None)
+    if planned:
         log_info("Tool plan:")
-        for tc in tcalls:
+        for tc in planned:
             name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
             args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
-            LOGGER.info(f"  planned -> {name} args={_compact(_redact(_jsonish(args), omit_fields=False))}")
+            logger.info(f"  planned -> {name} args={_compact(_redact(_jsonish(args), omit_fields=False))}")
 
+    # Gather trailing tool results
     tool_msgs = []
     i = len(messages) - 1
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
@@ -207,7 +235,7 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
     for tm in tool_msgs:
         content = getattr(tm, "content", None)
         compact = _redact(_jsonish(content), omit_fields=True)
-        LOGGER.info(f"  result <- id={getattr(tm, 'tool_call_id', None)} data={_compact(compact)}")
+        logger.info(f"  result <- id={getattr(tm, 'tool_call_id', None)} data={_compact(compact)}")
 
 
 def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = None) -> None:
@@ -332,10 +360,11 @@ class NodesGenerationAgent:
     TopicWithNodesSchema, and validating the overall NodesSchema container.
     """
 
-    llm_n = llm_n
+    # Bind the imported client under a clearer name for this class.
+    llm = _llm_client
 
     # Wrap Mongo tools with retry/timeout
-    _RAW_MONGO_TOOLS: List[BaseTool] = get_mongo_tools(llm=llm_n)
+    _RAW_MONGO_TOOLS: List[BaseTool] = get_mongo_tools(llm=llm)
     MONGO_TOOLS: List[BaseTool] = [
         RetryTool(
             t,
@@ -346,10 +375,8 @@ class NodesGenerationAgent:
         for t in _RAW_MONGO_TOOLS
     ]
 
-    _AGENT_MODEL = llm_n.bind_tools(MONGO_TOOLS)
-    _STRUCTURED_MODEL = llm_n.with_structured_output(
-        TopicWithNodesSchema, method="function_calling"
-    )
+    _AGENT_MODEL = llm.bind_tools(MONGO_TOOLS)
+    _STRUCTURED_MODEL = llm.with_structured_output(TopicWithNodesSchema, method="function_calling")
 
     _compiled_graph = None  # cache inner graph
 
@@ -442,7 +469,7 @@ class NodesGenerationAgent:
     async def _respond_node_async(state: _MongoNodesState):
         return await NodesGenerationAgent._respond_node(state)
 
-    # ---------- Lazy compile inner graph ----------
+    # ---------- Compile inner graph ----------
     @classmethod
     def _get_inner_graph(cls):
         if cls._compiled_graph is not None:
@@ -512,8 +539,8 @@ class NodesGenerationAgent:
     @staticmethod
     async def _gen_once(
         per_topic_summary_json: str,
-        thread_id,
-        nodes_error,
+        thread_id: str,
+        nodes_error: str,
     ) -> TopicWithNodesSchema:
         class AtTemplate(Template):
             delimiter = "@"
@@ -555,14 +582,14 @@ class NodesGenerationAgent:
             sort_keys=True,
         )
 
-        out: List[TopicWithNodesSchema] = []
+        topic_with_nodes_list: List[TopicWithNodesSchema] = []
 
         for dspt_obj in zip(topics_list, summaries_list):
             per_topic_summary_json = NodesGenerationAgent._to_json_one(dspt_obj)
             resp = await NodesGenerationAgent._gen_once(
                 per_topic_summary_json, state.id, state.nodes_error
             )
-            out.append(resp)
+            topic_with_nodes_list.append(resp)
 
         after = json.dumps(
             [s.model_dump() if hasattr(s, "model_dump") else s for s in summaries_list],
@@ -572,14 +599,16 @@ class NodesGenerationAgent:
             raise RuntimeError("discussion_summary_per_topic mutated during node generation")
 
         state.nodes = NodesSchema(
-            topics_with_nodes=[t.model_dump() if hasattr(t, "model_dump") else t for t in out]
+            topics_with_nodes=[
+                t.model_dump() if hasattr(t, "model_dump") else t for t in topic_with_nodes_list
+            ]
         )
         log_info("Nodes generation completed")
         return state
 
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
-        global count
+        global retry_counter
 
         if getattr(state, "nodes", None) is None:
             return True
@@ -598,9 +627,9 @@ class NodesGenerationAgent:
             )
             log_retry_iteration(
                 reason=f"[NodesGen][ValidationError] Container NodesSchema invalid\n {ve}",
-                iteration=count,
+                iteration=retry_counter,
             )
-            count += 1
+            retry_counter += 1
             return True
 
         try:
@@ -613,9 +642,9 @@ class NodesGenerationAgent:
             state.nodes_error += "\n[NodesSchema Payload Error]\n" + str(e) + "\n"
             log_retry_iteration(
                 reason=f"[NodesGen][ValidationError] Could not read topics_with_nodes: {e}",
-                iteration=count,
+                iteration=retry_counter,
             )
-            count += 1
+            retry_counter += 1
             return True
 
         any_invalid = False
@@ -629,8 +658,8 @@ class NodesGenerationAgent:
                 state.nodes_error += f"\n[TopicWithNodesSchema ValidationError idx={idx}]\n{ve}\n"
 
         if any_invalid:
-            log_retry_iteration("node schema error", iteration=count)
-            count += 1
+            log_retry_iteration("node schema error", iteration=retry_counter)
+            retry_counter += 1
         return any_invalid
 
     @staticmethod
