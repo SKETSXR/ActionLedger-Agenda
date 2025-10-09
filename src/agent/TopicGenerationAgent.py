@@ -1,27 +1,63 @@
+# =============================================================================
+# Module: topic_generation_agent
+# =============================================================================
+# Overview
+#   Production-ready LangGraph agent that generates a structured set of interview
+#   topics from an already-generated summary. It runs a compact ReAct-style loop
+#   with Mongo-backed tools and coerces the final assistant content to the
+#   typed Pydantic schema: CollectiveInterviewTopicSchema.
+#
+# Responsibilities
+#   - Build a System prompt from prior pipeline output (generated summary +
+#     accumulated feedback) and a minimal Human trigger.
+#   - Invoke an LLM bound to Mongo tools (via ToolNode) to propose topics.
+#   - Convert the final assistant message into the structured output schema.
+#   - Validate alignment against the SkillTree (coverage & must-have skills).
+#   - Retry the inner generation if the validation conditions are not met.
+#
+# Data Flow
+#   Outer Graph: START ──► topic_generator ──► should_regenerate ──┬─► END (True)
+#                                                                 └─► topic_generator (False)
+#   Inner Graph (Mongo loop): agent ─► (tools)* ─► respond
+#     1) agent: tool-enabled LLM call plans tools, if any
+#     2) tools: ToolNode executes planned tool calls
+#     3) respond: convert last tool-free assistant message to schema
+#
+# Reliability & Observability
+#   - Timeouts and retries (exponential backoff) for both LLM and tools.
+#   - Human-friendly console logs and rotating file logs.
+#   - Compact log redaction for large text fields, with safe previews.
+#
+# Configuration (Environment Variables)
+#   TOPIC_AGENT_LOG_DIR, TOPIC_AGENT_LOG_FILE, TOPIC_AGENT_LOG_LEVEL
+#   TOPIC_AGENT_LOG_ROTATE_WHEN, TOPIC_AGENT_LOG_ROTATE_INTERVAL, TOPIC_AGENT_LOG_BACKUP_COUNT
+#   TOPIC_AGENT_LLM_TIMEOUT_SECONDS, TOPIC_AGENT_LLM_RETRIES, TOPIC_AGENT_LLM_RETRY_BACKOFF_SECONDS
+#   TOPIC_AGENT_TOOL_TIMEOUT_SECONDS, TOPIC_AGENT_TOOL_RETRIES, TOPIC_AGENT_TOOL_RETRY_BACKOFF_SECONDS
+#   TOPIC_AGENT_TOOL_MAX_WORKERS
+# =============================================================================
+
 import asyncio
+import json
 import logging
 import os
 import sys
 import time
-import json
-from typing import Any, Sequence, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from logging.handlers import TimedRotatingFileHandler
 from string import Template
 from typing import Any, Callable, Coroutine, List, Optional, Sequence
 
-from pydantic import PrivateAttr
-from logging.handlers import TimedRotatingFileHandler
-from langchain_core.messages import SystemMessage, HumanMessage
-from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode
-from langgraph.graph import MessagesState
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
+from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode
+from pydantic import PrivateAttr
 
-from ..schema.agent_schema import AgentInternalState
-from ..schema.output_schema import CollectiveInterviewTopicSchema
-from ..schema.input_schema import SkillTreeSchema
-from ..prompt.topic_generation_agent_prompt import TOPIC_GENERATION_AGENT_PROMPT
 from ..model_handling import llm_tg as _llm_client
+from ..prompt.topic_generation_agent_prompt import TOPIC_GENERATION_AGENT_PROMPT
+from ..schema.agent_schema import AgentInternalState
+from ..schema.input_schema import SkillTreeSchema
+from ..schema.output_schema import CollectiveInterviewTopicSchema
 from src.mongo_tools import get_mongo_tools
 
 
@@ -49,13 +85,15 @@ TOOL_BACKOFF_SECONDS: float = float(os.getenv("TOPIC_AGENT_TOOL_RETRY_BACKOFF_SE
 # Single shared executor for sync tool calls with timeout
 _EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("TOPIC_AGENT_TOOL_MAX_WORKERS", "8")))
 
-_topic_retry_counter = 1
+# Global counter for logging retry iterations in the outer graph
+topic_retry_counter = 1
+
 
 # ==============================
-# Human-style logging
+# Logging
 # ==============================
 
-def _build_logger(
+def build_logger(
     name: str,
     log_dir: str,
     level: int,
@@ -74,24 +112,22 @@ def _build_logger(
     os.makedirs(log_dir, exist_ok=True)
     file_path = os.path.join(log_dir, filename)
 
-    # Console handler
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(level)
-    ch.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
+    console = logging.StreamHandler(sys.stdout)
+    console.setLevel(level)
+    console.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
 
-    # Rotating file handler
-    fh = TimedRotatingFileHandler(
+    rotate_file = TimedRotatingFileHandler(
         file_path, when=when, interval=interval, backupCount=backup_count, encoding="utf-8", utc=False
     )
-    fh.setLevel(level)
-    fh.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
+    rotate_file.setLevel(level)
+    rotate_file.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
 
-    logger.addHandler(ch)
-    logger.addHandler(fh)
+    logger.addHandler(console)
+    logger.addHandler(rotate_file)
     return logger
 
 
-LOGGER = _build_logger(
+logger = build_logger(
     name=AGENT_NAME,
     log_dir=LOG_DIR,
     level=LOG_LEVEL,
@@ -103,15 +139,11 @@ LOGGER = _build_logger(
 
 
 def log_info(msg: str) -> None:
-    LOGGER.info(msg)
+    logger.info(msg)
 
 
 def log_warning(msg: str) -> None:
-    LOGGER.warning(msg)
-
-
-def log_error(msg: str) -> None:
-    LOGGER.error(msg)
+    logger.warning(msg)
 
 
 # ---------- config ----------
@@ -121,79 +153,69 @@ RAW_TEXT_FIELDS = {
 }
 
 
-# ---------- tiny utils ----------
-def _looks_like_json(s: str) -> bool:
-    s = s.strip()
-    return (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]"))
+# ==============================
+# Helpers (redaction + retries)
+# ==============================
+
+def _looks_like_json(text: str) -> bool:
+    text = text.strip()
+    return (text.startswith("{") and text.endswith("}")) or (text.startswith("[") and text.endswith("]"))
 
 
-def _jsonish(x: Any) -> Any:
-    if isinstance(x, str) and _looks_like_json(x):
+def _jsonish(value: Any) -> Any:
+    if isinstance(value, str) and _looks_like_json(value):
         try:
-            return json.loads(x)
+            return json.loads(value)
         except Exception:
-            return x
-    if isinstance(x, dict):
-        return {k: _jsonish(v) for k, v in x.items()}
-    if isinstance(x, (list, tuple)):
-        return [_jsonish(v) for v in x]
-    return x
+            return value
+    if isinstance(value, dict):
+        return {k: _jsonish(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonish(v) for v in value]
+    return value
 
 
-def _compact(x: Any) -> str:
+def _compact(value: Any) -> str:
     try:
-        return json.dumps(x, ensure_ascii=False, indent=2) if isinstance(x, (dict, list)) else str(x)
+        return json.dumps(value, ensure_ascii=False, indent=2) if isinstance(value, (dict, list)) else str(value)
     except Exception:
-        return str(x)
+        return str(value)
 
 
-def _walk(o: Any, path: Tuple[Any, ...] = ()):
-    if isinstance(o, dict):
-        for k, v in o.items():
-            yield from _walk(v, path + (k,))
-    elif isinstance(o, (list, tuple)):
-        for i, v in enumerate(o):
-            yield from _walk(v, path + (i,))
-    else:
-        yield path, o
-
-
-# ---------- redaction for compact logs ----------
-def _redact(o: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
-    o = _jsonish(o)
-    if isinstance(o, dict):
+def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
+    """Redact long raw text fields for compact logging."""
+    value = _jsonish(value)
+    if isinstance(value, dict):
         out = {}
-        for k, v in o.items():
+        for k, v in value.items():
             key = k.lower() if isinstance(k, str) else k
             if isinstance(k, str) and key in RAW_TEXT_FIELDS and isinstance(v, str):
                 if omit_fields:
                     continue
                 head = (v.strip().splitlines() or [""])[0]
                 head = head[:preview_len] + ("…" if len(head) > preview_len else "")
-                out[k] = f"<{k}: {len(v)} chars; see raw block below — \"{head}\">"
+                out[k] = f"<{k}: {len(v)} chars — \"{head}\">"
             else:
                 out[k] = _redact(v, omit_fields=omit_fields, preview_len=preview_len)
         return out
-    if isinstance(o, (list, tuple)):
-        return [_redact(v, omit_fields=omit_fields, preview_len=preview_len) for v in o]
-    return o
+    if isinstance(value, (list, tuple)):
+        return [_redact(v, omit_fields=omit_fields, preview_len=preview_len) for v in value]
+    return value
 
 
-# ---------- main entry ----------
 def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> None:
+    """Log planned tool calls and trailing tool results in a compact, redacted form."""
     if not messages:
         return
 
-    # Planned tool calls
-    tcalls = getattr(ai_msg, "tool_calls", None)
-    if tcalls:
+    planned = getattr(ai_msg, "tool_calls", None)
+    if planned:
         log_info("Tool plan:")
-        for tc in tcalls:
+        for tc in planned:
             name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
             args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
-            LOGGER.info(f"  planned -> {name} args={_compact(_redact(_jsonish(args), omit_fields=False))}")
+            logger.info(f"  planned -> {name} args={_compact(_redact(_jsonish(args), omit_fields=False))}")
 
-    # Trailing tool results
     tool_msgs = []
     i = len(messages) - 1
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
@@ -203,24 +225,18 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
         return
 
     log_info("Tool results:")
-
-    # 1) Compact (omit long-text fields) for all results
     for tm in tool_msgs:
         content = getattr(tm, "content", None)
         compact = _redact(_jsonish(content), omit_fields=True)
-        LOGGER.info(f"  result <- id={getattr(tm, 'tool_call_id', None)} data={_compact(compact)}")
+        logger.info(f"  result -> id={getattr(tm, 'tool_call_id', None)} data={_compact(compact)}")
 
 
-def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = None) -> None:
+def log_retry(reason: str, iteration: int, extra: Optional[dict] = None) -> None:
     suffix = f" | extra={extra}" if extra else ""
     log_warning(f"Retry {iteration}: {reason}{suffix}")
 
 
-# ======================================
-# Retry / timeout helper for async ops
-# ======================================
-
-async def _retry_async(
+async def retry_async_with_backoff(
     op_factory: Callable[[], Coroutine[Any, Any, Any]],
     *,
     retries: int,
@@ -229,6 +245,7 @@ async def _retry_async(
     retry_reason: str,
     iteration_start: int = 1,
 ) -> Any:
+    """Generic async retry helper with timeout + exponential backoff."""
     attempt = 0
     last_exc: Optional[BaseException] = None
     while attempt <= retries:
@@ -236,7 +253,7 @@ async def _retry_async(
             return await asyncio.wait_for(op_factory(), timeout=timeout_s)
         except Exception as exc:
             last_exc = exc
-            log_retry_iteration(retry_reason, iteration_start + attempt, {"error": str(exc)})
+            log_retry(retry_reason, iteration_start + attempt, {"error": str(exc)})
             attempt += 1
             if attempt > retries:
                 break
@@ -251,8 +268,8 @@ async def _retry_async(
 
 class RetryTool(BaseTool):
     """
-    Delegates to an inner BaseTool but adds timeout + retry for both sync and async paths.
-    Preserves name/description/args_schema for bind_tools & ToolNode compatibility.
+    Wrap a BaseTool to add timeout + retry for both sync and async execution paths.
+    Keeps name/description/args_schema so it remains compatible with bind_tools & ToolNode.
     """
 
     _inner: BaseTool = PrivateAttr()
@@ -260,14 +277,7 @@ class RetryTool(BaseTool):
     _timeout_s: float = PrivateAttr()
     _backoff: float = PrivateAttr()
 
-    def __init__(
-        self,
-        inner: BaseTool,
-        *,
-        retries: int,
-        timeout_s: float,
-        backoff_base_s: float,
-    ) -> None:
+    def __init__(self, inner: BaseTool, *, retries: int, timeout_s: float, backoff_base_s: float) -> None:
         name = getattr(inner, "name", inner.__class__.__name__)
         description = getattr(inner, "description", "") or "Retried tool wrapper"
         args_schema = getattr(inner, "args_schema", None)
@@ -278,8 +288,8 @@ class RetryTool(BaseTool):
         self._timeout_s = timeout_s
         self._backoff = backoff_base_s
 
-    # Forward kw-only config always (StructuredTool expects it)
     def _run(self, *args: Any, **kwargs: Any) -> Any:
+        """Sync path with threadpool timeout + retries."""
         config = kwargs.pop("config", None)
 
         def _call_once():
@@ -293,10 +303,10 @@ class RetryTool(BaseTool):
                 return future.result(timeout=self._timeout_s)
             except FuturesTimeout as exc:
                 last_exc = exc
-                log_retry_iteration(f"tool_timeout:{self.name}", attempt + 1)
+                log_retry(f"tool_timeout:{self.name}", attempt + 1)
             except BaseException as exc:
                 last_exc = exc
-                log_retry_iteration(f"tool_error:{self.name}", attempt + 1, {"error": str(exc)})
+                log_retry(f"tool_error:{self.name}", attempt + 1, {"error": str(exc)})
             attempt += 1
             if attempt <= self._retries:
                 time.sleep(self._backoff * (2 ** (attempt - 1)))
@@ -304,6 +314,7 @@ class RetryTool(BaseTool):
         raise last_exc
 
     async def _arun(self, *args: Any, **kwargs: Any) -> Any:
+        """Async path with timeout + retries; falls back to thread executor if tool has only _run."""
         config = kwargs.pop("config", None)
 
         async def _call_once():
@@ -312,7 +323,7 @@ class RetryTool(BaseTool):
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(None, lambda: self._inner._run(*args, **{**kwargs, "config": config}))
 
-        return await _retry_async(
+        return await retry_async_with_backoff(
             _call_once,
             retries=self._retries,
             timeout_s=self._timeout_s,
@@ -329,23 +340,21 @@ class _MongoAgentState(MessagesState):
 
 class TopicGenerationAgent:
     """
-    Generates interview topics from a prepared summary by running a small
-    ReAct-style tool-using loop (for Mongo tools) and then coercing the final
-    assistant content into a typed schema.
+    Generate interview topics by running an inner, tool-enabled loop and
+    coercing the final assistant message to CollectiveInterviewTopicSchema.
     """
 
-    llm_tg = _llm_client
+    llm = _llm_client
 
-    _RAW_MONGO_TOOLS: List[BaseTool] = get_mongo_tools(llm=llm_tg)  # expected BaseTool instances
+    # Tools wrapped with retry/timeout
+    _RAW_MONGO_TOOLS: List[BaseTool] = get_mongo_tools(llm=llm)
     MONGO_TOOLS: List[BaseTool] = [
         RetryTool(t, retries=TOOL_RETRIES, timeout_s=TOOL_TIMEOUT_SECONDS, backoff_base_s=TOOL_BACKOFF_SECONDS)
         for t in _RAW_MONGO_TOOLS
     ]
 
-    _AGENT_MODEL = llm_tg.bind_tools(MONGO_TOOLS)
-    _STRUCTURED_MODEL = llm_tg.with_structured_output(
-        CollectiveInterviewTopicSchema, method="function_calling"
-    )
+    _AGENT_MODEL = llm.bind_tools(MONGO_TOOLS)
+    _STRUCTURED_MODEL = llm.with_structured_output(CollectiveInterviewTopicSchema, method="function_calling")
 
     _compiled_mongo_graph = None  # Compiled inner graph cache
 
@@ -360,7 +369,7 @@ class TopicGenerationAgent:
             return await loop.run_in_executor(None, TopicGenerationAgent._AGENT_MODEL.invoke, messages)
 
         log_info("Calling LLM (agent)")
-        result = await _retry_async(
+        result = await retry_async_with_backoff(
             _call,
             retries=LLM_RETRIES,
             timeout_s=LLM_TIMEOUT_SECONDS,
@@ -381,7 +390,7 @@ class TopicGenerationAgent:
             return await loop.run_in_executor(None, TopicGenerationAgent._STRUCTURED_MODEL.invoke, payload)
 
         log_info("Calling LLM (structured)")
-        result = await _retry_async(
+        result = await retry_async_with_backoff(
             _call,
             retries=LLM_RETRIES,
             timeout_s=LLM_TIMEOUT_SECONDS,
@@ -395,20 +404,14 @@ class TopicGenerationAgent:
 
     @staticmethod
     async def _agent_node(state: _MongoAgentState):
-        """
-        Invoke the tool-enabled model. ToolNode executes tool calls.
-        Must return {"messages": [...]}
-        """
+        """Invoke the tool-enabled model. ToolNode executes tool calls. Returns {"messages": [...]}."""
         log_tool_activity(state["messages"], ai_msg=None)
         ai = await TopicGenerationAgent._invoke_agent(state["messages"])
         return {"messages": [ai]}
 
     @staticmethod
     async def _respond_node(state: _MongoAgentState):
-        """
-        Take the last non-tool-call AI message content and coerce to schema.
-        Must return {"final_response": <obj>}
-        """
+        """Take the last non-tool-call AI message and coerce to schema. Returns {"final_response": obj}."""
         msgs = state["messages"]
 
         ai_content = None
@@ -430,10 +433,7 @@ class TopicGenerationAgent:
 
     @staticmethod
     def _should_continue(state: _MongoAgentState):
-        """
-        Router: if the last assistant message planned tool calls, continue to tools.
-        Otherwise, proceed to respond (coerce to schema).
-        """
+        """Route to ToolNode if last assistant message has tool_calls; otherwise coerce to schema."""
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
             log_tool_activity(state["messages"], ai_msg=last)
@@ -447,15 +447,11 @@ class TopicGenerationAgent:
             return cls._compiled_mongo_graph
 
         workflow = StateGraph(_MongoAgentState)
-        workflow.add_node("agent", cls._agent_node)     # pass function objects (no calls)
+        workflow.add_node("agent", cls._agent_node)
         workflow.add_node("respond", cls._respond_node)
         workflow.add_node("tools", ToolNode(cls.MONGO_TOOLS, tags=["mongo-tools"]))
         workflow.set_entry_point("agent")
-        workflow.add_conditional_edges(
-            "agent",
-            cls._should_continue,
-            {"continue": "tools", "respond": "respond"},
-        )
+        workflow.add_conditional_edges("agent", cls._should_continue, {"continue": "tools", "respond": "respond"})
         workflow.add_edge("tools", "agent")
         workflow.add_edge("respond", END)
 
@@ -468,25 +464,21 @@ class TopicGenerationAgent:
         if not state.generated_summary:
             raise ValueError("Summary cannot be null.")
 
-        interview_topics_feedback = (
-            state.interview_topics_feedback.feedback
-            if state.interview_topics_feedback is not None
-            else ""
-        )
-        state.interview_topics_feedbacks += "\n" + interview_topics_feedback + "\n"
+        feedback_text = state.interview_topics_feedback.feedback if state.interview_topics_feedback else ""
+        state.interview_topics_feedbacks += f"\n{feedback_text}\n"
 
         class AtTemplate(Template):
             delimiter = "@"
 
         tpl = AtTemplate(TOPIC_GENERATION_AGENT_PROMPT)
-        content = tpl.substitute(
+        sys_content = tpl.substitute(
             generated_summary=state.generated_summary.model_dump_json(),
             interview_topics_feedbacks=state.interview_topics_feedbacks,
             thread_id=state.id,
         )
 
         messages = [
-            SystemMessage(content=content),
+            SystemMessage(content=sys_content),
             HumanMessage(content="Based on the instructions, please start the process."),
         ]
 
@@ -500,11 +492,20 @@ class TopicGenerationAgent:
     # ---------------- Graph router: should regenerate? ----------------
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
-        global _topic_retry_counter
-        def _canon(s: str) -> str:
-            return (s or "").strip().lower()
+        """
+        Return True when satisfied (END). Return False to retry topic generation.
+        Conditions checked:
+          - Total questions across topics matches generated_summary.total_questions.
+          - All focus skills are valid leaves of the SkillTree.
+          - All 'must' priority skill leaves are included among focus areas; if not,
+            inject feedback to add them to the last topic and request a retry.
+        """
+        global topic_retry_counter
 
-        def _level3_leaves(root: SkillTreeSchema) -> List[SkillTreeSchema]:
+        def canon(text: str) -> str:
+            return (text or "").strip().lower()
+
+        def level3_leaves(root: SkillTreeSchema) -> List[SkillTreeSchema]:
             if not getattr(root, "children", None):
                 return []
             leaves: List[SkillTreeSchema] = []
@@ -514,7 +515,7 @@ class TopicGenerationAgent:
                         leaves.append(leaf)
             return leaves
 
-        def _level3_must_leaves(root: SkillTreeSchema) -> List[SkillTreeSchema]:
+        def level3_must_leaves(root: SkillTreeSchema) -> List[SkillTreeSchema]:
             if not getattr(root, "children", None):
                 return []
             musts: List[SkillTreeSchema] = []
@@ -524,43 +525,47 @@ class TopicGenerationAgent:
                         musts.append(leaf)
             return musts
 
-        all_skill_leaves = [_canon(leaf.name) for leaf in _level3_leaves(state.skill_tree)]
-        skills_priority_must = [_canon(leaf.name) for leaf in _level3_must_leaves(state.skill_tree)]
+        all_skill_leaves = [canon(leaf.name) for leaf in level3_leaves(state.skill_tree)]
+        must_skill_leaves = [canon(leaf.name) for leaf in level3_must_leaves(state.skill_tree)]
 
-        focus_area_list: List[str] = []
-        for t in state.interview_topics.interview_topics:
-            for i in t.focus_area:
-                v = _canon(i.model_dump().get("skill", ""))
-                if v and v not in focus_area_list:
-                    focus_area_list.append(v)
+        focus_area_skills: List[str] = []
+        for topic in state.interview_topics.interview_topics:
+            for fo in topic.focus_area:
+                val = canon(fo.model_dump().get("skill", ""))
+                if val and val not in focus_area_skills:
+                    focus_area_skills.append(val)
 
-        total_questions_sum = sum(t.total_questions for t in state.interview_topics.interview_topics)
-        if total_questions_sum != state.generated_summary.total_questions:
-            log_retry_iteration("Total questions mismatch", _topic_retry_counter, {"got": total_questions_sum, "target": state.generated_summary.total_questions})
-            _topic_retry_counter += 1
+        total_questions = sum(t.total_questions for t in state.interview_topics.interview_topics)
+        if total_questions != state.generated_summary.total_questions:
+            log_retry(
+                "Total questions mismatch",
+                topic_retry_counter,
+                {"got": total_questions, "target": state.generated_summary.total_questions},
+            )
+            topic_retry_counter += 1
             return False
 
         leaf_set = set(all_skill_leaves)
-        for s in focus_area_list:
+        for s in focus_area_skills:
             if s not in leaf_set:
-                log_retry_iteration("Invalid focus skill", _topic_retry_counter, {"skill": s})
-                _topic_retry_counter += 1
+                log_retry("Invalid focus skill", topic_retry_counter, {"skill": s})
+                topic_retry_counter += 1
                 return False
 
-        missing = sorted(set(skills_priority_must) - set(focus_area_list))
-        if missing:
-            fb_prev = state.interview_topics_feedback.feedback if state.interview_topics_feedback else ""
-            fb = (
-                fb_prev
+        missing_musts = sorted(set(must_skill_leaves) - set(focus_area_skills))
+        if missing_musts:
+            prev = state.interview_topics_feedback.feedback if state.interview_topics_feedback else ""
+            feedback = (
+                prev
                 + "Please keep the topic set as is irrespective of below instructions:\n"
                 f"```\n{state.interview_topics.model_dump()}\n```\n"
                 "But add the list of missing `must` priority skills below to the focus areas of the last topic "
                 "(General Skill Assessment):\n"
-                + ", ".join(missing)
+                + ", ".join(missing_musts)
             )
-            state.interview_topics_feedback = {"satisfied": False, "feedback": fb}
-            log_retry_iteration("Missing MUST skills", _topic_retry_counter, {"missing": missing})
-            _topic_retry_counter += 1
+            state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
+            log_retry("Missing MUST skills", topic_retry_counter, {"missing": missing_musts})
+            topic_retry_counter += 1
             return False
 
         return True  # satisfied
