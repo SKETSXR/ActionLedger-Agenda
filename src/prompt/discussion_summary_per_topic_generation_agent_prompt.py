@@ -25,6 +25,7 @@ Instructions
         - All Direct and Deep Dive steps MUST explicitly continue the Opening scenario (no restarts).
 
    - `"guidelines"`: global rules for framing questions <Write your own guidelines in short 2-3 lines only after understanding the provided ones and don't copy paste them>.  
+   - `"description"`: for each step, a concise description of the step's purpose like opening, DirectQuestion or DeepDive as per the topic we are writing this sequence for, always write a totally different description for case study topic and for discussion summary considering the above instructions properly.
    - `"focus_areas_covered"`: union of all `skill` values from `focus_area`. <Make sure all the skills provided in the different focus areas of this topic are used and none is left out in this field so also each of them should be covered in any of your `"focus_area"` field of various steps but none should be left out>
    - `"reference_material"`: union of all `reference_sources` mentioned across the sequence.  
 
