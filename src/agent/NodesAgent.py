@@ -82,6 +82,16 @@ LOG_ROTATE_WHEN = os.getenv("NODES_AGENT_LOG_ROTATE_WHEN", "midnight")
 LOG_ROTATE_INTERVAL = int(os.getenv("NODES_AGENT_LOG_ROTATE_INTERVAL", "1"))
 LOG_BACKUP_COUNT = int(os.getenv("NODES_AGENT_LOG_BACKUP_COUNT", "365"))
 
+# --- richer preview knobs for 'question_guidelines' ---
+SHOW_FULL_TEXT = os.getenv("QA_LOG_SHOW_FULL_TEXT", "0") == "1"
+SHOW_FULL_FIELDS = {
+    k.strip().lower()
+    for k in os.getenv("QA_LOG_SHOW_FULL_FIELDS", "").split(",")
+    if k.strip()
+}
+QGUIDE_PREVIEW_LEN = int(os.getenv("QA_LOG_QGUIDE_PREVIEW_LEN", "280"))      # chars
+QGUIDE_PREVIEW_LINES = int(os.getenv("QA_LOG_QGUIDE_PREVIEW_LINES", "2"))    # lines
+
 # Retry/timeout knobs (namespaced for this agent)
 LLM_TIMEOUT_SECONDS: float = float(os.getenv("NODES_AGENT_LLM_TIMEOUT_SECONDS", "90"))
 LLM_RETRIES: int = int(os.getenv("NODES_AGENT_LLM_RETRIES", "2"))
@@ -189,23 +199,45 @@ def _compact(value: Any) -> str:
 
 
 def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
-    """Redact long raw text fields for compact logging."""
+    """Redact long raw text fields for compact logging; always show a richer preview for 'question_guidelines'."""
     value = _jsonish(value)
     if isinstance(value, dict):
         out = {}
         for k, v in value.items():
             key = k.lower() if isinstance(k, str) else k
+
             if isinstance(k, str) and key in RAW_TEXT_FIELDS and isinstance(v, str):
+                # Show full only if explicitly allowed
+                if SHOW_FULL_TEXT or (SHOW_FULL_FIELDS and key in SHOW_FULL_FIELDS):
+                    out[k] = v
+                    continue
+
+                # Special-case: ALWAYS include a compact preview for question_guidelines,
+                # even if omit_fields=True (other raw fields will be dropped).
+                if key == "question_guidelines":
+                    lines = [ln.strip() for ln in v.strip().splitlines() if ln.strip()]
+                    head = " ".join(lines[:max(1, QGUIDE_PREVIEW_LINES)]) or ""
+                    if len(head) > QGUIDE_PREVIEW_LEN:
+                        head = head[:QGUIDE_PREVIEW_LEN].rstrip() + "…"
+                    out[k + "_preview"] = head
+                    out[k + "_len"] = len(v)
+                    continue
+
+                # All other long text fields:
                 if omit_fields:
                     continue
                 head = (v.strip().splitlines() or [""])[0]
-                head = head[:preview_len] + ("…" if len(head) > preview_len else "")
-                out[k] = f"<{k}: {len(v)} chars; \"{head}\">"
+                if len(head) > preview_len:
+                    head = head[:preview_len].rstrip() + "…"
+                out[k + "_preview"] = head
+                out[k + "_len"] = len(v)
             else:
                 out[k] = _redact(v, omit_fields=omit_fields, preview_len=preview_len)
         return out
+
     if isinstance(value, (list, tuple)):
         return [_redact(v, omit_fields=omit_fields, preview_len=preview_len) for v in value]
+
     return value
 
 
