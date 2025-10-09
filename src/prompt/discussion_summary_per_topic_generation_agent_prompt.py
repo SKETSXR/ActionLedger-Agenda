@@ -16,7 +16,7 @@ Instructions
 2. For the topic, create a JSON object with:  
    - `"topic"`: short name.  
    - `"sequence"`: ordered list of steps (Opening -> Direct Question(s) -> Deep Dive(s)).  
-      * Opening means starting questions related to the background of the candidate but for the case study topic where in we give a scenario then the discussion starts
+      * Opening means starting questions related to the background of the candidate for all topics apart from the case study topic as then you will give a scenario, based on this opening the discussion will start.
       * Direct Question means those which are related to respective topic only.  
       * Deep Dive(s) means those that dive deep into the respective particular topic.      
       - Conditional Opening rule only for Case study topic (topic title contains "Case Study"):
