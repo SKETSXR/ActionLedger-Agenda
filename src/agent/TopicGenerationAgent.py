@@ -127,8 +127,9 @@ def build_logger(
     console.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
 
     rotate_file = TimedRotatingFileHandler(
-        file_path, when=when, interval=interval, backupCount=backup_count, encoding="utf-8", utc=False
+        file_path, when=when, interval=interval, backupCount=backup_count, encoding="utf-8", utc=False, delay=True
     )
+    logging.raiseExceptions = False  # production: don’t raise on logging I/O errors
     rotate_file.setLevel(level)
     rotate_file.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
 

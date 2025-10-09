@@ -130,7 +130,10 @@ def get_logger(name: str = "summary_generation_agent") -> logging.Logger:
         backupCount=CONFIG.log_backup_days,  # keep up to 365 old files
         encoding="utf-8",
         utc=False,            # rotate by local time (match your other agents)
+        delay=True,  # open the file; avoids clobbering on early init/crash
     )
+    logging.raiseExceptions = False  # production: don’t crash on logging errors
+
     file_handler.setLevel(getattr(logging, CONFIG.log_level_file.upper(), logging.INFO))
     file_handler.setFormatter(plain_fmt)
 
