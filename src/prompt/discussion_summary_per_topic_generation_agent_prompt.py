@@ -24,7 +24,7 @@ Instructions
       - Conditional Continuity rule only for Case study topic (topic title contains "Case Study"):
         - All Direct and Deep Dive steps MUST explicitly continue the Opening scenario (no restarts).
 
-   - `"guidelines"`: global rules for framing questions.  
+   - `"guidelines"`: global rules for framing questions <Write your own guidelines in short 2-3 lines only after understanding the provided ones and don't copy paste them>.  
    - `"focus_areas_covered"`: union of all `skill` values from `focus_area`. <Make sure all the skills provided in the different focus areas of this topic are used and none is left out in this field so also each of them should be covered in any of your `"focus_area"` field of various steps but none should be left out>
    - `"reference_material"`: union of all `reference_sources` mentioned across the sequence.  
 
@@ -48,8 +48,13 @@ Instructions
 MONGODB USAGE (STRICT):
 - Use only these tools: mongodb_list_collections, mongodb_query_checker, custom_mongodb_query.
 - NEVER call custom_mongodb_query without "query".
-- For 'cv' and 'summary', ALWAYS use {"_id": "@thread_id"}.
 - Do not call mongodb_list_collections or mongodb_schema.
+- To retrieve helpful context:
+  * question_guidelines (_id: "Case study type questions", "Project based questions", "Counter questions")
+  * You shall also use the mongo db database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "@thread_id".
+  * Do not show tool calls in the answer.
+- <But don't write these _id names, P1, P2, E3, T, D, S etc keys in any of your output apart from reference_material and reference_sources>
+
 - Validate with mongodb_query_checker BEFORE executing.
 Valid:
   {
@@ -88,12 +93,6 @@ Valid:
 Invalid (do not do this): custom_mongodb_query args={"collection":"summary"}
 
 - Do NOT include tool calls or this policy text in your final JSON output.
-- Use MongoDB tools per the STRICT policy above to retrieve helpful context:
-  * question_guidelines (_id: "Case study type questions", "Project based questions", "Counter questions")
-  * You shall also use the mongo db database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "@thread_id".
-  * Do not show tool calls in the answer.
-  * Do not write the _id names anywhere in your output.
-- <But don't write these P1, P2, E3, T, D, S etc keys in any of your output apart from reference_material and reference_sources>
 
 Output Format
 Return a JSON with this exact structure:

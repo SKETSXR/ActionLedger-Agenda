@@ -139,7 +139,7 @@ cv / summary context keyed by "@thread_id"
 
 Do not show tool calls in the answer.
 
-Do not write the _id names anywhere in your output.
+Do not write the _id names and key names like P1, P2, E4, T, S etc anywhere in your output.
 
 Output must be a JSON object grouped by topic: 
 You can only follow any of these patterns only for your node generation and don't go outside of this:

@@ -80,7 +80,7 @@ HARD CONSTRAINTS (must be exact; use @qa_error feedback to correct on retries):
 - Project/experience grounding:
   - Use P1, P2, …; E1, E2, …; T; D; S only when they exist for @thread_id.
   - Do NOT create questions from projects whose projectwise_summary fields state “no such evidence” for the relevant aspect.
-  - Outside of questions and guidelines, do NOT output these keys arbitrarily.
+- Also don't write the _id names and key names like P1, P2, E4, T, S etc anywhere in your output.
 
 QA Generation Rules
 - For THIS topic, generate EXACTLY N QA blocks (N = number of deep-dive nodes).
