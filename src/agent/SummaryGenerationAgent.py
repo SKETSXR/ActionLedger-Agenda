@@ -53,9 +53,7 @@
 #   - Ensure upstream redaction of sensitive data before state is populated.
 #
 # Usage
-#   - Import and add to a larger LangGraph, or run this module to print an
-#     ASCII graph preview:
-#       python summary_generation_agent.py
+#   - Import and add to a larger LangGraph
 #
 # Notes
 #   - All LLM inputs are JSON-serialized to minimize prompt drift.
