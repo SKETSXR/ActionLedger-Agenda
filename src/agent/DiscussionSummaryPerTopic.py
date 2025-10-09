@@ -1,20 +1,60 @@
-import json
+# =============================================================================
+# Module: discussion_summary_per_topic_agent
+# =============================================================================
+# Overview
+#   Production-grade LangGraph agent that generates a per-topic discussion
+#   summary for each interview topic, in parallel. It runs a compact ReAct-style
+#   inner loop with Mongo-backed tools and coerces the final assistant content
+#   into the typed schema: DiscussionSummaryPerTopicSchema.DiscussionTopic.
+#
+# Responsibilities
+#   - Build a System prompt per topic from the global generated summary + topic.
+#   - Invoke an LLM bound to Mongo tools (via ToolNode) for each topic.
+#   - Convert the final tool-free assistant message to the typed schema.
+#   - Run all topics concurrently, preserving the input topic names exactly.
+#   - Retry when the set of produced topics doesn’t match the input set.
+#
+# Data Flow
+#   Outer Graph:
+#     START ──► discussion_summary_per_topic_generator
+#                 ├─► END (should_regenerate=False)
+#                 └─► discussion_summary_per_topic_generator (should_regenerate=True)
+#
+#   Inner Graph (per topic):
+#     agent ─► (tools)* ─► respond
+#       1) agent: tool-enabled LLM plans tools if needed
+#       2) tools: ToolNode executes planned tool calls
+#       3) respond: coerce last tool-free assistant message to schema
+#
+# Reliability & Observability
+#   - Timeouts + retries (exponential backoff) for LLM and tools.
+#   - Console + rotating file logs with compact redaction for large fields.
+#
+# Configuration (Environment Variables)
+#   DISCUSSION_SUMMARY_AGENT_LOG_DIR, DISCUSSION_SUMMARY_AGENT_LOG_FILE,
+#   DISCUSSION_SUMMARY_AGENT_LOG_LEVEL, DISCUSSION_SUMMARY_AGENT_LOG_ROTATE_WHEN,
+#   DISCUSSION_SUMMARY_AGENT_LOG_ROTATE_INTERVAL, DISCUSSION_SUMMARY_AGENT_LOG_BACKUP_COUNT,
+#   DISC_AGENT_LLM_TIMEOUT_SECONDS, DISC_AGENT_LLM_RETRIES, DISC_AGENT_LLM_RETRY_BACKOFF_SECONDS,
+#   DISC_AGENT_TOOL_TIMEOUT_SECONDS, DISC_AGENT_TOOL_RETRIES, DISC_AGENT_TOOL_RETRY_BACKOFF_SECONDS,
+#   DISC_AGENT_TOOL_MAX_WORKERS
+# =============================================================================
+
 import asyncio
+import json
 import logging
 import os
 import sys
 import time
-from string import Template
-from typing import Any, Dict, List, Optional, Sequence, Tuple
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
-
 from logging.handlers import TimedRotatingFileHandler
-from langgraph.graph import StateGraph, START, END
-from langgraph.graph import MessagesState
-from langgraph.prebuilt import ToolNode
+from string import Template
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Sequence, Tuple
+
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_core.tools import BaseTool
 from langchain_core.runnables import RunnableLambda
+from langchain_core.tools import BaseTool
+from langgraph.graph import StateGraph, START, END, MessagesState
+from langgraph.prebuilt import ToolNode
 from pydantic import PrivateAttr
 
 from src.mongo_tools import get_mongo_tools
@@ -34,9 +74,7 @@ AGENT_NAME = "discussion_summary_agent"
 
 LOG_DIR = os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_DIR", "logs")
 LOG_LEVEL = getattr(
-    logging,
-    os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_LEVEL", "INFO").upper(),
-    logging.INFO,
+    logging, os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_LEVEL", "INFO").upper(), logging.INFO
 )
 LOG_FILE = os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_FILE", f"{AGENT_NAME}.log")
 LOG_ROTATE_WHEN = os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_ROTATE_WHEN", "midnight")
@@ -61,14 +99,14 @@ RAW_TEXT_FIELDS = {
 }
 
 # Global retry counter used only for logging iteration counts
-count = 1
+retry_counter = 1
+
 
 # ==============================
-# Human-style logging
+# Logging
 # ==============================
 
-
-def _build_logger(
+def build_logger(
     name: str,
     log_dir: str,
     level: int,
@@ -87,24 +125,22 @@ def _build_logger(
     os.makedirs(log_dir, exist_ok=True)
     file_path = os.path.join(log_dir, filename)
 
-    # Console handler
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(level)
-    ch.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
+    console = logging.StreamHandler(sys.stdout)
+    console.setLevel(level)
+    console.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
 
-    # Rotating file handler
-    fh = TimedRotatingFileHandler(
+    rotating_file = TimedRotatingFileHandler(
         file_path, when=when, interval=interval, backupCount=backup_count, encoding="utf-8", utc=False
     )
-    fh.setLevel(level)
-    fh.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
+    rotating_file.setLevel(level)
+    rotating_file.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
 
-    logger.addHandler(ch)
-    logger.addHandler(fh)
+    logger.addHandler(console)
+    logger.addHandler(rotating_file)
     return logger
 
 
-LOGGER = _build_logger(
+logger = build_logger(
     name=AGENT_NAME,
     log_dir=LOG_DIR,
     level=LOG_LEVEL,
@@ -115,91 +151,78 @@ LOGGER = _build_logger(
 )
 
 
-def log_info(msg: str) -> None:
-    LOGGER.info(msg)
+def log_info(message: str) -> None:
+    logger.info(message)
 
 
-def log_warning(msg: str) -> None:
-    LOGGER.warning(msg)
+def log_warning(message: str) -> None:
+    logger.warning(message)
 
 
-def log_error(msg: str) -> None:
-    LOGGER.error(msg)
+# ==============================
+# Helpers (redaction + compact)
+# ==============================
+
+def _looks_like_json(text: str) -> bool:
+    text = text.strip()
+    return (text.startswith("{") and text.endswith("}")) or (text.startswith("[") and text.endswith("]"))
 
 
-# ---------- tiny utils ----------
-def _looks_like_json(s: str) -> bool:
-    s = s.strip()
-    return (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]"))
-
-
-def _jsonish(x: Any) -> Any:
-    if isinstance(x, str) and _looks_like_json(x):
+def _jsonish(value: Any) -> Any:
+    if isinstance(value, str) and _looks_like_json(value):
         try:
-            return json.loads(x)
+            return json.loads(value)
         except Exception:
-            return x
-    if isinstance(x, dict):
-        return {k: _jsonish(v) for k, v in x.items()}
-    if isinstance(x, (list, tuple)):
-        return [_jsonish(v) for v in x]
-    return x
+            return value
+    if isinstance(value, dict):
+        return {k: _jsonish(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonish(v) for v in value]
+    return value
 
 
-def _compact(x: Any) -> str:
+def _compact(value: Any) -> str:
     try:
-        return json.dumps(x, ensure_ascii=False, indent=2) if isinstance(x, (dict, list)) else str(x)
+        return json.dumps(value, ensure_ascii=False, indent=2) if isinstance(value, (dict, list)) else str(value)
     except Exception:
-        return str(x)
+        return str(value)
 
 
-def _walk(o: Any, path: Tuple[Any, ...] = ()):
-    if isinstance(o, dict):
-        for k, v in o.items():
-            yield from _walk(v, path + (k,))
-    elif isinstance(o, (list, tuple)):
-        for i, v in enumerate(o):
-            yield from _walk(v, path + (i,))
-    else:
-        yield path, o
-
-
-# ---------- redaction for compact logs ----------
-def _redact(o: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
-    o = _jsonish(o)
-    if isinstance(o, dict):
+def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
+    """Redact long raw text fields for compact logging."""
+    value = _jsonish(value)
+    if isinstance(value, dict):
         out = {}
-        for k, v in o.items():
+        for k, v in value.items():
             key = k.lower() if isinstance(k, str) else k
             if isinstance(k, str) and key in RAW_TEXT_FIELDS and isinstance(v, str):
                 if omit_fields:
                     continue
                 head = (v.strip().splitlines() or [""])[0]
                 head = head[:preview_len] + ("…" if len(head) > preview_len else "")
-                out[k] = f"<{k}: {len(v)} chars; see raw block below — \"{head}\">"
+                out[k] = f"<{k}: {len(v)} chars; \"{head}\">"
             else:
                 out[k] = _redact(v, omit_fields=omit_fields, preview_len=preview_len)
         return out
-    if isinstance(o, (list, tuple)):
-        return [_redact(v, omit_fields=omit_fields, preview_len=preview_len) for v in o]
-    return o
+    if isinstance(value, (list, tuple)):
+        return [_redact(v, omit_fields=omit_fields, preview_len=preview_len) for v in value]
+    return value
 
 
-# ---------- main entry ----------
 def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> None:
+    """Log planned tool calls and trailing tool results in a compact, redacted form."""
     if not messages:
         return
 
-    # Planned tool calls
-    tcalls = getattr(ai_msg, "tool_calls", None)
-    if tcalls:
+    planned = getattr(ai_msg, "tool_calls", None)
+    if planned:
         log_info("Tool plan:")
-        for tc in tcalls:
+        for tc in planned:
             name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
             args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
-            LOGGER.info(f"  planned -> {name} args={_compact(_redact(_jsonish(args), omit_fields=False))}")
+            logger.info(f"  planned -> {name} args={_compact(_redact(_jsonish(args), omit_fields=False))}")
 
-    # Trailing tool results
+    # Gather trailing tool results
     tool_msgs = []
     i = len(messages) - 1
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
@@ -212,7 +235,7 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
     for tm in tool_msgs:
         content = getattr(tm, "content", None)
         compact = _redact(_jsonish(content), omit_fields=True)
-        LOGGER.info(f"  result <- id={getattr(tm, 'tool_call_id', None)} data={_compact(compact)}")
+        logger.info(f"  result <- id={getattr(tm, 'tool_call_id', None)} data={_compact(compact)}")
 
 
 def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = None) -> None:
@@ -226,16 +249,16 @@ def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = Non
 # ======================================
 
 async def _retry_async(
-    op_factory,
+    op_factory: Callable[[], Coroutine[Any, Any, Any]],
     *,
     retries: int,
     timeout_s: float,
     backoff_base_s: float,
     retry_reason: str,
     iteration_start: int = 1,
-):
+) -> Any:
     attempt = 0
-    last_exc = None
+    last_exc: Optional[BaseException] = None
     while attempt <= retries:
         try:
             return await asyncio.wait_for(op_factory(), timeout=timeout_s)
@@ -246,6 +269,7 @@ async def _retry_async(
             if attempt > retries:
                 break
             await asyncio.sleep(backoff_base_s * (2 ** (attempt - 1)))
+    # noinspection PyUnboundLocalVariable
     raise last_exc
 
 
@@ -254,6 +278,8 @@ async def _retry_async(
 # ======================================================
 
 class RetryTool(BaseTool):
+    """Wrap BaseTool to add timeout + retry (sync/async)."""
+
     _inner: BaseTool = PrivateAttr()
     _retries: int = PrivateAttr()
     _timeout_s: float = PrivateAttr()
@@ -276,7 +302,7 @@ class RetryTool(BaseTool):
             return self._inner._run(*args, **{**kwargs, "config": config})
 
         attempt = 0
-        last_exc = None
+        last_exc: Optional[BaseException] = None
         while attempt <= self._retries:
             fut = _EXECUTOR.submit(_call_once)
             try:
@@ -290,6 +316,7 @@ class RetryTool(BaseTool):
             attempt += 1
             if attempt <= self._retries:
                 time.sleep(self._backoff * (2 ** (attempt - 1)))
+        # noinspection PyUnboundLocalVariable
         raise last_exc
 
     async def _arun(self, *args, **kwargs):
@@ -316,17 +343,19 @@ class _PerTopicState(MessagesState):
 
 
 class PerTopicDiscussionSummaryGenerationAgent:
-    llm_dts = llm_dts
+    """Generates a DiscussionTopic for a single input topic via an inner ReAct loop."""
+
+    llm = llm_dts
 
     # wrap Mongo tools with retry/timeout
-    _RAW_MONGO_TOOLS = get_mongo_tools(llm=llm_dts)
+    _RAW_MONGO_TOOLS = get_mongo_tools(llm=llm)
     MONGO_TOOLS = [
         RetryTool(t, retries=TOOL_RETRIES, timeout_s=TOOL_TIMEOUT_SECONDS, backoff_base_s=TOOL_BACKOFF_SECONDS)
         for t in _RAW_MONGO_TOOLS
     ]
 
-    _AGENT_MODEL = llm_dts.bind_tools(MONGO_TOOLS)
-    _STRUCTURED_MODEL = llm_dts.with_structured_output(
+    _AGENT_MODEL = llm.bind_tools(MONGO_TOOLS)
+    _STRUCTURED_MODEL = llm.with_structured_output(
         DiscussionSummaryPerTopicSchema.DiscussionTopic, method="function_calling"
     )
 
@@ -339,7 +368,9 @@ class PerTopicDiscussionSummaryGenerationAgent:
             if hasattr(PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL, "ainvoke"):
                 return await PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL.ainvoke(messages)
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL.invoke, messages)
+            return await loop.run_in_executor(
+                None, PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL.invoke, messages
+            )
 
         log_info("Calling LLM (agent)")
         ai = await _retry_async(
@@ -360,7 +391,9 @@ class PerTopicDiscussionSummaryGenerationAgent:
             if hasattr(PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL, "ainvoke"):
                 return await PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL.ainvoke(payload)
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL.invoke, payload)
+            return await loop.run_in_executor(
+                None, PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL.invoke, payload
+            )
 
         log_info("Calling LLM (structured)")
         obj = await _retry_async(
@@ -418,7 +451,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
     async def _respond_node_async(state: _PerTopicState):
         return await PerTopicDiscussionSummaryGenerationAgent._respond_node(state)
 
-    # ---------- Lazy compile inner ReAct graph ----------
+    # ---------- Compile inner ReAct graph ----------
     @classmethod
     def _get_graph(cls):
         if cls._compiled_graph is not None:
@@ -440,7 +473,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
         return cls._compiled_graph
 
     @staticmethod
-    async def _one_topic_call(generated_summary_json: str, topic: Dict[str, Any], thread_id):
+    async def _one_topic_call(generated_summary_json: str, topic: Dict[str, Any], thread_id: str):
         class AtTemplate(Template):
             delimiter = "@"
 
@@ -464,17 +497,16 @@ class PerTopicDiscussionSummaryGenerationAgent:
         """
         Regenerate if the set of topics in the output does not exactly match
         the set of input topics. Includes a guard to avoid infinite loops if
-        nothing was produced.
+        nothing was produced (single extra retry).
         """
-        global count
+        global retry_counter
 
-        # Guard: if nothing produced, allow at most 1 retry in this condition
+        # Guard: if nothing produced, allow at most 1 retry under this condition
         if not getattr(state, "discussion_summary_per_topic", None) or \
            not getattr(state.discussion_summary_per_topic, "discussion_topics", None):
-            log_retry_iteration("No discussion topics produced; retrying once", count)
-            count += 1
-            # retry only once under this specific condition
-            return count <= 2
+            log_retry_iteration("No discussion topics produced; retrying once", retry_counter)
+            retry_counter += 1
+            return retry_counter <= 2  # retry only once for the "no output" case
 
         input_topics = {t.topic for t in state.interview_topics.interview_topics}
         output_topics = {dt.topic for dt in state.discussion_summary_per_topic.discussion_topics}
@@ -483,10 +515,10 @@ class PerTopicDiscussionSummaryGenerationAgent:
             extra = output_topics - input_topics
             log_retry_iteration(
                 reason="Topic mismatch",
-                iteration=count,
+                iteration=retry_counter,
                 extra={"missing": missing, "extra": extra},
             )
-            count += 1
+            retry_counter += 1
             return True
         return False
 
@@ -527,30 +559,30 @@ class PerTopicDiscussionSummaryGenerationAgent:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Collect successful DiscussionTopic entries and enforce exact topic names
-        discussion_topics = []
-        for idx, r in enumerate(results):
-            if isinstance(r, Exception):
-                log_warning(f"Topic {idx} summarization failed: {r}")
+        discussion_topics: List[Any] = []
+        for idx, result in enumerate(results):
+            if isinstance(result, Exception):
+                log_warning(f"Topic {idx} summarization failed: {result}")
                 continue
 
-            in_topic = (
+            input_topic_name = (
                 topics_list[idx].get("topic")
                 or topics_list[idx].get("name")
                 or topics_list[idx].get("title")
                 or "Unknown"
             )
             try:
-                if hasattr(r, "model_copy"):  # pydantic v2
-                    r = r.model_copy(update={"topic": in_topic})
-                elif hasattr(r, "copy"):  # pydantic v1
-                    r = r.copy(update={"topic": in_topic})
-                elif isinstance(r, dict):
-                    r["topic"] = in_topic
+                if hasattr(result, "model_copy"):  # pydantic v2
+                    result = result.model_copy(update={"topic": input_topic_name})
+                elif hasattr(result, "copy"):  # pydantic v1
+                    result = result.copy(update={"topic": input_topic_name})
+                elif isinstance(result, dict):
+                    result["topic"] = input_topic_name
                 else:
-                    setattr(r, "topic", in_topic)
-                discussion_topics.append(r)
-            except Exception as e:
-                log_warning(f"Failed to append structured response for topic index {idx}: {e}")
+                    setattr(result, "topic", input_topic_name)
+                discussion_topics.append(result)
+            except Exception as exc:
+                log_warning(f"Failed to append structured response for topic index {idx}: {exc}")
 
         state.discussion_summary_per_topic = DiscussionSummaryPerTopicSchema(
             discussion_topics=discussion_topics
