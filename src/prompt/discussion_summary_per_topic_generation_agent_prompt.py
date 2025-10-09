@@ -90,7 +90,7 @@ Invalid (do not do this): custom_mongodb_query args={"collection":"summary"}
 - Do NOT include tool calls or this policy text in your final JSON output.
 - Use MongoDB tools per the STRICT policy above to retrieve helpful context:
   * question_guidelines (_id: "Case study type questions", "Project based questions", "Counter questions")
-  - You shall also use the mongo db database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "@thread_id".
+  * You shall also use the mongo db database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "@thread_id".
   * Do not show tool calls in the answer.
   * Do not write the _id names anywhere in your output.
 - <But don't write these P1, P2, E3, T, D, S etc keys in any of your output apart from reference_material and reference_sources>
