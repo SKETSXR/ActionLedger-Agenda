@@ -130,7 +130,7 @@ def build_logger(
     backup_count: int,
 ) -> logging.Logger:
     logger = logging.getLogger(name)
-    if logger.handlers:
+    if logger.hasHandlers():
         return logger
 
     logger.setLevel(level)
