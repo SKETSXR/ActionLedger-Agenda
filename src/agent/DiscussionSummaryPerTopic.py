@@ -108,6 +108,10 @@ RAW_TEXT_FIELDS = {
     "policy", "notes", "rubric", "examples", "description_md",
 }
 
+GUIDELINE_KEY_CANDIDATES = {
+    "question_guidelines", "question_guideline", "guidelines", "guideline"
+}
+
 # Global retry counter used only for logging iteration counts
 retry_counter = 1
 
@@ -198,39 +202,52 @@ def _compact(value: Any) -> str:
         return str(value)
 
 
+def _is_guideline_key(key: str) -> bool:
+    """True for any likely guidelines field (case-insensitive)."""
+    k = (key or "").lower()
+    if k in GUIDELINE_KEY_CANDIDATES:
+        return True
+    # also catch variations like "global_guidelines", "question_guidelines_md"
+    return "guideline" in k
+
+
 def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
-    """Redact long raw text fields for compact logging; always show a richer preview for 'question_guidelines'."""
+    """
+    Redact long raw text fields for compact logging.
+    Always include a compact preview for any *guideline-like* key, not just 'question_guidelines'.
+    """
     value = _jsonish(value)
+
     if isinstance(value, dict):
         out = {}
         for k, v in value.items():
-            key = k.lower() if isinstance(k, str) else k
+            key_l = k.lower() if isinstance(k, str) else k
 
-            if isinstance(k, str) and key in RAW_TEXT_FIELDS and isinstance(v, str):
-                # Show full only if explicitly allowed
-                if SHOW_FULL_TEXT or (SHOW_FULL_FIELDS and key in SHOW_FULL_FIELDS):
+            if isinstance(k, str) and key_l in RAW_TEXT_FIELDS and isinstance(v, str):
+                # show full only if explicitly allowed
+                if SHOW_FULL_TEXT or (SHOW_FULL_FIELDS and key_l in SHOW_FULL_FIELDS):
                     out[k] = v
                     continue
 
-                # Special-case: ALWAYS include a compact preview for question_guidelines,
-                # even if omit_fields=True (other raw fields will be dropped).
-                if key == "question_guidelines":
+                # guidelines preview (broadened)
+                if _is_guideline_key(key_l):
                     lines = [ln.strip() for ln in v.strip().splitlines() if ln.strip()]
                     head = " ".join(lines[:max(1, QGUIDE_PREVIEW_LINES)]) or ""
                     if len(head) > QGUIDE_PREVIEW_LEN:
                         head = head[:QGUIDE_PREVIEW_LEN].rstrip() + "…"
-                    out[k + "_preview"] = head
-                    out[k + "_len"] = len(v)
+                    out[f"{k}_preview"] = head
+                    out[f"{k}_len"] = len(v)
                     continue
 
-                # All other long text fields:
+                # other long raw fields
                 if omit_fields:
                     continue
                 head = (v.strip().splitlines() or [""])[0]
                 if len(head) > preview_len:
                     head = head[:preview_len].rstrip() + "…"
-                out[k + "_preview"] = head
-                out[k + "_len"] = len(v)
+                out[f"{k}_preview"] = head
+                out[f"{k}_len"] = len(v)
+
             else:
                 out[k] = _redact(v, omit_fields=omit_fields, preview_len=preview_len)
         return out
@@ -238,6 +255,7 @@ def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
     if isinstance(value, (list, tuple)):
         return [_redact(v, omit_fields=omit_fields, preview_len=preview_len) for v in value]
 
+    # primitives (incl. plain strings) pass through unchanged
     return value
 
 
