@@ -82,7 +82,9 @@ SHOW_FULL_FIELDS = {
 }
 QGUIDE_PREVIEW_LEN = int(os.getenv("QA_LOG_QGUIDE_PREVIEW_LEN", "280"))      # chars
 QGUIDE_PREVIEW_LINES = int(os.getenv("QA_LOG_QGUIDE_PREVIEW_LINES", "2"))    # lines
-
+# Tool payload logging: 'off' | 'summary' | 'full'
+TOOL_LOG_PAYLOAD = os.getenv("TOPIC_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower()
+# valid values: off, summary, full
 
 LLM_TIMEOUT_SECONDS: float = float(os.getenv("TOPIC_AGENT_LLM_TIMEOUT_SECONDS", "90"))
 LLM_RETRIES: int = int(os.getenv("TOPIC_AGENT_LLM_RETRIES", "2"))
@@ -236,20 +238,43 @@ def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
     return value
 
 
+def _summarize_tool_payload(payload: Any) -> str:
+    try:
+        obj = _jsonish(payload)
+        if isinstance(obj, dict):
+            ok = obj.get("ok")
+            cnt = obj.get("count")
+            has_data = "data" in obj
+            keys = list(obj.keys())[:6]
+            return f"keys={keys} ok={ok} count={cnt} data={'yes' if has_data else 'no'}"
+        if isinstance(obj, list):
+            return f"list(len={len(obj)})"
+        return type(obj).__name__
+    except Exception:
+        return "<unavailable>"
+
+
 def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> None:
-    """Log planned tool calls and trailing tool results in a compact, redacted form."""
     if not messages:
         return
 
+    # ---- Planned tool calls ----
     planned = getattr(ai_msg, "tool_calls", None)
     if planned:
         log_info("Tool plan:")
         for tc in planned:
             name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
             args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
-            logger.info(f"  planned -> {name} args={_compact(_redact(_jsonish(args), omit_fields=False))}")
 
-    tool_msgs = []
+            if TOOL_LOG_PAYLOAD == "full":
+                logger.info(f"  planned -> {name} args={_compact(_redact(_jsonish(args), omit_fields=False))}")
+            elif TOOL_LOG_PAYLOAD == "summary":
+                logger.info(f"  planned -> {name} args=({_summarize_tool_payload(args)})")
+            else:  # off
+                logger.info(f"  planned -> {name} args=<hidden>")
+
+    # ---- Trailing tool results ----
+    tool_msgs: List[Any] = []
     i = len(messages) - 1
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
         tool_msgs.append(messages[i])
@@ -260,8 +285,15 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
     log_info("Tool results:")
     for tm in tool_msgs:
         content = getattr(tm, "content", None)
-        compact = _redact(_jsonish(content), omit_fields=True)
-        logger.info(f"  result -> id={getattr(tm, 'tool_call_id', None)} data={_compact(compact)}")
+        tool_id = getattr(tm, "tool_call_id", None)
+
+        if TOOL_LOG_PAYLOAD == "full":
+            compact = _redact(_jsonish(content), omit_fields=True)
+            logger.info(f"  result -> id={tool_id} data={_compact(compact)}")
+        elif TOOL_LOG_PAYLOAD == "summary":
+            logger.info(f"  result -> id={tool_id} data=({_summarize_tool_payload(content)})")
+        else:  # off
+            logger.info(f"  result -> id={tool_id} data=<hidden>")
 
 
 def log_retry(reason: str, iteration: int, extra: Optional[dict] = None) -> None:
