@@ -286,7 +286,7 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
     for tm in tool_msgs:
         content = getattr(tm, "content", None)
         compact = _redact(_jsonish(content), omit_fields=True)
-        logger.info(f"  result <- id={getattr(tm, 'tool_call_id', None)} data={_compact(compact)}")
+        logger.info(f"  result -> id={getattr(tm, 'tool_call_id', None)} data={_compact(compact)}")
 
 
 def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = None) -> None:
