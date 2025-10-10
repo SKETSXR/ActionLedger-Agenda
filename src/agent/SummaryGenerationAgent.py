@@ -1,38 +1,32 @@
+
 # =============================================================================
 # Module: summary_generation_agent
 # =============================================================================
-# Overview
-#   Production-grade LangGraph node that orchestrates a single LLM call to
-#   generate a structured interview summary from three inputs:
-#     - job_description
-#     - skill_tree
-#     - candidate_profile
+# Purpose
+#   Orchestrate one LLM call to produce a structured interview summary from:
+#     • job_description
+#     • skill_tree
+#     • candidate_profile
 #
 # Responsibilities
-#   - Build deterministic System+Human messages from AgentInternalState.
-#   - Invoke LLM with structured output (GeneratedSummarySchema).
-#   - Apply timeouts and bounded, exponential-backoff retries.
-#   - Persist result to state.generated_summary.
-#   - Emit operational logs (JSON file + human-readable console).
+#   • Build deterministic System + Human messages from AgentInternalState.
+#   • Invoke LLM with structured output (GeneratedSummarySchema).
+#   • Enforce timeout and bounded exponential-backoff retries.
+#   • Store the result in state.generated_summary.
+#   • Emit JSON-style logs to file and concise logs to console.
 #
 # Data Flow
-#   StateGraph:  START ──► summary_generator (async) ──► END
-#     1) Validate state fields.
-#     2) Render prompt from state payloads (JSON-serialized).
+#   START ──► summary_generator (async) ──► END
+#     1) Validate required state fields.
+#     2) Render prompt with JSON-serialized inputs.
 #     3) Call LLM (structured output, timeout, retries).
 #     4) Write GeneratedSummarySchema to state.
 #
-# Public API
-#   - SummaryGenerationAgent.summary_generator(state) -> state
-#   - SummaryGenerationAgent.get_graph(checkpointer=None) -> Compiled graph
+# Interface
+#   • SummaryGenerationAgent.summary_generator(state) -> state
+#   • SummaryGenerationAgent.get_graph(checkpointer=None) -> Compiled graph
 #
-# Reliability & Observability
-#   - Timeout per LLM request (env-configurable).
-#   - Retries with exponential backoff (env-configurable).
-#   - Structured JSON logs for ingestion; concise console logs for operators.
-#   - request_id attached to all LLM attempts for traceability.
-#
-# Configuration (Environment Variables)
+# Config (via environment variables)
 #   SUMMARY_AGENT_LOG_DIR                     (default: logs)
 #   SUMMARY_AGENT_LOG_FILE                    (default: summary_generation_agent.log)
 #   SUMMARY_AGENT_LOG_LEVEL_CONSOLE           (default: INFO)
@@ -41,43 +35,31 @@
 #   SUMMARY_AGENT_LLM_TIMEOUT_SECONDS         (default: 90)
 #   SUMMARY_AGENT_LLM_RETRIES                 (default: 2)
 #   SUMMARY_AGENT_LLM_RETRY_BACKOFF_SECONDS   (default: 2.5)
-#
-# Dependencies
-#   - langgraph for orchestration
-#   - langchain-core for messages & structured output
-#   - pydantic models in ../schema/output_schema.py (GeneratedSummarySchema)
-#   - llm client in ../model_handling.py (llm_sg)
-#
-# Security & Privacy
-#   - Logs exclude payload bodies by default; adjust only if required.
-#   - Ensure upstream redaction of sensitive data before state is populated.
-#
-# Usage
-#   - Import and add to a larger LangGraph
+#   SUMMARY_AGENT_RESULT_LOG_PAYLOAD          off | summary | full   (default: off)
 #
 # Notes
-#   - All LLM inputs are JSON-serialized to minimize prompt drift.
-#   - The LLM client is injected to keep the module testable and swappable.
+#   • Inputs are JSON-serialized to reduce prompt drift.
+#   • LLM client is injected (../model_handling.llm_sg) for testability.
 # =============================================================================
 
-
 import asyncio
+import json
 import logging
 import os
 import sys
 import uuid
-import json
 from dataclasses import dataclass
 from logging.handlers import TimedRotatingFileHandler
-from typing import Optional, Sequence, List
+from typing import List, Optional, Sequence, Union
 
-from langchain_core.messages import SystemMessage, HumanMessage
-from langgraph.graph import StateGraph, START
+from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.graph import START, StateGraph
 
+from ..model_handling import llm_sg as _llm_client
 from ..prompt.summary_generation_agent_prompt import SUMMARY_GENERATION_AGENT_PROMPT
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import GeneratedSummarySchema
-from ..model_handling import llm_sg as _llm_client
+
 
 # ==============================
 # Configuration
@@ -94,8 +76,9 @@ class SummaryAgentConfig:
     llm_timeout_seconds: float = float(os.getenv("SUMMARY_AGENT_LLM_TIMEOUT_SECONDS", "90"))
     llm_retries: int = int(os.getenv("SUMMARY_AGENT_LLM_RETRIES", "2"))
     llm_retry_backoff_seconds: float = float(os.getenv("SUMMARY_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5"))
-    # Result payload logging: 'off' | 'summary' | 'full'
-    RESULT_LOG_PAYLOAD = os.getenv("SUMMARY_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
+
+    # Controls how much of the model output is logged
+    result_log_payload: str = os.getenv("SUMMARY_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
 
 
 CONFIG = SummaryAgentConfig()
@@ -105,43 +88,41 @@ CONFIG = SummaryAgentConfig()
 # Logging
 # ==============================
 
-
-def _ensure_directory(path: str) -> None:
-    """Create a directory if it does not exist (best-effort)."""
+def _ensure_dir(path: str) -> None:
     try:
         os.makedirs(path, exist_ok=True)
     except Exception:
+        # Best-effort only; avoid crashing on log-dir issues
         pass
 
 
-def get_logger(name: str = "summary_generation_agent") -> logging.Logger:
+def _get_logger(name: str = "summary_generation_agent") -> logging.Logger:
     logger = logging.getLogger(name)
     if getattr(logger, "_initialized", False):
         return logger
 
     logger.setLevel(logging.DEBUG)
-    _ensure_directory(CONFIG.log_dir)
+    _ensure_dir(CONFIG.log_dir)
 
-    # 1) Use the SAME plain formatter for file + console
-    plain_fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+    fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 
     file_handler = TimedRotatingFileHandler(
         filename=os.path.join(CONFIG.log_dir, CONFIG.log_file),
-        when="midnight",      # rotates daily at local midnight
-        interval=1,           # (explicit) every 1 'when'
-        backupCount=CONFIG.log_backup_days,  # keep up to 365 old files
+        when="midnight",
+        interval=1,
+        backupCount=CONFIG.log_backup_days,
         encoding="utf-8",
-        utc=False,            # rotate by local time (match your other agents)
-        delay=True,  # open the file; avoids clobbering on early init/crash
+        utc=False,
+        delay=True,
     )
-    logging.raiseExceptions = False  # production: don’t crash on logging errors
-
     file_handler.setLevel(getattr(logging, CONFIG.log_level_file.upper(), logging.INFO))
-    file_handler.setFormatter(plain_fmt)
+    file_handler.setFormatter(fmt)
 
     console_handler = logging.StreamHandler(stream=sys.stdout)
     console_handler.setLevel(getattr(logging, CONFIG.log_level_console.upper(), logging.INFO))
-    console_handler.setFormatter(plain_fmt)
+    console_handler.setFormatter(fmt)
+
+    logging.raiseExceptions = False  # Never crash on logging errors in production
 
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
@@ -149,36 +130,32 @@ def get_logger(name: str = "summary_generation_agent") -> logging.Logger:
     logger._initialized = True  # type: ignore[attr-defined]
     return logger
 
-LOGGER = get_logger()
 
-def _jsonish(obj):
-    # Pydantic v2
-    if hasattr(obj, "model_dump_json"):
-        try:
-            return json.loads(obj.model_dump_json())
-        except Exception:
-            pass
-    # Pydantic v1
-    if hasattr(obj, "json"):
-        try:
-            return json.loads(obj.json())
-        except Exception:
-            pass
-    # Fallbacks
-    if hasattr(obj, "model_dump"):
-        try:
-            return obj.model_dump()
-        except Exception:
-            pass
-    if hasattr(obj, "dict"):
-        try:
-            return obj.dict()
-        except Exception:
-            pass
+LOGGER = _get_logger()
+
+
+# ==============================
+# Serialization helpers (for safe logging)
+# ==============================
+
+def _pydantic_to_dict(obj) -> object:
+    """Convert Pydantic v1/v2 models to plain objects; otherwise return as is."""
+    for attr in ("model_dump_json", "json"):
+        if hasattr(obj, attr):
+            try:
+                return json.loads(getattr(obj, attr)())
+            except Exception:
+                pass
+    for attr in ("model_dump", "dict"):
+        if hasattr(obj, attr):
+            try:
+                return getattr(obj, attr)()
+            except Exception:
+                pass
     return obj
 
 
-def _compact(obj) -> str:
+def _to_json_str(obj: object) -> str:
     try:
         return json.dumps(obj, ensure_ascii=False, indent=2)
     except Exception:
@@ -188,24 +165,19 @@ def _compact(obj) -> str:
             return "<unserializable>"
 
 
-def _summarize_result(payload: object) -> str:
+def _summarize_output(payload: object) -> str:
     """
-    Keep this generic so it works even if the schema changes.
-    Shows top-level keys and a few high-signal details if present.
+    Produce a short, schema-agnostic description: top-level keys and common fields.
     """
     try:
-        data = _jsonish(payload)
+        data = _pydantic_to_dict(payload)
         if isinstance(data, dict):
             keys = list(data.keys())
             parts = [f"keys={keys[:8]}{'...' if len(keys) > 8 else ''}"]
-            # Optional schema-aware hints (safe no-ops if missing)
             for k in ("total_questions", "topic_count", "topics", "interview_topics"):
                 if k in data:
-                    val = data[k]
-                    if isinstance(val, list):
-                        parts.append(f"{k}.len={len(val)}")
-                    else:
-                        parts.append(f"{k}={val}")
+                    v = data[k]
+                    parts.append(f"{k}.len={len(v) if isinstance(v, list) else v}")
             return "; ".join(parts)
         if isinstance(data, list):
             return f"list(len={len(data)})"
@@ -214,69 +186,87 @@ def _summarize_result(payload: object) -> str:
         return "<unavailable>"
 
 
-def _gate_result_for_log(payload: object) -> str:
-    if CONFIG.RESULT_LOG_PAYLOAD == "off":
+def _render_for_log(payload: object) -> str:
+    mode = CONFIG.result_log_payload
+    if mode == "off":
         return "<hidden>"
-    if CONFIG.RESULT_LOG_PAYLOAD == "summary":
-        return _summarize_result(payload)
-    # full (no redaction)
-    s = _compact(_jsonish(payload))
-    return s
+    if mode == "summary":
+        return _summarize_output(payload)
+    # "full"
+    return _to_json_str(_pydantic_to_dict(payload))
+
 
 # ==============================
-# Prompt construction & LLM call
+# Prompt creation & LLM call
 # ==============================
 
-def build_prompt_messages(state: AgentInternalState) -> List[SystemMessage | HumanMessage]:
+Msg = Union[SystemMessage, HumanMessage]
+
+
+def build_messages(state: AgentInternalState) -> List[Msg]:
     """
-    Build the System + Human messages for the LLM call.
-    Uses JSON-serialized inputs to avoid formatting issues.
+    Build deterministic System + Human messages from state.
+    Inputs are JSON-serialized to keep formatting stable across runs.
     """
-    system_msg = SystemMessage(
+    system = SystemMessage(
         content=SUMMARY_GENERATION_AGENT_PROMPT.format(
             job_description=state.job_description.model_dump_json(),
             skill_tree=state.skill_tree.model_dump_json(),
             candidate_profile=state.candidate_profile.model_dump_json(),
         )
     )
-    human_msg = HumanMessage(content="Begin the summary generation per the instructions and input payload.")
-    return [system_msg, human_msg]
+    human = HumanMessage(content="Begin the summary generation per the instructions and input payload.")
+    return [system, human]
 
 
-async def call_llm_with_retries(messages: Sequence[SystemMessage | HumanMessage], request_id: str) -> GeneratedSummarySchema:
+async def invoke_llm_with_retry(messages: Sequence[Msg], request_id: str) -> GeneratedSummarySchema:
     """
-    Call the LLM with structured output and retry on error/timeout using exponential backoff.
-    Raises the last exception if all retries fail.
+    Invoke the structured-output LLM with timeout and exponential-backoff retries.
+    Raises the last exception if all attempts fail.
     """
-    attempt = 0
-    last_exc: Optional[Exception] = None
+    last_error: Optional[Exception] = None
 
-    while attempt <= CONFIG.llm_retries:
+    for attempt in range(CONFIG.llm_retries + 1):
         try:
-            LOGGER.info("Calling LLM", extra={"request_id": request_id, "event": "llm_call_start"})
+            LOGGER.info(
+                "LLM call start",
+                extra={"request_id": request_id, "event": "llm_call_start", "attempt": attempt + 1},
+            )
+
             coro = _llm_client.with_structured_output(
                 GeneratedSummarySchema, method="function_calling"
             ).ainvoke(messages)
 
-            result: GeneratedSummarySchema = await asyncio.wait_for(coro, timeout=CONFIG.llm_timeout_seconds)
+            result: GeneratedSummarySchema = await asyncio.wait_for(
+                coro, timeout=CONFIG.llm_timeout_seconds
+            )
 
-            LOGGER.info("LLM call succeeded", extra={"request_id": request_id, "event": "llm_call_success"})
+            LOGGER.info(
+                "LLM call success",
+                extra={"request_id": request_id, "event": "llm_call_success", "attempt": attempt + 1},
+            )
             return result
 
-        except asyncio.TimeoutError as e:
-            last_exc = e
-            LOGGER.error("LLM call timed out", extra={"request_id": request_id, "event": "llm_timeout"})
-        except Exception as e:
-            last_exc = e
-            LOGGER.error("LLM call failed", extra={"request_id": request_id, "event": "llm_error"})
+        except asyncio.TimeoutError as exc:
+            last_error = exc
+            LOGGER.error(
+                "LLM call timeout",
+                extra={"request_id": request_id, "event": "llm_timeout", "attempt": attempt + 1},
+            )
+        except Exception as exc:
+            last_error = exc
+            LOGGER.error(
+                "LLM call error",
+                extra={"request_id": request_id, "event": "llm_error", "attempt": attempt + 1},
+            )
 
-        attempt += 1
-        if attempt <= CONFIG.llm_retries:
-            sleep_seconds = CONFIG.llm_retry_backoff_seconds * (2 ** (attempt - 1))
-            await asyncio.sleep(sleep_seconds)
+        # Backoff before next retry (if any)
+        if attempt < CONFIG.llm_retries:
+            sleep_secs = CONFIG.llm_retry_backoff_seconds * (2 ** attempt)
+            await asyncio.sleep(sleep_secs)
 
-    assert last_exc is not None
-    raise last_exc
+    assert last_error is not None
+    raise last_error
 
 
 # ==============================
@@ -285,63 +275,64 @@ async def call_llm_with_retries(messages: Sequence[SystemMessage | HumanMessage]
 
 class SummaryGenerationAgent:
     """
-    Produces a structured interview summary from:
-      - job_description
-      - skill_tree
-      - candidate_profile
+    Generate a structured interview summary from AgentInternalState fields:
+      • job_description
+      • skill_tree
+      • candidate_profile
 
-    The LLM is instructed via a SystemMessage and triggered with a HumanMessage.
-    The output is coerced to GeneratedSummarySchema and stored on
-    AgentInternalState.generated_summary.
+    Output is coerced to GeneratedSummarySchema and stored at:
+      state.generated_summary
     """
 
-    llm_client = _llm_client  # kept for API symmetry/swappability
+    llm_client = _llm_client  # kept for easy swapping/mocking
 
     @staticmethod
     async def summary_generator(state: AgentInternalState) -> AgentInternalState:
         """
-        Build prompt from state, invoke structured-output LLM with retries/timeouts,
-        assign to state.generated_summary, and return the mutated state.
+        Build prompt messages, call the LLM (with retries/timeouts),
+        write the result to state.generated_summary, and return state.
         """
         request_id = getattr(state, "request_id", None) or str(uuid.uuid4())
-        node_name = "summary_generator"
+        node = "summary_generator"
 
-        # Defensive state validation
-        for field_name in ("job_description", "skill_tree", "candidate_profile"):
-            if getattr(state, field_name, None) is None:
+        # Validate required inputs
+        for field in ("job_description", "skill_tree", "candidate_profile"):
+            if getattr(state, field, None) is None:
                 LOGGER.error(
                     "Missing required field on state: %s",
-                    field_name,
-                    extra={"request_id": request_id, "node": node_name, "event": "state_validation_error"},
+                    field,
+                    extra={"request_id": request_id, "node": node, "event": "state_validation_error"},
                 )
-                return state  # or raise ValueError if you prefer failing fast
+                return state  # or raise if you prefer fail-fast
 
-        messages = build_prompt_messages(state)
+        messages = build_messages(state)
 
         try:
-            summary = await call_llm_with_retries(messages, request_id)
+            summary = await invoke_llm_with_retry(messages, request_id)
             state.generated_summary = summary
-            
-            # NEW: include output based on RESULT_LOG_PAYLOAD
-            rendered = _gate_result_for_log(summary.model_dump_json(indent=2))
+
+            output_for_log = _render_for_log(summary)
             LOGGER.info(
-                f"Summary generation completed | output={rendered}",
-                extra={"request_id": request_id, "node": node_name, "event": "summary_generated"},
+                f"Summary generation completed | output={output_for_log}",
+                extra={"request_id": request_id, "node": node, "event": "summary_generated"},
             )
         except Exception:
             LOGGER.error(
                 "Summary generation failed",
-                extra={"request_id": request_id, "node": node_name, "event": "summary_failed"},
+                extra={"request_id": request_id, "node": node, "event": "summary_failed"},
             )
         return state
 
     @staticmethod
     def get_graph(checkpointer=None):
-        """Build the LangGraph for summary generation: START -> summary_generator."""
-        graph_builder = StateGraph(state_schema=AgentInternalState)
-        graph_builder.add_node("summary_generator", SummaryGenerationAgent.summary_generator)
-        graph_builder.add_edge(START, "summary_generator")
-        return graph_builder.compile(checkpointer=checkpointer, name="Summary Generation Agent")
+        """
+        Build and compile the LangGraph:
+          START -> summary_generator
+        """
+        g = StateGraph(state_schema=AgentInternalState)
+        g.add_node("summary_generator", SummaryGenerationAgent.summary_generator)
+        g.add_edge(START, "summary_generator")
+        return g.compile(checkpointer=checkpointer, name="Summary Generation Agent")
 
 
 # ==============================
@@ -349,12 +340,12 @@ class SummaryGenerationAgent:
 # ==============================
 
 def draw_graph_ascii() -> None:
-    """CLI preview of the compiled graph."""
+    """Print an ASCII preview of the compiled graph (for quick inspection)."""
     try:
         graph = SummaryGenerationAgent.get_graph()
         print(graph.get_graph().draw_ascii())
     except Exception:
-        logging.getLogger(__name__).exception("Unable to draw ASCII graph.")
+        LOGGER.exception("Unable to draw ASCII graph.")
 
 
 if __name__ == "__main__":
