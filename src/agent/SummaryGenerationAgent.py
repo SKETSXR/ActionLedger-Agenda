@@ -95,7 +95,7 @@ class SummaryAgentConfig:
     llm_retries: int = int(os.getenv("SUMMARY_AGENT_LLM_RETRIES", "2"))
     llm_retry_backoff_seconds: float = float(os.getenv("SUMMARY_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5"))
     # Result payload logging: 'off' | 'summary' | 'full'
-    RESULT_LOG_PAYLOAD = os.getenv("SUMMARY_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
+    RESULT_LOG_PAYLOAD = os.getenv("SUMMARY_AGENT_RESULT_LOG_PAYLOAD", "summary").strip().lower()
 
 
 CONFIG = SummaryAgentConfig()

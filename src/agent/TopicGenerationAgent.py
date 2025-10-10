@@ -85,6 +85,8 @@ QGUIDE_PREVIEW_LINES = int(os.getenv("QA_LOG_QGUIDE_PREVIEW_LINES", "2"))    # l
 # Tool payload logging: 'off' | 'summary' | 'full'
 TOOL_LOG_PAYLOAD = os.getenv("TOPIC_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower()
 # valid values: off, summary, full
+# Result payload logging for the final topics output: 'off' | 'summary' | 'full'
+TOPIC_AGENT_RESULT_LOG_PAYLOAD = os.getenv("TOPIC_AGENT_RESULT_LOG_PAYLOAD", "full").strip().lower()
 
 LLM_TIMEOUT_SECONDS: float = float(os.getenv("TOPIC_AGENT_LLM_TIMEOUT_SECONDS", "90"))
 LLM_RETRIES: int = int(os.getenv("TOPIC_AGENT_LLM_RETRIES", "2"))
@@ -236,6 +238,81 @@ def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
         return [_redact(v, omit_fields=omit_fields, preview_len=preview_len) for v in value]
 
     return value
+
+
+def _jsonish_model(obj: Any) -> Any:
+    # Try pydantic v2 first
+    if hasattr(obj, "model_dump_json"):
+        try:
+            return json.loads(obj.model_dump_json())
+        except Exception:
+            pass
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+    # v1 / plain dict fallback
+    if hasattr(obj, "dict"):
+        try:
+            return obj.dict()
+        except Exception:
+            pass
+    return obj
+
+
+def _summarize_topics(payload: Any) -> str:
+    try:
+        data = _jsonish_model(payload)
+        if isinstance(data, dict):
+            # common shapes: {"interview_topics":[...]} or schema fields
+            topics = None
+            if "interview_topics" in data and isinstance(data["interview_topics"], list):
+                topics = data["interview_topics"]
+            elif isinstance(data.get("interview_topics"), dict) and "interview_topics" in data["interview_topics"]:
+                topics = data["interview_topics"]["interview_topics"]
+            # fallback: search for a list of topics by key name
+            if topics is None:
+                for k, v in data.items():
+                    if isinstance(v, list) and k.lower().startswith("interview"):
+                        topics = v
+                        break
+
+            names = []
+            if isinstance(topics, list):
+                for t in topics[:8]:
+                    # tolerant name extraction
+                    if isinstance(t, dict):
+                        nm = t.get("topic") or t.get("name") or t.get("title") or t.get("label")
+                    else:
+                        # pydantic object
+                        try:
+                            md = t.model_dump()
+                            nm = md.get("topic") or md.get("name") or md.get("title") or md.get("label")
+                        except Exception:
+                            nm = None
+                    if isinstance(nm, str) and nm.strip():
+                        names.append(nm.strip())
+                suffix = "..." if topics and len(topics) > 8 else ""
+                return f"topics.len={len(topics)} names={names}{suffix}"
+            # no recognizable list -> show top keys
+            return f"keys={list(data.keys())[:8]}"
+        if isinstance(data, list):
+            return f"list(len={len(data)})"
+        return type(data).__name__
+    except Exception:
+        return "<unavailable>"
+
+
+def _gate_topics_for_log(payload: Any) -> str:
+    mode = TOPIC_AGENT_RESULT_LOG_PAYLOAD
+    if mode == "off":
+        return "<hidden>"
+    if mode == "summary":
+        return _summarize_topics(payload)
+    # full (no redaction)
+    s = _compact(_jsonish_model(payload))
+    return s
 
 
 def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> None:
@@ -545,7 +622,11 @@ class TopicGenerationAgent:
         result = await graph.ainvoke({"messages": messages})
 
         state.interview_topics = result["final_response"]
-        log_info("Topic generation completed")
+
+        # NEW: include generated topics based on toggle
+        rendered = _gate_topics_for_log(state.interview_topics.model_dump_json(indent=2))
+        log_info(f"Topic generation completed | output={rendered}")
+
         return state
 
     # ---------------- Graph router: should regenerate? ----------------
