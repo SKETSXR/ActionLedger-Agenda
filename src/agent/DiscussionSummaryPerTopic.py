@@ -103,6 +103,9 @@ TOOL_BACKOFF_SECONDS: float = float(os.getenv("DISC_AGENT_TOOL_RETRY_BACKOFF_SEC
 TOOL_LOG_PAYLOAD = os.getenv("DISC_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower()
 # valid: off, summary, full
 
+# Result payload logging for the final per-topic discussion summaries: 'off' | 'summary' | 'full'
+DISC_AGENT_RESULT_LOG_PAYLOAD = os.getenv("DISC_AGENT_RESULT_LOG_PAYLOAD", "full").strip().lower()
+
 _EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("DISC_AGENT_TOOL_MAX_WORKERS", "8")))
 
 # ---------- clean log redaction config ----------
@@ -263,6 +266,90 @@ def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
     return value
 
 
+def _jsonish_model(obj: Any) -> Any:
+    """Best-effort convert pydantic/objects to plain JSON-serializable structures."""
+    # pydantic v2
+    if hasattr(obj, "model_dump_json"):
+        try:
+            return json.loads(obj.model_dump_json())
+        except Exception:
+            pass
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+    # pydantic v1 / dict-like
+    if hasattr(obj, "dict"):
+        try:
+            return obj.dict()
+        except Exception:
+            pass
+    return obj
+
+
+def _summarize_discussion_result(payload: Any) -> str:
+    """
+    Summarize DiscussionSummaryPerTopicSchema:
+      - count of topics
+      - first few topic names
+    """
+    try:
+        data = _jsonish_model(payload)
+        topics = None
+
+        if isinstance(data, dict) and "discussion_topics" in data:
+            topics = data["discussion_topics"]
+        elif isinstance(payload, (DiscussionSummaryPerTopicSchema,)):
+            try:
+                topics = payload.discussion_topics
+            except Exception:
+                topics = None
+
+        names = []
+        if isinstance(topics, list):
+            for t in topics[:8]:
+                nm = None
+                if isinstance(t, dict):
+                    nm = t.get("topic") or t.get("name") or t.get("title") or t.get("label")
+                else:
+                    # pydantic item
+                    try:
+                        nm = getattr(t, "topic", None) or getattr(t, "name", None) or getattr(t, "title", None)
+                    except Exception:
+                        nm = None
+                if isinstance(nm, str) and nm.strip():
+                    names.append(nm.strip())
+            suffix = "..." if len(topics) > 8 else ""
+            return f"discussion_topics.len={len(topics)} names={names}{suffix}"
+
+        # Fallback: not the expected shape
+        if isinstance(data, dict):
+            return f"keys={list(data.keys())[:8]}"
+        if isinstance(data, list):
+            return f"list(len={len(data)})"
+        return type(data).__name__
+    except Exception:
+        return "<unavailable>"
+
+
+def _gate_result_for_log(payload: Any) -> str:
+    """
+    Apply DISC_AGENT_RESULT_LOG_PAYLOAD to final result logging.
+    - off: <hidden>
+    - summary: _summarize_discussion_result(...)
+    - full: compact JSON (optionally capped)
+    """
+    mode = DISC_AGENT_RESULT_LOG_PAYLOAD
+    if mode == "off":
+        return "<hidden>"
+    if mode == "summary":
+        return _summarize_discussion_result(payload)
+    # full
+    s = _compact(_jsonish_model(payload))
+    return s
+
+
 def _summarize_payload(payload: Any) -> str:
     try:
         obj = _jsonish(payload)
@@ -286,10 +373,6 @@ def _gated_payload_str(payload: Any) -> str:
     if m == "summary":
         return _summarize_payload(payload)
     return _compact(_jsonish(payload))
-
-
-def log_json(label: str, payload: Any, level: int = logging.INFO, omit_fields: bool = True) -> None:
-    logger.log(level, f"{label}: {_gated_payload_str(payload, omit_fields=omit_fields)}")
 
 
 def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> None:
@@ -666,7 +749,11 @@ class PerTopicDiscussionSummaryGenerationAgent:
         state.discussion_summary_per_topic = DiscussionSummaryPerTopicSchema(
             discussion_topics=discussion_topics
         )
-        log_info("Per-topic discussion summaries generated")
+
+        # NEW: gated final-output logging
+        rendered = _gate_result_for_log(state.discussion_summary_per_topic.model_dump_json(indent=2))
+        log_info(f"Per-topic discussion summaries generated | output={rendered}")
+
         return state
 
     # ----------  Topic wise discussion summary graph ----------

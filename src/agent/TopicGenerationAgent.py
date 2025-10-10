@@ -86,7 +86,7 @@ QGUIDE_PREVIEW_LINES = int(os.getenv("QA_LOG_QGUIDE_PREVIEW_LINES", "2"))    # l
 TOOL_LOG_PAYLOAD = os.getenv("TOPIC_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower()
 # valid values: off, summary, full
 # Result payload logging for the final topics output: 'off' | 'summary' | 'full'
-TOPIC_AGENT_RESULT_LOG_PAYLOAD = os.getenv("TOPIC_AGENT_RESULT_LOG_PAYLOAD", "full").strip().lower()
+TOPIC_AGENT_RESULT_LOG_PAYLOAD = os.getenv("TOPIC_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
 
 LLM_TIMEOUT_SECONDS: float = float(os.getenv("TOPIC_AGENT_LLM_TIMEOUT_SECONDS", "90"))
 LLM_RETRIES: int = int(os.getenv("TOPIC_AGENT_LLM_RETRIES", "2"))
