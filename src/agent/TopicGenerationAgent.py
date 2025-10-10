@@ -601,7 +601,7 @@ class TopicGenerationAgent:
             raise ValueError("Summary cannot be null.")
 
         feedback_text = state.interview_topics_feedback.feedback if state.interview_topics_feedback else ""
-        state.interview_topics_feedbacks += f"\n{feedback_text}\n"
+        state.interview_topics_feedbacks += f"\n{feedback_text}\n" if feedback_text != "" else ""
 
         class AtTemplate(Template):
             delimiter = "@"
@@ -694,10 +694,9 @@ class TopicGenerationAgent:
 
         missing_musts = sorted(set(must_skill_leaves) - set(focus_area_skills))
         if missing_musts:
-            prev = state.interview_topics_feedback.feedback if state.interview_topics_feedback else ""
+            # prev = state.interview_topics_feedback.feedback if state.interview_topics_feedback else ""
             feedback = (
-                prev
-                + "Please keep the topic set as is irrespective of below instructions:\n"
+                "Please keep the topic set as is irrespective of below instructions:\n"
                 f"```\n{state.interview_topics.model_dump()}\n```\n"
                 "But add the list of missing `must` priority skills below to the focus areas of the last topic "
                 "(General Skill Assessment):\n"
