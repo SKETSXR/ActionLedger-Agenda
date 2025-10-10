@@ -87,6 +87,10 @@ LLM_TIMEOUT_SECONDS: float = float(os.getenv("QA_AGENT_LLM_TIMEOUT_SECONDS", "12
 LLM_RETRIES: int = int(os.getenv("QA_AGENT_LLM_RETRIES", "2"))
 LLM_BACKOFF_SECONDS: float = float(os.getenv("QA_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5"))
 
+# Tool payload logging: 'off' | 'summary' | 'full'
+TOOL_LOG_PAYLOAD = os.getenv("QA_AGENT_TOOL_LOG_PAYLOAD", "full").strip().lower()
+# valid values: off, summary, full
+
 TOOL_TIMEOUT_SECONDS: float = float(os.getenv("QA_AGENT_TOOL_TIMEOUT_SECONDS", "30"))
 TOOL_RETRIES: int = int(os.getenv("QA_AGENT_TOOL_RETRIES", "2"))
 TOOL_BACKOFF_SECONDS: float = float(os.getenv("QA_AGENT_TOOL_RETRY_BACKOFF_SECONDS", "1.5"))
@@ -231,8 +235,49 @@ def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
     return value
 
 
+def _summarize_payload(payload: Any) -> str:
+    """Tiny one-liner summary without dumping JSON."""
+    try:
+        obj = _jsonish(payload)
+        if isinstance(obj, dict):
+            keys = list(obj.keys())
+            preview = keys[:6]
+            extras = len(keys) - len(preview)
+            extra_txt = f"+{extras} more" if extras > 0 else ""
+            ok = obj.get("ok")
+            cnt = obj.get("count")
+            has_data = "data" in obj
+            return f"dict(keys={preview}{', ' + extra_txt if extra_txt else ''}; ok={ok}; count={cnt}; data={'yes' if has_data else 'no'})"
+        if isinstance(obj, list):
+            return f"list(len={len(obj)})"
+        return type(obj).__name__
+    except Exception:
+        return "<unavailable>"
+
+
+def _gated_payload_str(payload: Any, *, omit_fields: bool = True) -> str:
+    """
+    Central gate for JSON-ish logging:
+      - off:     never print JSON (returns '<hidden>')
+      - summary: compact one-liner
+      - full:    pretty/redacted JSON
+    """
+    mode = TOOL_LOG_PAYLOAD
+    if mode == "off":
+        return "<hidden>"
+    if mode == "summary":
+        return _summarize_payload(payload)
+    # full
+    compact = _redact(_jsonish(payload), omit_fields=omit_fields)
+    return _compact(compact)
+
+
+def log_json(label: str, payload: Any, level: int = logging.INFO, omit_fields: bool = True) -> None:
+    LOGGER.log(level, f"{label}: {_gated_payload_str(payload, omit_fields=omit_fields)}")
+
+
 def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> None:
-    """Log planned tool calls and trailing tool results in a compact, optionally redacted form."""
+    """Log planned tool calls and trailing tool results, honoring TOOL_LOG_PAYLOAD."""
     if not messages:
         return
 
@@ -243,7 +288,7 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
         for tc in planned_calls:
             name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
             args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
-            LOGGER.info(f"  planned -> {name} args={_compact(_redact(_jsonish(args), omit_fields=False))}")
+            LOGGER.info(f"  planned -> {name} args={_gated_payload_str(args, omit_fields=False)}")
 
     # Trailing tool results
     tool_msgs: List[Any] = []
@@ -257,8 +302,7 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
     log_info("Tool results:")
     for tm in tool_msgs:
         content = getattr(tm, "content", None)
-        compact = _redact(_jsonish(content), omit_fields=False)
-        LOGGER.info(f"  result -> id={getattr(tm, 'tool_call_id', None)} data={_compact(compact)}")
+        LOGGER.info(f"  result -> id={getattr(tm, 'tool_call_id', None)} data={_gated_payload_str(content, omit_fields=True)}")
 
 
 def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = None) -> None:
