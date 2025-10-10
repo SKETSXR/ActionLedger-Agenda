@@ -105,6 +105,9 @@ TOOL_BACKOFF_SECONDS: float = float(os.getenv("NODES_AGENT_TOOL_RETRY_BACKOFF_SE
 TOOL_LOG_PAYLOAD = os.getenv("NODES_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower()
 # valid values: off, summary, full
 
+# Final result payload logging for Nodes: 'off' | 'summary' | 'full'
+NODES_AGENT_RESULT_LOG_PAYLOAD = os.getenv("NODES_AGENT_RESULT_LOG_PAYLOAD", "full").strip().lower()
+
 _EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("NODES_AGENT_TOOL_MAX_WORKERS", "8")))
 
 RAW_TEXT_FIELDS = {
@@ -244,6 +247,86 @@ def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
         return [_redact(v, omit_fields=omit_fields, preview_len=preview_len) for v in value]
 
     return value
+
+
+def _jsonish_model(obj: Any) -> Any:
+    """Best-effort convert pydantic/objects to plain JSON-serializable structures."""
+    if hasattr(obj, "model_dump_json"):
+        try:
+            return json.loads(obj.model_dump_json())
+        except Exception:
+            pass
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+    if hasattr(obj, "dict"):
+        try:
+            return obj.dict()
+        except Exception:
+            pass
+    return obj
+
+
+def _summarize_nodes_result(payload: Any) -> str:
+    """
+    Summary for NodesSchema:
+      - number of topics
+      - first few topic names
+      - node counts per first few topics (len only to keep logs compact)
+    """
+    try:
+        data = _jsonish_model(payload)
+        topics = None
+        if isinstance(data, dict):
+            topics = data.get("topics_with_nodes")
+        else:
+            # pydantic instance
+            try:
+                topics = getattr(payload, "topics_with_nodes", None)
+            except Exception:
+                topics = None
+
+        if isinstance(topics, list):
+            n = len(topics)
+            names = []
+            counts = []
+            for t in topics[:6]:
+                td = _jsonish_model(t)
+                nm = (td.get("topic") or td.get("name") or td.get("title") or td.get("label")) if isinstance(td, dict) else None
+                if not isinstance(nm, str) or not nm.strip():
+                    nm = "Unknown"
+                names.append(nm.strip())
+                nodes = td.get("nodes") if isinstance(td, dict) else None
+                counts.append(len(nodes) if isinstance(nodes, list) else 0)
+            more = "..." if n > 6 else ""
+            return f"topics={n} names={names}{more} node_counts_first={counts}"
+        # fallback
+        if isinstance(data, dict):
+            return f"keys={list(data.keys())[:8]}"
+        if isinstance(data, list):
+            return f"list(len={len(data)})"
+        return type(data).__name__
+    except Exception:
+        return "<unavailable>"
+
+
+def _gate_nodes_result_for_log(payload: Any) -> str:
+    """
+    Apply NODES_AGENT_RESULT_LOG_PAYLOAD to final result logging:
+      - off: <hidden>
+      - summary: compact summary via _summarize_nodes_result
+      - full: compact JSON string (optionally capped)
+    """
+    mode = NODES_AGENT_RESULT_LOG_PAYLOAD
+    if mode == "off":
+        return "<hidden>"
+    if mode == "summary":
+        return _summarize_nodes_result(payload)
+    # full
+    s = _compact(_jsonish_model(payload))
+    return s
 
 
 def _summarize_payload(payload: Any) -> str:
@@ -661,7 +744,11 @@ class NodesGenerationAgent:
                 t.model_dump() if hasattr(t, "model_dump") else t for t in topic_with_nodes_list
             ]
         )
-        log_info("Nodes generation completed")
+        
+        # NEW: gated final-output logging
+        rendered = _gate_nodes_result_for_log(state.nodes.model_dump_json(indent=2))
+        log_info(f"Nodes generation completed | output={rendered}")
+        
         return state
 
     @staticmethod
