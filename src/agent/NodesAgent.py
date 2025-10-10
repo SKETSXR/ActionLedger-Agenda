@@ -106,7 +106,7 @@ TOOL_LOG_PAYLOAD = os.getenv("NODES_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lowe
 # valid values: off, summary, full
 
 # Final result payload logging for Nodes: 'off' | 'summary' | 'full'
-NODES_AGENT_RESULT_LOG_PAYLOAD = os.getenv("NODES_AGENT_RESULT_LOG_PAYLOAD", "full").strip().lower()
+NODES_AGENT_RESULT_LOG_PAYLOAD = os.getenv("NODES_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("NODES_AGENT_TOOL_MAX_WORKERS", "8")))
 

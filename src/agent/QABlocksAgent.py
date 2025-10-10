@@ -90,6 +90,7 @@ LLM_BACKOFF_SECONDS: float = float(os.getenv("QA_AGENT_LLM_RETRY_BACKOFF_SECONDS
 # Tool payload logging: 'off' | 'summary' | 'full'
 TOOL_LOG_PAYLOAD = os.getenv("QA_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower()
 # valid values: off, summary, full
+QA_AGENT_RESULT_LOG_PAYLOAD = os.getenv("QA_AGENT_RESULT_LOG_PAYLOAD", "full").strip().lower()
 
 TOOL_TIMEOUT_SECONDS: float = float(os.getenv("QA_AGENT_TOOL_TIMEOUT_SECONDS", "30"))
 TOOL_RETRIES: int = int(os.getenv("QA_AGENT_TOOL_RETRIES", "2"))
@@ -202,6 +203,82 @@ def _compact(value: Any) -> str:
         return str(value)
 
 
+def _jsonish_model(obj: Any) -> Any:
+    """Best-effort model → plain JSON-serializable."""
+    if hasattr(obj, "model_dump_json"):
+        try:
+            return json.loads(obj.model_dump_json())
+        except Exception:
+            pass
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+    if hasattr(obj, "dict"):
+        try:
+            return obj.dict()
+        except Exception:
+            pass
+    return obj
+
+
+def _summarize_qa_result(payload: Any) -> str:
+    """
+    Compact view of QASetsSchema:
+      - num topics
+      - for first few topics: topic name, blocks count, per-block qa_items count
+    """
+    try:
+        data = _jsonish_model(payload)
+        qa_sets = None
+        if isinstance(data, dict):
+            qa_sets = data.get("qa_sets")
+        else:
+            qa_sets = getattr(payload, "qa_sets", None)
+
+        if isinstance(qa_sets, list):
+            t = len(qa_sets)
+            per = []
+            for qs in qa_sets[:4]:
+                d = _jsonish_model(qs) if not isinstance(qs, dict) else qs
+                topic = d.get("topic") or "Unknown"
+                blocks = d.get("qa_blocks") or []
+                counts = []
+                for b in blocks[:6]:
+                    bd = _jsonish_model(b) if not isinstance(b, dict) else b
+                    items = bd.get("qa_items") or []
+                    counts.append(len(items))
+                per.append({"topic": topic, "blocks": len(blocks), "qa_items_first_blocks": counts})
+            more_topics = "..." if t > 4 else ""
+            return f"topics={t} details={per}{more_topics}"
+        # fallback
+        if isinstance(data, dict):
+            return f"dict(keys={list(data.keys())[:8]})"
+        if isinstance(data, list):
+            return f"list(len={len(data)})"
+        return type(data).__name__
+    except Exception:
+        return "<unavailable>"
+
+
+def _gate_qa_result_for_log(payload: Any) -> str:
+    """
+    Apply QA_AGENT_RESULT_LOG_PAYLOAD to final QA output.
+      - off     → <hidden>
+      - summary → _summarize_qa_result
+      - full    → pretty JSON string (optionally capped)
+    """
+    mode = QA_AGENT_RESULT_LOG_PAYLOAD
+    if mode == "off":
+        return "<hidden>"
+    if mode == "summary":
+        return _summarize_qa_result(payload)
+    # full
+    s = _compact(_jsonish_model(payload))
+    return s
+
+
 def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
     """
     Redact long raw text fields for compact logging, with optional full-field
@@ -249,6 +326,7 @@ def _summarize_payload(payload: Any) -> str:
         return type(obj).__name__
     except Exception:
         return "<unavailable>"
+
 
 def _gated_payload_str(payload: Any) -> str:
     mode = TOOL_LOG_PAYLOAD
@@ -709,7 +787,10 @@ class QABlockGenerationAgent:
         # ---- finalize ----
         if final_sets:
             state.qa_blocks = QASetsSchema(qa_sets=final_sets)
-            log_info("QA block generation completed")
+
+            # NEW: gated final-output logging
+            rendered = _gate_qa_result_for_log(state.qa_blocks.model_dump_json(indent=2))
+            log_info(f"QA block generation completed | output={rendered}")
         else:
             # No valid blocks this pass; set None to trigger regeneration.
             state.qa_blocks = None

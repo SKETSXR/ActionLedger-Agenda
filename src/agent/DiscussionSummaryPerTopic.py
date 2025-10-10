@@ -104,7 +104,7 @@ TOOL_LOG_PAYLOAD = os.getenv("DISC_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower
 # valid: off, summary, full
 
 # Result payload logging for the final per-topic discussion summaries: 'off' | 'summary' | 'full'
-DISC_AGENT_RESULT_LOG_PAYLOAD = os.getenv("DISC_AGENT_RESULT_LOG_PAYLOAD", "full").strip().lower()
+DISC_AGENT_RESULT_LOG_PAYLOAD = os.getenv("DISC_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("DISC_AGENT_TOOL_MAX_WORKERS", "8")))
 
