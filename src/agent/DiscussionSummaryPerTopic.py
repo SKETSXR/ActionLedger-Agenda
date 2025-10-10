@@ -100,7 +100,7 @@ TOOL_TIMEOUT_SECONDS: float = float(os.getenv("DISC_AGENT_TOOL_TIMEOUT_SECONDS",
 TOOL_RETRIES: int = int(os.getenv("DISC_AGENT_TOOL_RETRIES", "2"))
 TOOL_BACKOFF_SECONDS: float = float(os.getenv("DISC_AGENT_TOOL_RETRY_BACKOFF_SECONDS", "1.5"))
 # Tool payload logging: 'off' | 'summary' | 'full'
-TOOL_LOG_PAYLOAD = os.getenv("DISC_AGENT_TOOL_LOG_PAYLOAD", "summary").strip().lower()
+TOOL_LOG_PAYLOAD = os.getenv("DISC_AGENT_TOOL_LOG_PAYLOAD", "full").strip().lower()
 # valid: off, summary, full
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("DISC_AGENT_TOOL_MAX_WORKERS", "8")))
@@ -264,18 +264,14 @@ def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
 
 
 def _summarize_payload(payload: Any) -> str:
-    """One-liner without dumping big JSON."""
     try:
         obj = _jsonish(payload)
         if isinstance(obj, dict):
-            keys = list(obj.keys())
-            preview = keys[:6]
-            extra = len(keys) - len(preview)
-            extra_txt = f"+{extra} more" if extra > 0 else ""
-            ok = obj.get("ok")
-            cnt = obj.get("count")
-            has_data = "data" in obj
-            return f"dict(keys={preview}{', ' + extra_txt if extra_txt else ''}; ok={ok}; count={cnt}; data={'yes' if has_data else 'no'})"
+            keys = list(obj.keys()); prev = keys[:6]; extra = len(keys) - len(prev)
+            return (
+                f"dict(keys={prev}{', +' + str(extra) + ' more' if extra>0 else ''}; "
+                f"ok={obj.get('ok')}; count={obj.get('count')}; data={'yes' if 'data' in obj else 'no'})"
+            )
         if isinstance(obj, list):
             return f"list(len={len(obj)})"
         return type(obj).__name__
@@ -283,19 +279,13 @@ def _summarize_payload(payload: Any) -> str:
         return "<unavailable>"
 
 
-def _gated_payload_str(payload: Any, *, omit_fields: bool = True) -> str:
-    """
-    off    -> '<hidden>'
-    summary-> compact one-liner
-    full   -> pretty/redacted JSON (respects omit_fields)
-    """
-    mode = TOOL_LOG_PAYLOAD
-    if mode == "off":
+def _gated_payload_str(payload: Any) -> str:
+    m = TOOL_LOG_PAYLOAD
+    if m == "off":
         return "<hidden>"
-    if mode == "summary":
+    if m == "summary":
         return _summarize_payload(payload)
-    compact = _redact(_jsonish(payload), omit_fields=omit_fields)
-    return _compact(compact)
+    return _compact(_jsonish(payload))
 
 
 def log_json(label: str, payload: Any, level: int = logging.INFO, omit_fields: bool = True) -> None:
@@ -303,7 +293,6 @@ def log_json(label: str, payload: Any, level: int = logging.INFO, omit_fields: b
 
 
 def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> None:
-    """Log planned tool calls and trailing tool results, honoring TOOL_LOG_PAYLOAD."""
     if not messages:
         return
 
@@ -313,20 +302,19 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
         for tc in planned:
             name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
             args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
-            logger.info(f"  planned -> {name} args={_gated_payload_str(args, omit_fields=False)}")
+            logger.info(f"  planned -> {name} args={_gated_payload_str(args)}")
 
     tool_msgs = []
     i = len(messages) - 1
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
-        tool_msgs.append(messages[i])
-        i -= 1
+        tool_msgs.append(messages[i]); i -= 1
     if not tool_msgs:
         return
 
     log_info("Tool results:")
     for tm in tool_msgs:
         content = getattr(tm, "content", None)
-        logger.info(f"  result -> id={getattr(tm, 'tool_call_id', None)} data={_gated_payload_str(content, omit_fields=True)}")
+        logger.info(f"  result -> id={getattr(tm, 'tool_call_id', None)} data={_gated_payload_str(content)}")
 
 
 def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = None) -> None:

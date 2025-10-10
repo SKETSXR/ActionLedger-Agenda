@@ -102,7 +102,7 @@ TOOL_RETRIES: int = int(os.getenv("NODES_AGENT_TOOL_RETRIES", "2"))
 TOOL_BACKOFF_SECONDS: float = float(os.getenv("NODES_AGENT_TOOL_RETRY_BACKOFF_SECONDS", "1.5"))
 
 # Tool payload logging: 'off' | 'summary' | 'full'
-TOOL_LOG_PAYLOAD = os.getenv("NODES_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower()
+TOOL_LOG_PAYLOAD = os.getenv("NODES_AGENT_TOOL_LOG_PAYLOAD", "full").strip().lower()
 # valid values: off, summary, full
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("NODES_AGENT_TOOL_MAX_WORKERS", "8")))
@@ -247,18 +247,14 @@ def _redact(value: Any, *, omit_fields: bool, preview_len: int = 140) -> Any:
 
 
 def _summarize_payload(payload: Any) -> str:
-    """Very compact one-line summary for payloads without dumping the JSON."""
     try:
         obj = _jsonish(payload)
         if isinstance(obj, dict):
-            keys = list(obj.keys())
-            preview = keys[:6]
-            extras = len(keys) - len(preview)
-            extra_txt = f"+{extras} more" if extras > 0 else ""
-            ok = obj.get("ok")
-            cnt = obj.get("count")
-            has_data = "data" in obj
-            return f"dict(keys={preview}{', ' + extra_txt if extra_txt else ''}; ok={ok}; count={cnt}; data={'yes' if has_data else 'no'})"
+            keys = list(obj.keys()); prev = keys[:6]; extra = len(keys) - len(prev)
+            return (
+                f"dict(keys={prev}{', +' + str(extra) + ' more' if extra>0 else ''}; "
+                f"ok={obj.get('ok')}; count={obj.get('count')}; data={'yes' if 'data' in obj else 'no'})"
+            )
         if isinstance(obj, list):
             return f"list(len={len(obj)})"
         return type(obj).__name__
@@ -266,52 +262,38 @@ def _summarize_payload(payload: Any) -> str:
         return "<unavailable>"
 
 
-def _gated_payload_str(payload: Any, *, omit_fields: bool = True) -> str:
-    """
-    Gate all JSON-ish logging through this.
-    - off:     never print JSON, just <hidden>
-    - summary: a compact one-liner (no JSON dump)
-    - full:    redacted + pretty JSON
-    """
-    mode = TOOL_LOG_PAYLOAD
-    if mode == "off":
+def _gated_payload_str(payload: Any) -> str:
+    m = TOOL_LOG_PAYLOAD
+    if m == "off":
         return "<hidden>"
-    if mode == "summary":
+    if m == "summary":
         return _summarize_payload(payload)
-    # full
-    compact = _redact(_jsonish(payload), omit_fields=omit_fields)
-    return _compact(compact)
+    return _compact(_jsonish(payload))
 
 
 def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> None:
-    """Log planned tool calls and trailing tool results with gated JSON visibility."""
     if not messages:
         return
 
-    # ---- Planned tool calls ----
     planned = getattr(ai_msg, "tool_calls", None)
     if planned:
         log_info("Tool plan:")
         for tc in planned:
             name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
             args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
-            logger.info(f"  planned -> {name} args={_gated_payload_str(args, omit_fields=False)}")
+            logger.info(f"  planned -> {name} args={_gated_payload_str(args)}")
 
-    # ---- Trailing tool results ----
-    tool_msgs: List[Any] = []
+    tool_msgs = []
     i = len(messages) - 1
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
-        tool_msgs.append(messages[i])
-        i -= 1
+        tool_msgs.append(messages[i]); i -= 1
     if not tool_msgs:
         return
 
     log_info("Tool results:")
     for tm in tool_msgs:
         content = getattr(tm, "content", None)
-        tool_id = getattr(tm, "tool_call_id", None)
-        # omit_fields=True keeps long raw text redacted unless SHOW_FULL_* toggles allow it
-        logger.info(f"  result -> id={tool_id} data={_gated_payload_str(content, omit_fields=True)}")
+        logger.info(f"  result -> id={getattr(tm, 'tool_call_id', None)} data={_gated_payload_str(content)}")
 
 
 def log_retry_iteration(reason: str, iteration: int, extra: Optional[dict] = None) -> None:
