@@ -88,7 +88,7 @@ LLM_RETRIES: int = int(os.getenv("QA_AGENT_LLM_RETRIES", "2"))
 LLM_BACKOFF_SECONDS: float = float(os.getenv("QA_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5"))
 
 # Tool payload logging: 'off' | 'summary' | 'full'
-TOOL_LOG_PAYLOAD = os.getenv("QA_AGENT_TOOL_LOG_PAYLOAD", "summary").strip().lower()
+TOOL_LOG_PAYLOAD = os.getenv("QA_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower()
 # valid values: off, summary, full
 
 TOOL_TIMEOUT_SECONDS: float = float(os.getenv("QA_AGENT_TOOL_TIMEOUT_SECONDS", "30"))

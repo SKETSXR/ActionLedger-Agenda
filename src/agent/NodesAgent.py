@@ -102,7 +102,7 @@ TOOL_RETRIES: int = int(os.getenv("NODES_AGENT_TOOL_RETRIES", "2"))
 TOOL_BACKOFF_SECONDS: float = float(os.getenv("NODES_AGENT_TOOL_RETRY_BACKOFF_SECONDS", "1.5"))
 
 # Tool payload logging: 'off' | 'summary' | 'full'
-TOOL_LOG_PAYLOAD = os.getenv("NODES_AGENT_TOOL_LOG_PAYLOAD", "full").strip().lower()
+TOOL_LOG_PAYLOAD = os.getenv("NODES_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower()
 # valid values: off, summary, full
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("NODES_AGENT_TOOL_MAX_WORKERS", "8")))
