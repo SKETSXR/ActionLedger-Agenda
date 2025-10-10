@@ -66,6 +66,7 @@ import logging
 import os
 import sys
 import uuid
+import json
 from dataclasses import dataclass
 from logging.handlers import TimedRotatingFileHandler
 from typing import Optional, Sequence, List
@@ -77,7 +78,6 @@ from ..prompt.summary_generation_agent_prompt import SUMMARY_GENERATION_AGENT_PR
 from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import GeneratedSummarySchema
 from ..model_handling import llm_sg as _llm_client
-
 
 # ==============================
 # Configuration
@@ -94,6 +94,8 @@ class SummaryAgentConfig:
     llm_timeout_seconds: float = float(os.getenv("SUMMARY_AGENT_LLM_TIMEOUT_SECONDS", "90"))
     llm_retries: int = int(os.getenv("SUMMARY_AGENT_LLM_RETRIES", "2"))
     llm_retry_backoff_seconds: float = float(os.getenv("SUMMARY_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5"))
+    # Result payload logging: 'off' | 'summary' | 'full'
+    RESULT_LOG_PAYLOAD = os.getenv("SUMMARY_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
 
 
 CONFIG = SummaryAgentConfig()
@@ -149,6 +151,77 @@ def get_logger(name: str = "summary_generation_agent") -> logging.Logger:
 
 LOGGER = get_logger()
 
+def _jsonish(obj):
+    # Pydantic v2
+    if hasattr(obj, "model_dump_json"):
+        try:
+            return json.loads(obj.model_dump_json())
+        except Exception:
+            pass
+    # Pydantic v1
+    if hasattr(obj, "json"):
+        try:
+            return json.loads(obj.json())
+        except Exception:
+            pass
+    # Fallbacks
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+    if hasattr(obj, "dict"):
+        try:
+            return obj.dict()
+        except Exception:
+            pass
+    return obj
+
+
+def _compact(obj) -> str:
+    try:
+        return json.dumps(obj, ensure_ascii=False, indent=2)
+    except Exception:
+        try:
+            return json.dumps(str(obj), ensure_ascii=False)
+        except Exception:
+            return "<unserializable>"
+
+
+def _summarize_result(payload: object) -> str:
+    """
+    Keep this generic so it works even if the schema changes.
+    Shows top-level keys and a few high-signal details if present.
+    """
+    try:
+        data = _jsonish(payload)
+        if isinstance(data, dict):
+            keys = list(data.keys())
+            parts = [f"keys={keys[:8]}{'...' if len(keys) > 8 else ''}"]
+            # Optional schema-aware hints (safe no-ops if missing)
+            for k in ("total_questions", "topic_count", "topics", "interview_topics"):
+                if k in data:
+                    val = data[k]
+                    if isinstance(val, list):
+                        parts.append(f"{k}.len={len(val)}")
+                    else:
+                        parts.append(f"{k}={val}")
+            return "; ".join(parts)
+        if isinstance(data, list):
+            return f"list(len={len(data)})"
+        return type(data).__name__
+    except Exception:
+        return "<unavailable>"
+
+
+def _gate_result_for_log(payload: object) -> str:
+    if CONFIG.RESULT_LOG_PAYLOAD == "off":
+        return "<hidden>"
+    if CONFIG.RESULT_LOG_PAYLOAD == "summary":
+        return _summarize_result(payload)
+    # full (no redaction)
+    s = _compact(_jsonish(payload))
+    return s
 
 # ==============================
 # Prompt construction & LLM call
@@ -248,8 +321,11 @@ class SummaryGenerationAgent:
         try:
             summary = await call_llm_with_retries(messages, request_id)
             state.generated_summary = summary
+            
+            # NEW: include output based on RESULT_LOG_PAYLOAD
+            rendered = _gate_result_for_log(summary.model_dump_json(indent=2))
             LOGGER.info(
-                "Summary generation completed",
+                f"Summary generation completed | output={rendered}",
                 extra={"request_id": request_id, "node": node_name, "event": "summary_generated"},
             )
         except Exception:
