@@ -19,8 +19,12 @@ You have access to MongoDB fetching tools (programmatic tools, not shell). Use t
 MONGODB USAGE (STRICT):
 - Use only these tools: mongodb_list_collections, mongodb_query_checker, custom_mongodb_query.
 - NEVER call custom_mongodb_query without "query".
-- For 'cv' and 'summary', ALWAYS use {"_id": "@thread_id"}.
 - Do not call mongodb_list_collections or mongodb_schema.
+- To retrieve helpful context:
+  * question_guidelines (_id: "Case study type questions", "Project based questions", "Counter questions")
+  * You shall also use the mongo db database fetching tools to fetch on data for keys like P1, P2,... (being present in the collection named cv), E1, E2,... (being present in the collection named cv), D (being present in the collection named summary with the key name domains_assess_D), S (being present in the entire collection named summary) and T (being present in the collection named summary with the key name annotated_skill_tree_T) with each relevant record having value of _id key as "@thread_id".
+  * Do not show tool calls in the answer.
+
 - Validate with mongodb_query_checker BEFORE executing.
 Valid:
 {
