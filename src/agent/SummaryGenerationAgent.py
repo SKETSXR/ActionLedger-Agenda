@@ -234,7 +234,7 @@ async def invoke_llm_with_retry(messages: Sequence[Msg], request_id: str) -> Gen
             )
 
             coro = _llm_client.with_structured_output(
-                GeneratedSummarySchema, method="function_calling"
+                GeneratedSummarySchema
             ).ainvoke(messages)
 
             result: GeneratedSummarySchema = await asyncio.wait_for(

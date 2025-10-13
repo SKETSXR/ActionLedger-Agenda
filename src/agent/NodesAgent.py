@@ -432,7 +432,7 @@ class NodesGenerationAgent:
     ]
 
     _AGENT_MODEL = llm.bind_tools(TOOLS)
-    _STRUCTURED_MODEL = llm.with_structured_output(TopicWithNodesSchema, method="function_calling")
+    _STRUCTURED_MODEL = llm.with_structured_output(TopicWithNodesSchema)
 
     _compiled_graph = None  # cache
 

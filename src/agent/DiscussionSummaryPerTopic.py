@@ -428,7 +428,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
 
     _AGENT_MODEL = llm.bind_tools(TOOLS)
     _STRUCTURED_MODEL = llm.with_structured_output(
-        DiscussionSummaryPerTopicSchema.DiscussionTopic, method="function_calling"
+        DiscussionSummaryPerTopicSchema.DiscussionTopic
     )
 
     _compiled_graph = None  # cache

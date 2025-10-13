@@ -433,7 +433,7 @@ class TopicGenerationAgent:
     ]
 
     _AGENT_MODEL = llm.bind_tools(TOOLS)
-    _STRUCTURED_MODEL = llm.with_structured_output(CollectiveInterviewTopicSchema, method="function_calling")
+    _STRUCTURED_MODEL = llm.with_structured_output(CollectiveInterviewTopicSchema)
 
     _compiled_inner_graph = None  # cache
 

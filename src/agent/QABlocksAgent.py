@@ -412,7 +412,7 @@ class QABlockGenerationAgent:
     ]
 
     _AGENT_MODEL = llm.bind_tools(MONGO_TOOLS)
-    _STRUCTURED_MODEL = llm.with_structured_output(QASetsSchema, method="function_calling")
+    _STRUCTURED_MODEL = llm.with_structured_output(QASetsSchema)
 
     _compiled_inner_graph = None  # cache
 
