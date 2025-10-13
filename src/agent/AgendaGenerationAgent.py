@@ -323,10 +323,14 @@ class AgendaGenerationAgent:
             raise ValueError("`generated summary` cannot be null")
 
         # Prepare docs with _id = thread_id
-        jd = state.job_description.model_dump(); jd["_id"] = state.id
-        cv = state.candidate_profile.model_dump(); cv["_id"] = state.id
-        st = state.skill_tree.model_dump(); st["_id"] = state.id
-        sm = state.generated_summary.model_dump(); sm["_id"] = state.id
+        jd = state.job_description.model_dump()
+        jd["_id"] = state.id
+        cv = state.candidate_profile.model_dump()
+        cv["_id"] = state.id
+        st = state.skill_tree.model_dump()
+        st["_id"] = state.id
+        sm = state.generated_summary.model_dump()
+        sm["_id"] = state.id
 
         try:
             jd_collection.replace_one({"_id": state.id}, jd, upsert=True)
