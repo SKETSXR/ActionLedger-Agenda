@@ -1,7 +1,8 @@
 dotenv==0.9.9
-pydantic==2.11.7
-langchain-openai==0.3.27
-langgraph==0.5.1
-pymongo==4.13.0
+pydantic
+langchain-openai
+langgraph
+pymongo
 langchain
 langchain_community
+langchain_mongodb
