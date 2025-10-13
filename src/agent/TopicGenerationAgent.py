@@ -654,10 +654,10 @@ class TopicGenerationAgent:
         missing_musts = sorted(set(must_skill_leaves) - set(focus_area_skills))
         if missing_musts:
             feedback = (
-                "Please keep this topic set as is irrespective of other instructions apart from this feedback ones:\n"
+                "<Please keep this topic set as is irrespective of other instructions apart from this feedback ones:\n"
                 f"```\n{state.interview_topics.model_dump()}\n```\n"
                 "But add this list of missing `must` priority skills as given below to the focus areas of the last topic being (General Skill Assessment):\n"
-                + ", ".join(missing_musts)          
+                + ", ".join(missing_musts) + ">"          
             )
             state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
             _log_retry("Missing MUST skills", _topic_retry_counter, {"missing": missing_musts})
