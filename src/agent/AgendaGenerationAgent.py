@@ -13,7 +13,7 @@ from logging.handlers import TimedRotatingFileHandler
 
 from .SummaryGenerationAgent import SummaryGenerationAgent
 from .TopicGenerationAgent import TopicGenerationAgent
-from .DiscussionSummaryPerTopic import PerTopicDiscussionSummaryGenerationAgent
+from .DiscussionSummaryPerTopic import PerTopicDiscussionSummaryAgent
 from .NodesAgent import NodesGenerationAgent
 from .QABlocksAgent import QABlockGenerationAgent
 
@@ -370,7 +370,7 @@ class AgendaGenerationAgent:
         graph_builder.add_node("topic_generation_agent", TopicGenerationAgent.get_graph())
         graph_builder.add_node(
             "discussion_summary_per_topic_generator",
-            PerTopicDiscussionSummaryGenerationAgent.get_graph(),
+            PerTopicDiscussionSummaryAgent.get_graph(),
         )
         graph_builder.add_node("nodes_generator", NodesGenerationAgent.get_graph())
         graph_builder.add_node("qablock_generator", QABlockGenerationAgent.get_graph())
