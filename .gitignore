@@ -220,3 +220,4 @@ testing/*
 testing\*
 logs\*
 logs/*
+insert_inputs.py
