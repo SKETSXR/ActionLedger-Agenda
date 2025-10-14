@@ -1,6 +1,10 @@
 import pytest
-from src.agent.DiscussionSummaryPerTopic import PerTopicDiscussionSummaryGenerationAgent as DSPT
+from src.agent.DiscussionSummaryPerTopic import (
+    PerTopicDiscussionSummaryAgent as DSPA,
+    PerTopicDiscussionSummaryGenerationAgent as InnerDSPT,
+)
 from src.schema.agent_schema import AgentInternalState
+
 
 @pytest.mark.asyncio
 async def test_dspt_generator_and_policy(monkeypatch, inp, summary, topics, dspt):
@@ -18,24 +22,30 @@ async def test_dspt_generator_and_policy(monkeypatch, inp, summary, topics, dspt
         interview_topics=topics,
     )
 
-    # Stub inner per-topic graph to always return each DiscussionTopic from dspt (by index)
-    class DSStub:
-        def __init__(self, payloads):
-            self.payloads = payloads
-            self.i = 0
-        async def ainvoke(self, _):
-            p = self.payloads[self.i]
-            self.i += 1
-            return {"final_response": p}
+    # Build a name->DiscussionTopic lookup so the stub is safe under concurrency
+    by_name = {dt.topic: dt for dt in dspt.discussion_topics}
 
-    monkeypatch.setattr(DSPT, "_per_topic_graph", DSStub(dspt.discussion_topics))
+    async def fake_one_topic_call(_gs_json, topic_dict, _thread_id):
+        # topic_dict comes from .model_dump() of the input topic
+        tname = (
+            topic_dict.get("topic")
+            or topic_dict.get("name")
+            or topic_dict.get("title")
+            or "Unknown"
+        )
+        return by_name[tname]
 
-    state = await DSPT.discussion_summary_per_topic_generator(state)
+    # Patch the inner per-topic call used by the outer generator
+    monkeypatch.setattr(InnerDSPT, "_one_topic_call", fake_one_topic_call)
+
+    # Run the OUTER generator (it fans out to inner calls concurrently)
+    state = await DSPA.discussion_summary_per_topic_generator(state)
+
     assert state.discussion_summary_per_topic is not None
     got_names = {x.topic for x in state.discussion_summary_per_topic.discussion_topics}
     exp_names = {t.topic for t in topics.interview_topics}
     assert got_names == exp_names
 
-    # should_regenerate should be False since names match
-    regen = await DSPT.should_regenerate(state)
+    # With sets matching, router should decide not to regenerate
+    regen = await DSPA.should_regenerate(state)
     assert regen is False

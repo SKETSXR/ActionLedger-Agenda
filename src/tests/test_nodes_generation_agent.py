@@ -2,6 +2,7 @@ import pytest
 from src.agent.NodesAgent import NodesGenerationAgent as NA
 from src.schema.agent_schema import AgentInternalState
 
+
 @pytest.mark.asyncio
 async def test_nodes_generator_and_policy(monkeypatch, inp, summary, topics, dspt, nodes):
     state = AgentInternalState(
@@ -19,24 +20,26 @@ async def test_nodes_generator_and_policy(monkeypatch, inp, summary, topics, dsp
         discussion_summary_per_topic=dspt,
     )
 
-    # Stub inner graph to return each TopicWithNodesSchema sequentially
-    class NodesStub:
-        def __init__(self, payloads):
-            self.payloads = payloads
-            self.i = 0
-        async def ainvoke(self, _):
-            p = self.payloads[self.i]
-            self.i += 1
-            return {"final_response": p}
+    # Stub the INNER per-topic generator to return each TopicWithNodes in sequence
+    payloads = list(nodes.topics_with_nodes)
+    idx = {"i": 0}
 
-    monkeypatch.setattr(NA, "_nodes_graph", NodesStub(nodes.topics_with_nodes))
+    async def fake_gen_once(_per_topic_summary_json, _thread_id, _nodes_error):
+        i = idx["i"]
+        out = payloads[i]
+        idx["i"] = i + 1
+        return out
 
-    # ensure per-topic minimum (Opening + Direct + one Deep Dive with threshold >=2)
-    state.interview_topics.interview_topics[1].total_questions = 4
+    monkeypatch.setattr(NA, "_gen_once", fake_gen_once)
+
+    # (The new Nodes agent no longer enforces per-topic total_questions >= 4,
+    # so we don't need to tweak the fixture anymore.)
 
     state = await NA.nodes_generator(state)
+
     assert state.nodes is not None
     assert len(state.nodes.topics_with_nodes) == 2
 
+    # Container + per-topic schema validation should pass → no regeneration
     regen = await NA.should_regenerate(state)
     assert regen is False

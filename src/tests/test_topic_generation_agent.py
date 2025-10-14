@@ -1,9 +1,10 @@
 import pytest
-from langchain_core.runnables import RunnableConfig
 
+# Import the class and the AsyncGraphStub fixture
 from src.agent.TopicGenerationAgent import TopicGenerationAgent
 from src.schema.agent_schema import AgentInternalState
 from src.tests.conftest import AsyncGraphStub
+
 
 @pytest.mark.asyncio
 async def test_topic_generator_and_should_regenerate(monkeypatch, inp, summary, topics):
@@ -21,9 +22,9 @@ async def test_topic_generator_and_should_regenerate(monkeypatch, inp, summary, 
         generated_summary=summary,
     )
 
-    # Stub inner _mongo_graph to output final_response = topics
+    # Stub the compiled inner graph (the agent calls _get_inner_graph().ainvoke({...}))
     stub = AsyncGraphStub({"final_response": topics})
-    monkeypatch.setattr(TopicGenerationAgent, "_mongo_graph", stub)
+    monkeypatch.setattr(TopicGenerationAgent, "_get_inner_graph", lambda: stub, raising=True)
 
     # Run the node
     state = await TopicGenerationAgent.topic_generator(state)
@@ -35,5 +36,4 @@ async def test_topic_generator_and_should_regenerate(monkeypatch, inp, summary, 
     # 2) focus_area skills must be leaves → OK due to fixtures
     # 3) all MUST leaves must appear at least once → fixtures cover that
     ok = await TopicGenerationAgent.should_regenerate(state)
-    assert ok is True or ok is False
     assert ok is True  # satisfied → graph will END
