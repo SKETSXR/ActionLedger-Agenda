@@ -313,7 +313,7 @@ class SummaryGenerationAgent:
 
             output_for_log = _render_for_log(summary)
             LOGGER.info(
-                f"Summary generation completed | output={output_for_log}",
+                f"Summary generation completed successfully | output={output_for_log}",
                 extra={"request_id": request_id, "node": node, "event": "summary_generated"},
             )
         except Exception:

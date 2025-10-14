@@ -658,8 +658,8 @@ class NodesGenerationAgent:
 
         # Gated final-output logging
         rendered = _render_nodes_result(state.nodes.model_dump_json(indent=2))
-        _log_info(f"Nodes generation completed | output={rendered}")
-
+        _log_info(f"Nodes generated before retry checks | output={rendered}")
+        
         return state
 
     @staticmethod
@@ -711,6 +711,11 @@ class NodesGenerationAgent:
         if any_invalid:
             _log_retry("node schema error", _nodes_retry_counter)
             _nodes_retry_counter += 1
+        else:
+            # Gated final-output logging
+            rendered = _render_nodes_result(state.nodes.model_dump_json(indent=2))
+            _log_info(f"Nodes generation successfully completed | output={rendered}")
+
         return any_invalid
 
     @staticmethod

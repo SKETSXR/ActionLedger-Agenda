@@ -576,7 +576,7 @@ class TopicGenerationAgent:
 
         # Log generated topics as per toggle
         rendered = _render_topics_for_log(state.interview_topics.model_dump_json(indent=2))
-        _log_info(f"Topic generation completed | output={rendered}")
+        _log_info(f"Topics generated before all retry checks | output={rendered}")
 
         return state
 
@@ -664,6 +664,9 @@ class TopicGenerationAgent:
             _topic_retry_counter += 1
             return False
 
+        # Log generated topics as per toggle
+        rendered = _render_topics_for_log(state.interview_topics.model_dump_json(indent=2))
+        _log_info(f"Topic generation successfully completed | output={rendered}")
         return True  # satisfied
 
     # ==========================

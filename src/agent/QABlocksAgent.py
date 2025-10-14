@@ -711,8 +711,6 @@ class QABlockGenerationAgent:
 
         if final_sets:
             state.qa_blocks = QASetsSchema(qa_sets=final_sets)
-            rendered = _gated_qa_result(state.qa_blocks.model_dump_json(indent=2))
-            log_info(f"QA block generation completed | output={rendered}")
         else:
             state.qa_blocks = None
             log_warning("QA block generation produced no valid blocks this pass")
@@ -722,6 +720,9 @@ class QABlockGenerationAgent:
         if accumulated_errs:
             prev = getattr(state, "qa_error", "") or ""
             state.qa_error = (prev + ("\n" if prev else "") + "\n".join(accumulated_errs)).strip()
+
+        rendered = _gated_qa_result(state.qa_blocks.model_dump_json(indent=2))
+        log_info(f"QA block generation before retry checks | output={rendered}")
 
         return state
 
@@ -769,6 +770,8 @@ class QABlockGenerationAgent:
             qa_retry_counter += 1
             return True
 
+        rendered = _gated_qa_result(state.qa_blocks.model_dump_json(indent=2))
+        log_info(f"QA block generation successfully completed | output={rendered}")
         return False
 
     @staticmethod
