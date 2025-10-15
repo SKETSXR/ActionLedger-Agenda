@@ -38,7 +38,8 @@ import os
 import re
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass
 from logging.handlers import TimedRotatingFileHandler
 from string import Template
@@ -51,13 +52,13 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 from pydantic import PrivateAttr
 
+from src.model_handling import llm_dts
 from src.mongo_tools import get_mongo_tools
-from ..model_handling import llm_dts
-from ..prompt.discussion_summary_per_topic_generation_agent_prompt import (
+from src.prompt.discussion_summary_per_topic_generation_agent_prompt import (
     DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT,
 )
-from ..schema.agent_schema import AgentInternalState
-from ..schema.output_schema import DiscussionSummaryPerTopicSchema
+from src.schema.agent_schema import AgentInternalState
+from src.schema.output_schema import DiscussionSummaryPerTopicSchema
 
 # Ensure nested forward refs are resolved (Pydantic v2 safe)
 try:
@@ -78,22 +79,40 @@ class DiscAgentConfig:
     # logging
     log_dir: str = os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_DIR", "logs")
     log_file: str = os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_FILE", f"{AGENT_NAME}.log")
-    log_level: int = getattr(logging, os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_LEVEL", "INFO").upper(), logging.INFO)
-    log_rotate_when: str = os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_ROTATE_WHEN", "midnight")
-    log_rotate_interval: int = int(os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_ROTATE_INTERVAL", "1"))
-    log_backup_count: int = int(os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_BACKUP_COUNT", "365"))
+    log_level: int = getattr(
+        logging,
+        os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_LEVEL", "INFO").upper(),
+        logging.INFO,
+    )
+    log_rotate_when: str = os.getenv(
+        "DISCUSSION_SUMMARY_AGENT_LOG_ROTATE_WHEN", "midnight"
+    )
+    log_rotate_interval: int = int(
+        os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_ROTATE_INTERVAL", "1")
+    )
+    log_backup_count: int = int(
+        os.getenv("DISCUSSION_SUMMARY_AGENT_LOG_BACKUP_COUNT", "365")
+    )
     # LLM
     llm_timeout_s: float = float(os.getenv("DISC_AGENT_LLM_TIMEOUT_SECONDS", "90"))
     llm_retries: int = int(os.getenv("DISC_AGENT_LLM_RETRIES", "2"))
-    llm_backoff_base_s: float = float(os.getenv("DISC_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5"))
+    llm_backoff_base_s: float = float(
+        os.getenv("DISC_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5")
+    )
     # Tools
     tool_timeout_s: float = float(os.getenv("DISC_AGENT_TOOL_TIMEOUT_SECONDS", "30"))
     tool_retries: int = int(os.getenv("DISC_AGENT_TOOL_RETRIES", "2"))
-    tool_backoff_base_s: float = float(os.getenv("DISC_AGENT_TOOL_RETRY_BACKOFF_SECONDS", "1.5"))
+    tool_backoff_base_s: float = float(
+        os.getenv("DISC_AGENT_TOOL_RETRY_BACKOFF_SECONDS", "1.5")
+    )
     tool_max_workers: int = int(os.getenv("DISC_AGENT_TOOL_MAX_WORKERS", "8"))
     # Logging verbosity
-    tool_log_payload: str = os.getenv("DISC_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower()       # off|summary|full
-    result_log_payload: str = os.getenv("DISC_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()   # off|summary|full
+    tool_log_payload: str = (
+        os.getenv("DISC_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower()
+    )  # off|summary|full
+    result_log_payload: str = (
+        os.getenv("DISC_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
+    )  # off|summary|full
 
 
 CFG = DiscAgentConfig()
@@ -108,6 +127,7 @@ _disc_retry_counter = 1
 # ==============================
 # Logging
 # ==============================
+
 
 def _get_logger() -> logging.Logger:
     logger = logging.getLogger(AGENT_NAME)
@@ -158,9 +178,12 @@ def _log_warn(msg: str) -> None:
 # Small JSON / logging helpers
 # ==============================
 
+
 def _looks_like_json(text: str) -> bool:
     t = text.strip()
-    return (t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]"))
+    return (t.startswith("{") and t.endswith("}")) or (
+        t.startswith("[") and t.endswith("]")
+    )
 
 
 def _jsonish(value: Any) -> Any:
@@ -178,7 +201,11 @@ def _jsonish(value: Any) -> Any:
 
 def _compact(value: Any) -> str:
     try:
-        return json.dumps(value, ensure_ascii=False, indent=2) if isinstance(value, (dict, list)) else str(value)
+        return (
+            json.dumps(value, ensure_ascii=False, indent=2)
+            if isinstance(value, (dict, list))
+            else str(value)
+        )
     except Exception:
         return str(value)
 
@@ -222,9 +249,18 @@ def _summarize_final_result(payload: Any) -> str:
             for t in topics[:8]:
                 nm = None
                 if isinstance(t, dict):
-                    nm = t.get("topic") or t.get("name") or t.get("title") or t.get("label")
+                    nm = (
+                        t.get("topic")
+                        or t.get("name")
+                        or t.get("title")
+                        or t.get("label")
+                    )
                 else:
-                    nm = getattr(t, "topic", None) or getattr(t, "name", None) or getattr(t, "title", None)
+                    nm = (
+                        getattr(t, "topic", None)
+                        or getattr(t, "name", None)
+                        or getattr(t, "title", None)
+                    )
                 if isinstance(nm, str) and nm.strip():
                     names.append(nm.strip())
             suffix = "..." if len(topics) > 8 else ""
@@ -291,7 +327,9 @@ def _log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) ->
     _log_info("Tool results:")
     for tm in tool_msgs:
         content = getattr(tm, "content", None)
-        LOGGER.info(f"  result -> id={getattr(tm, 'tool_call_id', None)} data={_render_tool_payload(content)}")
+        LOGGER.info(
+            f"  result -> id={getattr(tm, 'tool_call_id', None)} data={_render_tool_payload(content)}"
+        )
 
 
 def _log_retry(reason: str, iteration: int, extra: Optional[dict] = None) -> None:
@@ -304,6 +342,7 @@ def _log_retry(reason: str, iteration: int, extra: Optional[dict] = None) -> Non
 # ==============================
 
 _STEP_KEYS = ("Opening", "DirectQuestion", "DeepDive")
+
 
 def _as_list_str(x: Any) -> List[str]:
     if x is None:
@@ -326,7 +365,10 @@ def _normalize_one_step(step: Any) -> Optional[Dict[str, Any]]:
     # Flat form already
     if "type" in step and "description" in step and "guidelines" in step:
         tval = step.get("type", "")
-        if isinstance(tval, str) and tval.strip().lower().replace(" ", "") == "directquestion":
+        if (
+            isinstance(tval, str)
+            and tval.strip().lower().replace(" ", "") == "directquestion"
+        ):
             tval = "Direct Question"
         return {
             "type": str(tval),
@@ -391,7 +433,10 @@ def _normalize_topic_obj(obj: Any) -> Optional[Dict[str, Any]]:
 # JSON extraction helpers
 # ==============================
 
-_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```", re.DOTALL | re.IGNORECASE)
+_CODE_FENCE_RE = re.compile(
+    r"```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```", re.DOTALL | re.IGNORECASE
+)
+
 
 def _find_fenced_json(txt: str) -> Optional[str]:
     m = _CODE_FENCE_RE.search(txt)
@@ -449,6 +494,7 @@ def _extract_json_str(txt: str) -> Optional[str]:
 # Async retry helper
 # ==============================
 
+
 async def _retry_async(
     op_factory: Callable[[], Coroutine[Any, Any, Any]],
     *,
@@ -479,6 +525,7 @@ async def _retry_async(
 # Tool wrapper (timeout + retry)
 # ==============================
 
+
 class RetryTool(BaseTool):
     """Wrap BaseTool with timeout + retries for both sync and async paths."""
 
@@ -487,7 +534,9 @@ class RetryTool(BaseTool):
     _timeout_s: float = PrivateAttr()
     _backoff_base_s: float = PrivateAttr()
 
-    def __init__(self, inner: BaseTool, *, retries: int, timeout_s: float, backoff_base_s: float) -> None:
+    def __init__(
+        self, inner: BaseTool, *, retries: int, timeout_s: float, backoff_base_s: float
+    ) -> None:
         name = getattr(inner, "name", inner.__class__.__name__)
         description = getattr(inner, "description", "") or "Retried tool wrapper"
         args_schema = getattr(inner, "args_schema", None)
@@ -531,7 +580,9 @@ class RetryTool(BaseTool):
             if hasattr(self._inner, "_arun"):
                 return await self._inner._arun(*args, **{**kwargs, "config": config})
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, lambda: self._inner._run(*args, **{**kwargs, "config": config}))
+            return await loop.run_in_executor(
+                None, lambda: self._inner._run(*args, **{**kwargs, "config": config})
+            )
 
         return await _retry_async(
             _call_once,
@@ -546,8 +597,10 @@ class RetryTool(BaseTool):
 # Inner per-topic ReAct loop
 # ==============================
 
+
 class _PerTopicState(MessagesState):
     """State container for the inner Mongo-enabled loop per topic."""
+
     final_response: DiscussionSummaryPerTopicSchema.DiscussionTopic
 
 
@@ -561,12 +614,19 @@ class PerTopicDiscussionSummaryGenerationAgent:
 
     _RAW_TOOLS = get_mongo_tools(llm=llm)
     TOOLS = [
-        RetryTool(t, retries=CFG.tool_retries, timeout_s=CFG.tool_timeout_s, backoff_base_s=CFG.tool_backoff_base_s)
+        RetryTool(
+            t,
+            retries=CFG.tool_retries,
+            timeout_s=CFG.tool_timeout_s,
+            backoff_base_s=CFG.tool_backoff_base_s,
+        )
         for t in _RAW_TOOLS
     ]
 
     _AGENT_MODEL = llm.bind_tools(TOOLS)
-    _STRUCTURED_MODEL = llm.with_structured_output(DiscussionSummaryPerTopicSchema.DiscussionTopic)
+    _STRUCTURED_MODEL = llm.with_structured_output(
+        DiscussionSummaryPerTopicSchema.DiscussionTopic
+    )
 
     _compiled_graph = None  # cache
 
@@ -575,11 +635,19 @@ class PerTopicDiscussionSummaryGenerationAgent:
     @staticmethod
     async def _invoke_agent(messages: Sequence[Msg]) -> Any:
         async def _call():
-            if hasattr(PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL, "ainvoke"):
-                return await PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL.ainvoke(messages)
+            if hasattr(
+                PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL, "ainvoke"
+            ):
+                return (
+                    await PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL.ainvoke(
+                        messages
+                    )
+                )
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None, PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL.invoke, messages
+                None,
+                PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL.invoke,
+                messages,
             )
 
         _log_info("Calling LLM (structured)")
@@ -596,7 +664,9 @@ class PerTopicDiscussionSummaryGenerationAgent:
     # ---- Robust coercion: extract JSON from text, normalize, then instantiate ----
 
     @staticmethod
-    def _coerce_to_discussion_topic(ai_content: str) -> Optional[DiscussionSummaryPerTopicSchema.DiscussionTopic]:
+    def _coerce_to_discussion_topic(
+        ai_content: str,
+    ) -> Optional[DiscussionSummaryPerTopicSchema.DiscussionTopic]:
         """
         If the assistant content includes JSON (possibly fenced or embedded), extract,
         normalize (handles wrapped steps), and instantiate the nested Pydantic model.
@@ -626,27 +696,39 @@ class PerTopicDiscussionSummaryGenerationAgent:
             _log_info("Coercion succeeded (during pydantic model instantiation tests).")
             return model
         except Exception as exc:
-            _log_warn(f"Coercion failed during pydantic model instantiation tests: {exc}")
+            _log_warn(
+                f"Coercion failed during pydantic model instantiation tests: {exc}"
+            )
             return None
 
     @staticmethod
-    async def _invoke_structured(ai_content: str) -> DiscussionSummaryPerTopicSchema.DiscussionTopic:
+    async def _invoke_structured(
+        ai_content: str,
+    ) -> DiscussionSummaryPerTopicSchema.DiscussionTopic:
         """
         Try coercion first (extract + normalize wrapped steps). If that fails,
         ask the structured LLM parser.
         """
-        coerced = PerTopicDiscussionSummaryGenerationAgent._coerce_to_discussion_topic(ai_content)
+        coerced = PerTopicDiscussionSummaryGenerationAgent._coerce_to_discussion_topic(
+            ai_content
+        )
         if coerced is not None:
             return coerced
 
         payload = [HumanMessage(content=ai_content or "")]
 
         async def _call():
-            if hasattr(PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL, "ainvoke"):
-                return await PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL.ainvoke(payload)
+            if hasattr(
+                PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL, "ainvoke"
+            ):
+                return await PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL.ainvoke(
+                    payload
+                )
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None, PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL.invoke, payload
+                None,
+                PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL.invoke,
+                payload,
             )
 
         _log_info("Calling LLM (structured)")
@@ -663,7 +745,9 @@ class PerTopicDiscussionSummaryGenerationAgent:
     @staticmethod
     async def _agent_node(state: _PerTopicState):
         _log_tool_activity(state["messages"], ai_msg=None)
-        ai = await PerTopicDiscussionSummaryGenerationAgent._invoke_agent(state["messages"])
+        ai = await PerTopicDiscussionSummaryGenerationAgent._invoke_agent(
+            state["messages"]
+        )
         return {"messages": [ai]}
 
     @staticmethod
@@ -673,7 +757,9 @@ class PerTopicDiscussionSummaryGenerationAgent:
 
         # Prefer last assistant msg without tool calls
         for m in reversed(msgs):
-            if getattr(m, "type", None) in ("ai", "assistant") and not getattr(m, "tool_calls", None):
+            if getattr(m, "type", None) in ("ai", "assistant") and not getattr(
+                m, "tool_calls", None
+            ):
                 ai_content = m.content
                 break
         # Fallback: any assistant msg
@@ -686,7 +772,9 @@ class PerTopicDiscussionSummaryGenerationAgent:
         if ai_content is None and msgs:
             ai_content = msgs[-1].content
 
-        final_obj = await PerTopicDiscussionSummaryGenerationAgent._invoke_structured(ai_content or "")
+        final_obj = await PerTopicDiscussionSummaryGenerationAgent._invoke_structured(
+            ai_content or ""
+        )
         return {"final_response": final_obj}
 
     @staticmethod
@@ -719,7 +807,9 @@ class PerTopicDiscussionSummaryGenerationAgent:
         g.add_node("respond", RunnableLambda(cls._respond_node_async))
         g.add_node("tools", ToolNode(cls.TOOLS, tags=["mongo-tools"]))
         g.set_entry_point("agent")
-        g.add_conditional_edges("agent", cls._should_continue, {"continue": "tools", "respond": "respond"})
+        g.add_conditional_edges(
+            "agent", cls._should_continue, {"continue": "tools", "respond": "respond"}
+        )
         g.add_edge("tools", "agent")
         g.add_edge("respond", END)
 
@@ -727,7 +817,9 @@ class PerTopicDiscussionSummaryGenerationAgent:
         return cls._compiled_graph
 
     @staticmethod
-    async def _one_topic_call(generated_summary_json: str, topic: Dict[str, Any], thread_id: str):
+    async def _one_topic_call(
+        generated_summary_json: str, topic: Dict[str, Any], thread_id: str
+    ):
         class AtTemplate(Template):
             delimiter = "@"
 
@@ -739,7 +831,9 @@ class PerTopicDiscussionSummaryGenerationAgent:
         )
 
         sys_msg = SystemMessage(content=sys_content)
-        trigger = HumanMessage(content="Based on the provided instructions please start the process")
+        trigger = HumanMessage(
+            content="Based on the provided instructions please start the process"
+        )
 
         graph = PerTopicDiscussionSummaryGenerationAgent._get_graph()
         result = await graph.ainvoke({"messages": [sys_msg, trigger]})
@@ -754,6 +848,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
 # Outer graph: nodes & routing
 # ==============================
 
+
 class PerTopicDiscussionSummaryAgent:
     """Outer flow that runs inner per-topic loops concurrently and enforces policy."""
 
@@ -767,31 +862,49 @@ class PerTopicDiscussionSummaryAgent:
         global _disc_retry_counter
 
         # Guard: if nothing produced, allow at most 1 retry under this condition
-        if not getattr(state, "discussion_summary_per_topic", None) or \
-           not getattr(state.discussion_summary_per_topic, "discussion_topics", None) or \
-           len(state.discussion_summary_per_topic.discussion_topics) == 0:
-            _log_retry("No discussion topics produced; retrying once", _disc_retry_counter)
+        if (
+            not getattr(state, "discussion_summary_per_topic", None)
+            or not getattr(
+                state.discussion_summary_per_topic, "discussion_topics", None
+            )
+            or len(state.discussion_summary_per_topic.discussion_topics) == 0
+        ):
+            _log_retry(
+                "No discussion topics produced; retrying once", _disc_retry_counter
+            )
             _disc_retry_counter += 1
             return _disc_retry_counter <= 2  # retry only once for the "no output" case
 
         input_topics = {t.topic for t in state.interview_topics.interview_topics}
-        output_topics = {dt.topic for dt in state.discussion_summary_per_topic.discussion_topics}
+        output_topics = {
+            dt.topic for dt in state.discussion_summary_per_topic.discussion_topics
+        }
 
         if input_topics != output_topics:
             missing = sorted(input_topics - output_topics)
             extra = sorted(output_topics - input_topics)
-            _log_retry("Topic mismatch", _disc_retry_counter, {"missing": missing, "extra": extra})
+            _log_retry(
+                "Topic mismatch",
+                _disc_retry_counter,
+                {"missing": missing, "extra": extra},
+            )
             _disc_retry_counter += 1
             return True
-        
+
         # Gated final-output logging
-        rendered = _render_final_result(state.discussion_summary_per_topic.model_dump_json(indent=2))
-        _log_info(f"Per-topic discussion summaries generated successfully | output={rendered}")
+        rendered = _render_final_result(
+            state.discussion_summary_per_topic.model_dump_json(indent=2)
+        )
+        _log_info(
+            f"Per-topic discussion summaries generated successfully | output={rendered}"
+        )
 
         return False
 
     @staticmethod
-    async def discussion_summary_per_topic_generator(state: AgentInternalState) -> AgentInternalState:
+    async def discussion_summary_per_topic_generator(
+        state: AgentInternalState,
+    ) -> AgentInternalState:
         """
         Generate summaries for all topics concurrently:
           1) Normalize the input topics
@@ -801,7 +914,9 @@ class PerTopicDiscussionSummaryAgent:
         """
         # Normalize topics list coming from parent state
         try:
-            topics_list: List[Dict[str, Any]] = [t.model_dump() for t in state.interview_topics.interview_topics]
+            topics_list: List[Dict[str, Any]] = [
+                t.model_dump() for t in state.interview_topics.interview_topics
+            ]
         except Exception:
             topics_list = state.interview_topics  # already a list[dict]
 
@@ -812,12 +927,16 @@ class PerTopicDiscussionSummaryAgent:
         try:
             generated_summary_json = state.generated_summary.model_dump_json()
         except Exception:
-            generated_summary_json = json.dumps(state.generated_summary, ensure_ascii=False)
+            generated_summary_json = json.dumps(
+                state.generated_summary, ensure_ascii=False
+            )
 
         # Run all topic calls concurrently (each via inner graph)
         tasks = [
             asyncio.create_task(
-                PerTopicDiscussionSummaryGenerationAgent._one_topic_call(generated_summary_json, topic, state.id)
+                PerTopicDiscussionSummaryGenerationAgent._one_topic_call(
+                    generated_summary_json, topic, state.id
+                )
             )
             for topic in topics_list
         ]
@@ -851,13 +970,21 @@ class PerTopicDiscussionSummaryAgent:
 
                 discussion_topics.append(result)
             except Exception as exc:
-                _log_warn(f"Failed to append structured response for topic index {idx}: {exc}")
+                _log_warn(
+                    f"Failed to append structured response for topic index {idx}: {exc}"
+                )
 
-        state.discussion_summary_per_topic = DiscussionSummaryPerTopicSchema(discussion_topics=discussion_topics)
+        state.discussion_summary_per_topic = DiscussionSummaryPerTopicSchema(
+            discussion_topics=discussion_topics
+        )
 
         # Gated final-output logging
-        rendered = _render_final_result(state.discussion_summary_per_topic.model_dump_json(indent=2))
-        _log_info(f"Per-topic discussion summaries generated before retry checks | output={rendered}")
+        rendered = _render_final_result(
+            state.discussion_summary_per_topic.model_dump_json(indent=2)
+        )
+        _log_info(
+            f"Per-topic discussion summaries generated before retry checks | output={rendered}"
+        )
 
         return state
 
@@ -879,7 +1006,9 @@ class PerTopicDiscussionSummaryAgent:
             PerTopicDiscussionSummaryAgent.should_regenerate,
             {False: END, True: "discussion_summary_per_topic_generator"},
         )
-        return g.compile(checkpointer=checkpointer, name="PerTopicDiscussionSummaryGenerationAgent")
+        return g.compile(
+            checkpointer=checkpointer, name="PerTopicDiscussionSummaryGenerationAgent"
+        )
 
 
 if __name__ == "__main__":

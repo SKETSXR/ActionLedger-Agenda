@@ -1,7 +1,9 @@
-import re
 import logging
+import re
+
 from langchain_core.messages import HumanMessage
-from ..model_handling import llm_jd
+
+from src.model_handling import llm_jd
 
 # Module-level logger (diagnostics only)
 LOGGER = logging.getLogger(__name__)
@@ -34,7 +36,7 @@ async def parse_jd_text_to_json(jd_text: str) -> str:
         '    "company_background":"actual company name - ..."\n'
         "}\n"
         "Job Description Text:\n"
-        f'\"\"\"{jd_text}\"\"\"'
+        f'"""{jd_text}"""'
     )
 
     try:

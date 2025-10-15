@@ -39,43 +39,50 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
+from logging.handlers import TimedRotatingFileHandler
 from typing import Any
 
 import pymongo
 from dotenv import dotenv_values
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
-from logging.handlers import TimedRotatingFileHandler
 from pymongo.errors import ServerSelectionTimeoutError
+
+from src.schema.agent_schema import AgentInternalState
+from src.schema.input_schema import InputSchema
+from src.schema.output_schema import OutputSchema
 
 from .DiscussionSummaryPerTopic import PerTopicDiscussionSummaryAgent
 from .NodesAgent import NodesGenerationAgent
 from .QABlocksAgent import QABlockGenerationAgent
 from .SummaryGenerationAgent import SummaryGenerationAgent
 from .TopicGenerationAgent import TopicGenerationAgent
-from ..schema.agent_schema import AgentInternalState
-from ..schema.input_schema import InputSchema
-from ..schema.output_schema import OutputSchema
-
 
 # ==============================
 # Configuration
 # ==============================
+
 
 @dataclass(frozen=True)
 class AgendaConfig:
     agent_name: str = "agenda_generation_agent"
 
     log_dir: str = os.getenv("AGENDA_AGENT_LOG_DIR", "logs")
-    log_level: int = getattr(logging, os.getenv("AGENDA_AGENT_LOG_LEVEL", "INFO").upper(), logging.INFO)
+    log_level: int = getattr(
+        logging, os.getenv("AGENDA_AGENT_LOG_LEVEL", "INFO").upper(), logging.INFO
+    )
     log_file: str = os.getenv("AGENDA_AGENT_LOG_FILE", f"{agent_name}.log")
     log_rotate_when: str = os.getenv("AGENDA_AGENT_LOG_ROTATE_WHEN", "midnight")
     log_rotate_interval: int = int(os.getenv("AGENDA_AGENT_LOG_ROTATE_INTERVAL", "1"))
     log_backup_count: int = int(os.getenv("AGENDA_AGENT_LOG_BACKUP_COUNT", "365"))
 
     # IO payload logging
-    io_log_mode: str = os.getenv("AGENDA_IO_LOG_PAYLOAD", "off").strip().lower()  # off | summary | full
-    io_log_max_chars: int = int(os.getenv("AGENDA_IO_LOG_MAX_CHARS", "0"))        # soft cap for full mode
+    io_log_mode: str = (
+        os.getenv("AGENDA_IO_LOG_PAYLOAD", "off").strip().lower()
+    )  # off | summary | full
+    io_log_max_chars: int = int(
+        os.getenv("AGENDA_IO_LOG_MAX_CHARS", "0")
+    )  # soft cap for full mode
 
 
 CFG = AgendaConfig()
@@ -84,6 +91,7 @@ CFG = AgendaConfig()
 # ==============================
 # Logger
 # ==============================
+
 
 def _build_logger() -> logging.Logger:
     logger = logging.getLogger(CFG.agent_name)
@@ -137,6 +145,7 @@ def _log_err(msg: str) -> None:
 # ==============================
 # JSON helpers + gated formatters
 # ==============================
+
 
 def _compact_json(v: Any) -> str:
     """Pretty JSON for dict/list or Pydantic models; fall back to str."""
@@ -247,13 +256,14 @@ def _gate_payload(label: str, state_like: AgentInternalState) -> str:
     # full
     s = _compact_json(state_like)
     if CFG.io_log_max_chars and len(s) > CFG.io_log_max_chars:
-        s = s[:CFG.io_log_max_chars].rstrip() + "…"
+        s = s[: CFG.io_log_max_chars].rstrip() + "…"
     return f"{label}={s}"
 
 
 # ==============================
 # Agenda Generation Agent
 # ==============================
+
 
 class AgendaGenerationAgent:
     """
@@ -268,7 +278,9 @@ class AgendaGenerationAgent:
 
     # ---------- Node: Input formatter ----------
     @staticmethod
-    async def input_formatter(state: InputSchema, config: RunnableConfig) -> AgentInternalState:
+    async def input_formatter(
+        state: InputSchema, config: RunnableConfig
+    ) -> AgentInternalState:
         """Convert external InputSchema → AgentInternalState; validate required Mongo settings."""
         required = ("MONGO_CLIENT", "MONGO_DB", "MONGO_SUMMARY_COLLECTION")
         for key in required:
@@ -282,16 +294,24 @@ class AgendaGenerationAgent:
             question_guidelines=state.question_guidelines,
             mongo_client=AgendaGenerationAgent.env_vars["MONGO_CLIENT"],
             mongo_db=AgendaGenerationAgent.env_vars["MONGO_DB"],
-            mongo_summary_collection=AgendaGenerationAgent.env_vars["MONGO_SUMMARY_COLLECTION"],
+            mongo_summary_collection=AgendaGenerationAgent.env_vars[
+                "MONGO_SUMMARY_COLLECTION"
+            ],
             mongo_jd_collection=AgendaGenerationAgent.env_vars["MONGO_JD_COLLECTION"],
             mongo_cv_collection=AgendaGenerationAgent.env_vars["MONGO_CV_COLLECTION"],
-            mongo_skill_tree_collection=AgendaGenerationAgent.env_vars["MONGO_SKILL_TREE_COLLECTION"],
-            mongo_question_guidelines_collection=AgendaGenerationAgent.env_vars["MONGO_QUESTION_GENERATION_COLLECTION"],
+            mongo_skill_tree_collection=AgendaGenerationAgent.env_vars[
+                "MONGO_SKILL_TREE_COLLECTION"
+            ],
+            mongo_question_guidelines_collection=AgendaGenerationAgent.env_vars[
+                "MONGO_QUESTION_GENERATION_COLLECTION"
+            ],
             id=config["configurable"]["thread_id"],
         )
 
         try:
-            _log_info(f"Agenda input prepared | thread_id={internal_state.id} | {_gate_payload('input', internal_state)}")
+            _log_info(
+                f"Agenda input prepared | thread_id={internal_state.id} | {_gate_payload('input', internal_state)}"
+            )
         except Exception:
             _log_warn("Agenda input prepared (logging failed to render payload)")
 
@@ -308,9 +328,13 @@ class AgendaGenerationAgent:
 
         jd_collection = client[state.mongo_db][state.mongo_jd_collection]
         cv_collection = client[state.mongo_db][state.mongo_cv_collection]
-        skill_tree_collection = client[state.mongo_db][state.mongo_skill_tree_collection]
+        skill_tree_collection = client[state.mongo_db][
+            state.mongo_skill_tree_collection
+        ]
         summary_collection = client[state.mongo_db][state.mongo_summary_collection]
-        qg_collection = client[state.mongo_db][state.mongo_question_guidelines_collection]
+        qg_collection = client[state.mongo_db][
+            state.mongo_question_guidelines_collection
+        ]
 
         # Precondition checks
         if not state.candidate_profile:
@@ -368,10 +392,14 @@ class AgendaGenerationAgent:
     async def output_formatter(state: AgentInternalState) -> OutputSchema:
         """Package final artifacts into OutputSchema; log gated output view."""
         if state.generated_summary is None:
-            _log_err(f"Output formatting failed | thread_id={state.id} | reason=missing generated_summary")
+            _log_err(
+                f"Output formatting failed | thread_id={state.id} | reason=missing generated_summary"
+            )
             raise ValueError("Summary has not been generated")
         if state.interview_topics is None:
-            _log_err(f"Output formatting failed | thread_id={state.id} | reason=missing interview_topics")
+            _log_err(
+                f"Output formatting failed | thread_id={state.id} | reason=missing interview_topics"
+            )
             raise ValueError("Interview topics have not been generated")
 
         output = OutputSchema(
@@ -383,7 +411,9 @@ class AgendaGenerationAgent:
         )
 
         try:
-            _log_info(f"Agenda output ready | thread_id={state.id} | {_gate_payload('output', state)}")
+            _log_info(
+                f"Agenda output ready | thread_id={state.id} | {_gate_payload('output', state)}"
+            )
         except Exception:
             _log_warn("Agenda output ready (logging failed to render payload)")
 
@@ -402,11 +432,20 @@ class AgendaGenerationAgent:
         )
 
         # Nodes
-        gb.add_node("input_formatter", AgendaGenerationAgent.input_formatter, input_schema=InputSchema)
+        gb.add_node(
+            "input_formatter",
+            AgendaGenerationAgent.input_formatter,
+            input_schema=InputSchema,
+        )
         gb.add_node("summary_generation_agent", SummaryGenerationAgent.get_graph())
-        gb.add_node("store_inp_summary_tool", AgendaGenerationAgent.store_inp_summary_tool)
+        gb.add_node(
+            "store_inp_summary_tool", AgendaGenerationAgent.store_inp_summary_tool
+        )
         gb.add_node("topic_generation_agent", TopicGenerationAgent.get_graph())
-        gb.add_node("discussion_summary_per_topic_generator", PerTopicDiscussionSummaryAgent.get_graph())
+        gb.add_node(
+            "discussion_summary_per_topic_generator",
+            PerTopicDiscussionSummaryAgent.get_graph(),
+        )
         gb.add_node("nodes_generator", NodesGenerationAgent.get_graph())
         gb.add_node("qablock_generator", QABlockGenerationAgent.get_graph())
         gb.add_node("output_formatter", AgendaGenerationAgent.output_formatter)

@@ -41,7 +41,8 @@ import logging
 import os
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass
 from logging.handlers import TimedRotatingFileHandler
 from string import Template
@@ -53,13 +54,12 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 from pydantic import PrivateAttr
 
-from ..model_handling import llm_tg as _llm_client
-from ..prompt.topic_generation_agent_prompt import TOPIC_GENERATION_AGENT_PROMPT
-from ..schema.agent_schema import AgentInternalState
-from ..schema.input_schema import SkillTreeSchema
-from ..schema.output_schema import CollectiveInterviewTopicSchema
+from src.model_handling import llm_tg as _llm_client
 from src.mongo_tools import get_mongo_tools
-
+from src.prompt.topic_generation_agent_prompt import TOPIC_GENERATION_AGENT_PROMPT
+from src.schema.agent_schema import AgentInternalState
+from src.schema.input_schema import SkillTreeSchema
+from src.schema.output_schema import CollectiveInterviewTopicSchema
 
 # ==============================
 # Configuration
@@ -72,22 +72,32 @@ AGENT_NAME = "topic_generation_agent"
 class TopicAgentConfig:
     log_dir: str = os.getenv("TOPIC_AGENT_LOG_DIR", "logs")
     log_file: str = os.getenv("TOPIC_AGENT_LOG_FILE", f"{AGENT_NAME}.log")
-    log_level: int = getattr(logging, os.getenv("TOPIC_AGENT_LOG_LEVEL", "INFO").upper(), logging.INFO)
+    log_level: int = getattr(
+        logging, os.getenv("TOPIC_AGENT_LOG_LEVEL", "INFO").upper(), logging.INFO
+    )
     log_rotate_when: str = os.getenv("TOPIC_AGENT_LOG_ROTATE_WHEN", "midnight")
     log_rotate_interval: int = int(os.getenv("TOPIC_AGENT_LOG_ROTATE_INTERVAL", "1"))
     log_backup_count: int = int(os.getenv("TOPIC_AGENT_LOG_BACKUP_COUNT", "365"))
 
     llm_timeout_s: float = float(os.getenv("TOPIC_AGENT_LLM_TIMEOUT_SECONDS", "90"))
     llm_retries: int = int(os.getenv("TOPIC_AGENT_LLM_RETRIES", "2"))
-    llm_backoff_base_s: float = float(os.getenv("TOPIC_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5"))
+    llm_backoff_base_s: float = float(
+        os.getenv("TOPIC_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5")
+    )
 
     tool_timeout_s: float = float(os.getenv("TOPIC_AGENT_TOOL_TIMEOUT_SECONDS", "30"))
     tool_retries: int = int(os.getenv("TOPIC_AGENT_TOOL_RETRIES", "2"))
-    tool_backoff_base_s: float = float(os.getenv("TOPIC_AGENT_TOOL_RETRY_BACKOFF_SECONDS", "1.5"))
+    tool_backoff_base_s: float = float(
+        os.getenv("TOPIC_AGENT_TOOL_RETRY_BACKOFF_SECONDS", "1.5")
+    )
     tool_max_workers: int = int(os.getenv("TOPIC_AGENT_TOOL_MAX_WORKERS", "8"))
 
-    tool_log_payload: str = os.getenv("TOPIC_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower()
-    result_log_payload: str = os.getenv("TOPIC_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
+    tool_log_payload: str = (
+        os.getenv("TOPIC_AGENT_TOOL_LOG_PAYLOAD", "off").strip().lower()
+    )
+    result_log_payload: str = (
+        os.getenv("TOPIC_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
+    )
 
 
 CFG = TopicAgentConfig()
@@ -102,6 +112,7 @@ _topic_retry_counter = 1
 # ==============================
 # Logging
 # ==============================
+
 
 def _get_logger() -> logging.Logger:
     logger = logging.getLogger(AGENT_NAME)
@@ -152,9 +163,12 @@ def _log_warn(msg: str) -> None:
 # Small JSON / logging helpers
 # ==============================
 
+
 def _looks_like_json(text: str) -> bool:
     t = text.strip()
-    return (t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]"))
+    return (t.startswith("{") and t.endswith("}")) or (
+        t.startswith("[") and t.endswith("]")
+    )
 
 
 def _jsonish(value: Any) -> Any:
@@ -172,7 +186,11 @@ def _jsonish(value: Any) -> Any:
 
 def _compact(value: Any) -> str:
     try:
-        return json.dumps(value, ensure_ascii=False, indent=2) if isinstance(value, (dict, list)) else str(value)
+        return (
+            json.dumps(value, ensure_ascii=False, indent=2)
+            if isinstance(value, (dict, list))
+            else str(value)
+        )
     except Exception:
         return str(value)
 
@@ -221,11 +239,21 @@ def _summarize_topics(payload: Any) -> str:
                 for t in topics[:8]:
                     nm = None
                     if isinstance(t, dict):
-                        nm = t.get("topic") or t.get("name") or t.get("title") or t.get("label")
+                        nm = (
+                            t.get("topic")
+                            or t.get("name")
+                            or t.get("title")
+                            or t.get("label")
+                        )
                     else:
                         try:
                             md = t.model_dump()
-                            nm = md.get("topic") or md.get("name") or md.get("title") or md.get("label")
+                            nm = (
+                                md.get("topic")
+                                or md.get("name")
+                                or md.get("title")
+                                or md.get("label")
+                            )
                         except Exception:
                             nm = None
                     if isinstance(nm, str) and nm.strip():
@@ -305,6 +333,7 @@ def _log_retry(reason: str, iteration: int, extra: Optional[dict] = None) -> Non
 # Async retry helper
 # ==============================
 
+
 async def _retry_async_with_backoff(
     op_factory: Callable[[], Coroutine[Any, Any, Any]],
     *,
@@ -335,6 +364,7 @@ async def _retry_async_with_backoff(
 # Tool wrapper (timeout + retry)
 # ==============================
 
+
 class RetryTool(BaseTool):
     """
     Wrap a BaseTool with timeout + retries (both sync and async paths).
@@ -346,7 +376,9 @@ class RetryTool(BaseTool):
     _timeout_s: float = PrivateAttr()
     _backoff_base_s: float = PrivateAttr()
 
-    def __init__(self, inner: BaseTool, *, retries: int, timeout_s: float, backoff_base_s: float) -> None:
+    def __init__(
+        self, inner: BaseTool, *, retries: int, timeout_s: float, backoff_base_s: float
+    ) -> None:
         name = getattr(inner, "name", inner.__class__.__name__)
         description = getattr(inner, "description", "") or "Retried tool wrapper"
         args_schema = getattr(inner, "args_schema", None)
@@ -388,9 +420,13 @@ class RetryTool(BaseTool):
 
         async def _call_once():
             if hasattr(self._inner, "_arun"):
-                return await getattr(self._inner, "_arun")(*args, **{**kwargs, "config": config})
+                return await getattr(self._inner, "_arun")(
+                    *args, **{**kwargs, "config": config}
+                )
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, lambda: self._inner._run(*args, **{**kwargs, "config": config}))
+            return await loop.run_in_executor(
+                None, lambda: self._inner._run(*args, **{**kwargs, "config": config})
+            )
 
         return await _retry_async_with_backoff(
             _call_once,
@@ -405,8 +441,10 @@ class RetryTool(BaseTool):
 # Inner ReAct loop state
 # ==============================
 
+
 class _MongoAgentState(MessagesState):
     """State container for the inner Mongo-enabled loop."""
+
     final_response: CollectiveInterviewTopicSchema
 
 
@@ -428,7 +466,12 @@ class TopicGenerationAgent:
     # Tools
     _RAW_TOOLS: List[BaseTool] = get_mongo_tools(llm=llm)
     TOOLS: List[BaseTool] = [
-        RetryTool(t, retries=CFG.tool_retries, timeout_s=CFG.tool_timeout_s, backoff_base_s=CFG.tool_backoff_base_s)
+        RetryTool(
+            t,
+            retries=CFG.tool_retries,
+            timeout_s=CFG.tool_timeout_s,
+            backoff_base_s=CFG.tool_backoff_base_s,
+        )
         for t in _RAW_TOOLS
     ]
 
@@ -445,7 +488,9 @@ class TopicGenerationAgent:
             if hasattr(TopicGenerationAgent._AGENT_MODEL, "ainvoke"):
                 return await TopicGenerationAgent._AGENT_MODEL.ainvoke(messages)
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, TopicGenerationAgent._AGENT_MODEL.invoke, messages)
+            return await loop.run_in_executor(
+                None, TopicGenerationAgent._AGENT_MODEL.invoke, messages
+            )
 
         _log_info("Calling LLM (agent)")
         res = await _retry_async_with_backoff(
@@ -466,7 +511,9 @@ class TopicGenerationAgent:
             if hasattr(TopicGenerationAgent._STRUCTURED_MODEL, "ainvoke"):
                 return await TopicGenerationAgent._STRUCTURED_MODEL.ainvoke(payload)
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, TopicGenerationAgent._STRUCTURED_MODEL.invoke, payload)
+            return await loop.run_in_executor(
+                None, TopicGenerationAgent._STRUCTURED_MODEL.invoke, payload
+            )
 
         _log_info("Calling LLM (structured)")
         res = await _retry_async_with_backoff(
@@ -496,7 +543,9 @@ class TopicGenerationAgent:
         ai_content: Optional[str] = None
         # Prefer last assistant message without tool calls
         for m in reversed(msgs):
-            if getattr(m, "type", None) in ("ai", "assistant") and not getattr(m, "tool_calls", None):
+            if getattr(m, "type", None) in ("ai", "assistant") and not getattr(
+                m, "tool_calls", None
+            ):
                 ai_content = m.content
                 break
         # Fallback: any assistant message
@@ -533,7 +582,9 @@ class TopicGenerationAgent:
         g.add_node("respond", cls._respond_node)
         g.add_node("tools", ToolNode(cls.TOOLS, tags=["mongo-tools"]))
         g.set_entry_point("agent")
-        g.add_conditional_edges("agent", cls._should_continue, {"continue": "tools", "respond": "respond"})
+        g.add_conditional_edges(
+            "agent", cls._should_continue, {"continue": "tools", "respond": "respond"}
+        )
         g.add_edge("tools", "agent")
         g.add_edge("respond", END)
 
@@ -550,7 +601,11 @@ class TopicGenerationAgent:
             raise ValueError("Summary cannot be null.")
 
         # Append latest feedback (if any) into the cumulative feedback string
-        feedback_text = state.interview_topics_feedback.feedback if state.interview_topics_feedback else ""
+        feedback_text = (
+            state.interview_topics_feedback.feedback
+            if state.interview_topics_feedback
+            else ""
+        )
         if feedback_text:
             state.interview_topics_feedbacks += f"\n{feedback_text}\n"
 
@@ -566,7 +621,9 @@ class TopicGenerationAgent:
 
         messages: List[Msg] = [
             SystemMessage(content=sys_content),
-            HumanMessage(content="Based on the instructions, please start the process."),
+            HumanMessage(
+                content="Based on the instructions, please start the process."
+            ),
         ]
 
         inner_graph = TopicGenerationAgent._get_inner_graph()
@@ -575,7 +632,9 @@ class TopicGenerationAgent:
         state.interview_topics = result["final_response"]
 
         # Log generated topics as per toggle
-        rendered = _render_topics_for_log(state.interview_topics.model_dump_json(indent=2))
+        rendered = _render_topics_for_log(
+            state.interview_topics.model_dump_json(indent=2)
+        )
         _log_info(f"Topics generated before all retry checks | output={rendered}")
 
         return state
@@ -604,8 +663,8 @@ class TopicGenerationAgent:
             if not getattr(root, "children", None):
                 return []
             leaves: List[SkillTreeSchema] = []
-            for domain in (root.children or []):
-                for leaf in (domain.children or []):
+            for domain in root.children or []:
+                for leaf in domain.children or []:
                     if not getattr(leaf, "children", None):
                         leaves.append(leaf)
             return leaves
@@ -614,14 +673,21 @@ class TopicGenerationAgent:
             if not getattr(root, "children", None):
                 return []
             musts: List[SkillTreeSchema] = []
-            for domain in (root.children or []):
-                for leaf in (domain.children or []):
-                    if not getattr(leaf, "children", None) and getattr(leaf, "priority", None) == "must":
+            for domain in root.children or []:
+                for leaf in domain.children or []:
+                    if (
+                        not getattr(leaf, "children", None)
+                        and getattr(leaf, "priority", None) == "must"
+                    ):
                         musts.append(leaf)
             return musts
 
-        all_skill_leaves = [canon(leaf.name) for leaf in level3_leaves(state.skill_tree)]
-        must_skill_leaves = [canon(leaf.name) for leaf in level3_must_leaves(state.skill_tree)]
+        all_skill_leaves = [
+            canon(leaf.name) for leaf in level3_leaves(state.skill_tree)
+        ]
+        must_skill_leaves = [
+            canon(leaf.name) for leaf in level3_must_leaves(state.skill_tree)
+        ]
 
         # Collect unique focus-area skills across topics
         focus_area_skills: List[str] = []
@@ -632,12 +698,17 @@ class TopicGenerationAgent:
                     focus_area_skills.append(val)
 
         # 1) Question count must match
-        total_questions = sum(t.total_questions for t in state.interview_topics.interview_topics)
+        total_questions = sum(
+            t.total_questions for t in state.interview_topics.interview_topics
+        )
         if total_questions != state.generated_summary.total_questions:
             _log_retry(
                 "Total questions mismatch",
                 _topic_retry_counter,
-                {"got": total_questions, "target": state.generated_summary.total_questions},
+                {
+                    "got": total_questions,
+                    "target": state.generated_summary.total_questions,
+                },
             )
             _topic_retry_counter += 1
             return False
@@ -657,15 +728,20 @@ class TopicGenerationAgent:
                 "<Please keep this topic set as is irrespective of other instructions apart from this feedback ones:\n"
                 f"```\n{state.interview_topics.model_dump()}\n```\n"
                 "But add this list of missing `must` priority skills as given below to the focus areas of the last topic being (General Skill Assessment):\n"
-                + ", ".join(missing_musts) + ">"          
+                + ", ".join(missing_musts)
+                + ">"
             )
             state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
-            _log_retry("Missing MUST skills", _topic_retry_counter, {"missing": missing_musts})
+            _log_retry(
+                "Missing MUST skills", _topic_retry_counter, {"missing": missing_musts}
+            )
             _topic_retry_counter += 1
             return False
 
         # Log generated topics as per toggle
-        rendered = _render_topics_for_log(state.interview_topics.model_dump_json(indent=2))
+        rendered = _render_topics_for_log(
+            state.interview_topics.model_dump_json(indent=2)
+        )
         _log_info(f"Topic generation successfully completed | output={rendered}")
         return True  # satisfied
 

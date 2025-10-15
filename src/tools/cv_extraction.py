@@ -1,7 +1,7 @@
 import argparse
+import asyncio
 import json
 import re
-import asyncio
 from pathlib import Path
 
 import fitz  # PyMuPDF
@@ -9,9 +9,9 @@ from langchain_core.messages import HumanMessage
 from rich import print as rprint
 from rich.console import Console
 
-from ..model_handling import llm_cv
+from src.model_handling import llm_cv
 
-SYSTEM_PROMPT = '''
+SYSTEM_PROMPT = """
 You are a resume parsing agent.
 The input is a Markdown-formatted resume. 
 ```{markdown_text}```\n
@@ -40,7 +40,7 @@ Now extract structured data and return only in a JSON format in this given forma
 Guidelines:
 - Extract each skill individually, even if listed together in a paragraph or bullet.
 - If fields are missing, use null or an empty array — never guess or add fields that don't match the format.
-- Do NOT include any notes, markdown, or explanation — return only the JSON object.'''
+- Do NOT include any notes, markdown, or explanation — return only the JSON object."""
 
 # Precompiled regexes to strip optional fenced code blocks around model JSON
 _CODE_FENCE_START = re.compile(r"^```(?:json)?\s*", re.IGNORECASE)

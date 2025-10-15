@@ -1,4 +1,3 @@
-
 # =============================================================================
 # Module: summary_generation_agent
 # =============================================================================
@@ -44,7 +43,6 @@
 
 import asyncio
 import json
-import httpx
 import logging
 import os
 import sys
@@ -53,18 +51,19 @@ from dataclasses import dataclass
 from logging.handlers import TimedRotatingFileHandler
 from typing import List, Optional, Sequence, Union
 
+import httpx
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import START, StateGraph
 
-from ..model_handling import llm_sg as _llm_client
-from ..prompt.summary_generation_agent_prompt import SUMMARY_GENERATION_AGENT_PROMPT
-from ..schema.agent_schema import AgentInternalState
-from ..schema.output_schema import GeneratedSummarySchema
-
+from src.model_handling import llm_sg as _llm_client
+from src.prompt.summary_generation_agent_prompt import SUMMARY_GENERATION_AGENT_PROMPT
+from src.schema.agent_schema import AgentInternalState
+from src.schema.output_schema import GeneratedSummarySchema
 
 # =============================================================================
 # Configuration (env-driven, safe defaults)
 # =============================================================================
+
 
 @dataclass(frozen=True)
 class SummaryAgentConfig:
@@ -76,15 +75,23 @@ class SummaryAgentConfig:
     log_backup_days: int = int(os.getenv("SUMMARY_AGENT_LOG_BACKUP_DAYS", "365"))
 
     # LLM call behavior
-    llm_timeout_seconds: float = float(os.getenv("SUMMARY_AGENT_LLM_TIMEOUT_SECONDS", "90"))
+    llm_timeout_seconds: float = float(
+        os.getenv("SUMMARY_AGENT_LLM_TIMEOUT_SECONDS", "90")
+    )
     llm_retries: int = int(os.getenv("SUMMARY_AGENT_LLM_RETRIES", "2"))
-    llm_retry_backoff_seconds: float = float(os.getenv("SUMMARY_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5"))
+    llm_retry_backoff_seconds: float = float(
+        os.getenv("SUMMARY_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5")
+    )
 
     # Output logging: off | summary | full
-    result_log_payload: str = os.getenv("SUMMARY_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
+    result_log_payload: str = (
+        os.getenv("SUMMARY_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
+    )
 
     # Error verbosity: include traceback if true
-    include_stacks: bool = os.getenv("SUMMARY_AGENT_INCLUDE_STACKS", "false").strip().lower() in {"1", "true", "yes"}
+    include_stacks: bool = os.getenv(
+        "SUMMARY_AGENT_INCLUDE_STACKS", "false"
+    ).strip().lower() in {"1", "true", "yes"}
 
 
 CONFIG = SummaryAgentConfig()
@@ -93,6 +100,7 @@ CONFIG = SummaryAgentConfig()
 # =============================================================================
 # Logger (rotating file + console; never crash on logging errors)
 # =============================================================================
+
 
 def _ensure_dir(path: str) -> None:
     try:
@@ -124,7 +132,9 @@ def _get_logger(name: str = "summary_generation_agent") -> logging.Logger:
     file_handler.setFormatter(fmt)
 
     console_handler = logging.StreamHandler(stream=sys.stdout)
-    console_handler.setLevel(getattr(logging, CONFIG.log_level_console.upper(), logging.INFO))
+    console_handler.setLevel(
+        getattr(logging, CONFIG.log_level_console.upper(), logging.INFO)
+    )
     console_handler.setFormatter(fmt)
 
     logging.raiseExceptions = False
@@ -134,12 +144,14 @@ def _get_logger(name: str = "summary_generation_agent") -> logging.Logger:
     logger._initialized = True  # type: ignore[attr-defined]
     return logger
 
+
 LOGGER = _get_logger()
 
 
 # =============================================================================
 # Minimal, safe serialization helpers (for logs only)
 # =============================================================================
+
 
 def _safe_dump_for_log(obj: object) -> str:
     """Best-effort JSON for logs. Handles Pydantic v1/v2 and plain objects."""
@@ -197,6 +209,7 @@ def _render_for_log(payload: object) -> str:
 
 Msg = Union[SystemMessage, HumanMessage]
 
+
 def build_messages(state: AgentInternalState) -> List[Msg]:
     """Deterministic prompt construction; JSON inputs to keep formatting stable."""
     system = SystemMessage(
@@ -206,7 +219,9 @@ def build_messages(state: AgentInternalState) -> List[Msg]:
             candidate_profile=state.candidate_profile.model_dump_json(),
         )
     )
-    human = HumanMessage(content="Begin the summary generation per the instructions and input payload.")
+    human = HumanMessage(
+        content="Begin the summary generation per the instructions and input payload."
+    )
     return [system, human]
 
 
@@ -248,7 +263,11 @@ def _classify_error(exc: Exception) -> tuple[str, str]:
                 try:
                     body = exc.response.json() or {}
                     code = (body.get("error") or {}).get("code")
-                    return ("llm_error", "quota") if code == "insufficient_quota" else ("llm_error", "rate_limited")
+                    return (
+                        ("llm_error", "quota")
+                        if code == "insufficient_quota"
+                        else ("llm_error", "rate_limited")
+                    )
                 except Exception:
                     return "llm_error", "rate_limited"
             if 400 <= s < 500:
@@ -260,11 +279,15 @@ def _classify_error(exc: Exception) -> tuple[str, str]:
     # LangChain/Pydantic parsing/validation → schema_error
     try:
         from langchain.schema import OutputParserException
+
         if isinstance(exc, OutputParserException):
             return "schema_error", "parse"
     except Exception:
         pass
-    for mod, name in (("pydantic_core", "ValidationError"), ("pydantic", "ValidationError")):
+    for mod, name in (
+        ("pydantic_core", "ValidationError"),
+        ("pydantic", "ValidationError"),
+    ):
         try:
             VE = getattr(__import__(mod, fromlist=[name]), name)
             if isinstance(exc, VE):
@@ -274,18 +297,38 @@ def _classify_error(exc: Exception) -> tuple[str, str]:
     return "llm_error", "unknown"
 
 
-async def invoke_llm_with_retry(messages: Sequence[Msg], request_id: str) -> GeneratedSummarySchema:
+async def invoke_llm_with_retry(
+    messages: Sequence[Msg], request_id: str
+) -> GeneratedSummarySchema:
     """Call the LLM with timeout + exponential backoff retries. Return structured output."""
     last_error: Optional[Exception] = None
 
     for attempt in range(CONFIG.llm_retries + 1):
         try:
-            LOGGER.info("LLM call start", extra={"request_id": request_id, "event": "llm_call_start", "attempt": attempt + 1})
+            LOGGER.info(
+                "LLM call start",
+                extra={
+                    "request_id": request_id,
+                    "event": "llm_call_start",
+                    "attempt": attempt + 1,
+                },
+            )
 
-            coro = _llm_client.with_structured_output(GeneratedSummarySchema).ainvoke(messages)
-            result: GeneratedSummarySchema = await asyncio.wait_for(coro, timeout=CONFIG.llm_timeout_seconds)
+            coro = _llm_client.with_structured_output(GeneratedSummarySchema).ainvoke(
+                messages
+            )
+            result: GeneratedSummarySchema = await asyncio.wait_for(
+                coro, timeout=CONFIG.llm_timeout_seconds
+            )
 
-            LOGGER.info("LLM call success", extra={"request_id": request_id, "event": "llm_call_success", "attempt": attempt + 1})
+            LOGGER.info(
+                "LLM call success",
+                extra={
+                    "request_id": request_id,
+                    "event": "llm_call_success",
+                    "attempt": attempt + 1,
+                },
+            )
             return result
 
         except Exception as exc:
@@ -304,7 +347,7 @@ async def invoke_llm_with_retry(messages: Sequence[Msg], request_id: str) -> Gen
             )
 
         if attempt < CONFIG.llm_retries:
-            await asyncio.sleep(CONFIG.llm_retry_backoff_seconds * (2 ** attempt))
+            await asyncio.sleep(CONFIG.llm_retry_backoff_seconds * (2**attempt))
 
     # Terminal failure
     assert last_error is not None
@@ -326,6 +369,7 @@ async def invoke_llm_with_retry(messages: Sequence[Msg], request_id: str) -> Gen
 # =============================================================================
 # Agent
 # =============================================================================
+
 
 class SummaryGenerationAgent:
     """
@@ -350,7 +394,11 @@ class SummaryGenerationAgent:
                 LOGGER.error(
                     "Missing required field on state: %s",
                     field,
-                    extra={"request_id": request_id, "node": node, "event": "state_validation_error"},
+                    extra={
+                        "request_id": request_id,
+                        "node": node,
+                        "event": "state_validation_error",
+                    },
                 )
                 return state  # keep flow alive; flip to raise if you want fail-fast
 
@@ -362,12 +410,21 @@ class SummaryGenerationAgent:
 
             LOGGER.info(
                 f"Summary generation completed | output={_render_for_log(summary)}",
-                extra={"request_id": request_id, "node": node, "event": "summary_generated"},
+                extra={
+                    "request_id": request_id,
+                    "node": node,
+                    "event": "summary_generated",
+                },
             )
         except Exception as exc:
             LOGGER.error(
                 "Summary generation failed",
-                extra={"request_id": request_id, "node": node, "event": "summary_failed", "error": _brief_exception(exc)},
+                extra={
+                    "request_id": request_id,
+                    "node": node,
+                    "event": "summary_failed",
+                    "error": _brief_exception(exc),
+                },
                 exc_info=CONFIG.include_stacks,
             )
         return state
@@ -384,13 +441,18 @@ class SummaryGenerationAgent:
 # CLI
 # =============================================================================
 
+
 def draw_graph_ascii() -> None:
     """Quick ASCII preview for local inspection."""
     try:
         graph = SummaryGenerationAgent.get_graph()
         print(graph.get_graph().draw_ascii())
     except Exception as exc:
-        LOGGER.error("Unable to draw ASCII graph.", extra={"error": _brief_exception(exc)}, exc_info=CONFIG.include_stacks)
+        LOGGER.error(
+            "Unable to draw ASCII graph.",
+            extra={"error": _brief_exception(exc)},
+            exc_info=CONFIG.include_stacks,
+        )
 
 
 if __name__ == "__main__":
