@@ -19,20 +19,20 @@ import asyncio
 import json
 import os
 import time
-import yaml
 from pathlib import Path
 from typing import Any, Dict
 
+import yaml
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
 from src.agent.AgendaGenerationAgent import AgendaGenerationAgent
 from src.schema.input_schema import (
-    JobDescriptionSchema,
     CandidateProfileSchema,
-    SkillTreeSchema,
     InputSchema,
+    JobDescriptionSchema,
+    SkillTreeSchema,
 )
 
 
@@ -95,7 +95,11 @@ if __name__ == "__main__":
     ST_ID = int(os.environ.get("ST_ID", 1))
 
     # Keep question guidelines from file
-    qg_json_path = Path(os.environ.get("QG_JSON_PATH", r"testing\custom_testing_inputs\question_guidelines1.json"))
+    qg_json_path = Path(
+        os.environ.get(
+            "QG_JSON_PATH", r"testing\custom_testing_inputs\question_guidelines1.json"
+        )
+    )
     config_yaml_path = Path(os.environ.get("CONFIG_YAML_PATH", "config.yaml"))
     output_txt_path = Path(os.environ.get("OUTPUT_TXT_PATH", r"testing\op7.txt"))
 

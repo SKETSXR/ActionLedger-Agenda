@@ -10,9 +10,12 @@ from src.tests.conftest import AsyncGraphStub
 async def test_topic_generator_and_should_regenerate(monkeypatch, inp, summary, topics):
     # Build state skeleton (skip Agenda input_formatter for brevity)
     state = AgentInternalState(
-        mongo_client="mongodb://localhost:27017", mongo_db="agenda_db",
-        mongo_jd_collection="jd", mongo_cv_collection="cv",
-        mongo_skill_tree_collection="skill_tree", mongo_summary_collection="summary",
+        mongo_client="mongodb://localhost:27017",
+        mongo_db="agenda_db",
+        mongo_jd_collection="jd",
+        mongo_cv_collection="cv",
+        mongo_skill_tree_collection="skill_tree",
+        mongo_summary_collection="summary",
         mongo_question_guidelines_collection="question_guidelines",
         id="thread-test-1",
         job_description=inp.job_description,
@@ -24,7 +27,9 @@ async def test_topic_generator_and_should_regenerate(monkeypatch, inp, summary, 
 
     # Stub the compiled inner graph (the agent calls _get_inner_graph().ainvoke({...}))
     stub = AsyncGraphStub({"final_response": topics})
-    monkeypatch.setattr(TopicGenerationAgent, "_get_inner_graph", lambda: stub, raising=True)
+    monkeypatch.setattr(
+        TopicGenerationAgent, "_get_inner_graph", lambda: stub, raising=True
+    )
 
     # Run the node
     state = await TopicGenerationAgent.topic_generator(state)

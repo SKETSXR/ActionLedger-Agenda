@@ -1,14 +1,20 @@
 import pytest
+
 from src.agent.NodesAgent import NodesGenerationAgent as NA
 from src.schema.agent_schema import AgentInternalState
 
 
 @pytest.mark.asyncio
-async def test_nodes_generator_and_policy(monkeypatch, inp, summary, topics, dspt, nodes):
+async def test_nodes_generator_and_policy(
+    monkeypatch, inp, summary, topics, dspt, nodes
+):
     state = AgentInternalState(
-        mongo_client="mongodb://localhost:27017", mongo_db="agenda_db",
-        mongo_jd_collection="jd", mongo_cv_collection="cv",
-        mongo_skill_tree_collection="skill_tree", mongo_summary_collection="summary",
+        mongo_client="mongodb://localhost:27017",
+        mongo_db="agenda_db",
+        mongo_jd_collection="jd",
+        mongo_cv_collection="cv",
+        mongo_skill_tree_collection="skill_tree",
+        mongo_summary_collection="summary",
         mongo_question_guidelines_collection="question_guidelines",
         id="thread-test-1",
         job_description=inp.job_description,

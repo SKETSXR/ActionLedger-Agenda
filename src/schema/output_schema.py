@@ -1,4 +1,5 @@
-from typing import Annotated, Optional, List, Union, Literal
+from typing import Annotated, List, Literal, Optional, Union
+
 from pydantic import BaseModel, Field
 
 
@@ -37,14 +38,26 @@ class JobRequirementsSummarySchema(BaseModel):
 
 class ProjectReasoningSummarySchema(BaseModel):
     """Short reasoning summary per project: what, how, stack, and a brief walkthrough."""
+
     what_done: Annotated[str, Field(..., description="What was built/achieved")]
-    how_done: Annotated[str, Field(..., description="How it was implemented (approach/architecture)")]
-    tech_stack: Annotated[str, Field(..., min_length=1, description="Technologies used")]
-    walkthrough: Annotated[str, Field(..., description="Brief step-by-step of how each particular tech stack was used")]
+    how_done: Annotated[
+        str, Field(..., description="How it was implemented (approach/architecture)")
+    ]
+    tech_stack: Annotated[
+        str, Field(..., min_length=1, description="Technologies used")
+    ]
+    walkthrough: Annotated[
+        str,
+        Field(
+            ...,
+            description="Brief step-by-step of how each particular tech stack was used",
+        ),
+    ]
 
 
 class CandidateProjectSummarySchema(BaseModel):
     """Aggregate of project-wise reasoning summaries."""
+
     projectwise_summary: List[ProjectReasoningSummarySchema] = Field(
         ..., description="List of project wise summary"
     )
@@ -53,6 +66,7 @@ class CandidateProjectSummarySchema(BaseModel):
 # ============================== ANNOTATED SKILL TREE (EVIDENCE) ============================== #
 class SkillLeaf(BaseModel):
     """Leaf skill with normalized weight, priority, and a short evidence comment."""
+
     name: str = Field(..., description="Leaf skill name (verbatim)")
     weight: float = Field(..., description="Normalized in [0,1]")
     priority: Literal["must", "high", "low"] = Field(..., description="Priority")
@@ -61,6 +75,7 @@ class SkillLeaf(BaseModel):
 
 class DomainNode(BaseModel):
     """Domain node containing leaf skills and optional comment."""
+
     name: str = Field(..., description="Domain name")
     weight: float = Field(..., description="Normalized in [0,1]")
     priority: Literal["must", "high", "low"]
@@ -70,6 +85,7 @@ class DomainNode(BaseModel):
 
 class AnnotatedSkillTreeSummarySchema(BaseModel):
     """Root of the annotated skill tree summarization with domains and leaves."""
+
     name: str = Field(..., description="Root label, e.g., 'L3 (Software Engineer 2)'")
     weight: float = Field(..., description="Usually 1.0")
     priority: Literal["must", "high", "low"]
@@ -90,6 +106,7 @@ class DomainsToAssessListSchema(BaseModel):
 
 class TotalQuestionsSchema(BaseModel):
     """Total planned question count for the entire interview."""
+
     total_questions: Annotated[
         int,
         Field(
@@ -109,6 +126,7 @@ class GeneratedSummarySchema(TotalQuestionsSchema):
     - Domains to assess
     - Total question count (inherited)
     """
+
     job_requirements: JobRequirementsSummarySchema
     candidate_project_summary: CandidateProjectSummarySchema
     annotated_skill_tree_T: AnnotatedSkillTreeSummarySchema
@@ -118,14 +136,24 @@ class GeneratedSummarySchema(TotalQuestionsSchema):
 # ============================== TOPICS & FEEDBACK ============================== #
 class FocusAreaSchema(BaseModel):
     """Focus skill (verbatim leaf) and a short guideline for probing it."""
+
     skill: str = Field(..., description="Verbatim leaf skill from annotated skill tree")
-    guideline: str = Field(..., description="Brief guideline on what to focus on for this skill")
+    guideline: str = Field(
+        ..., description="Brief guideline on what to focus on for this skill"
+    )
 
 
 class TopicSchema(BaseModel):
     """One discussion topic with rationale, focus areas, references, and planned count."""
+
     topic: Annotated[str, Field(..., description="Short name of the discussion topic")]
-    why_this_topic: Annotated[str, Field(..., description="A short reason for why this discussion topic has been chosen")]
+    why_this_topic: Annotated[
+        str,
+        Field(
+            ...,
+            description="A short reason for why this discussion topic has been chosen",
+        ),
+    ]
     focus_area: List[FocusAreaSchema] = Field(
         ...,
         description="List of focus skills with guidelines (each item is {skill, guideline})",
@@ -150,17 +178,23 @@ class TopicSchema(BaseModel):
             ]
         ],
     )
-    necessary_reference_material: Annotated[str, Field(..., description="Reference material for this topic")]
+    necessary_reference_material: Annotated[
+        str, Field(..., description="Reference material for this topic")
+    ]
     total_questions: Annotated[int, Field(..., description="Planned question count")]
 
 
 class CollectiveInterviewTopicSchema(BaseModel):
     """Collection of interview topics."""
-    interview_topics: List[TopicSchema] = Field(..., description="List of interview topics")
+
+    interview_topics: List[TopicSchema] = Field(
+        ..., description="List of interview topics"
+    )
 
 
 class CollectiveInterviewTopicFeedbackSchema(BaseModel):
     """Feedback payload for iteratively refining the topics."""
+
     satisfied: bool
     feedback: str
 
@@ -219,6 +253,7 @@ class NodeSchema(BaseModel):
     - Direct nodes carry the actual question text.
     - Deep Dive nodes reference context, skills, and optional thresholds.
     """
+
     id: int = Field(..., ge=1)
     question_type: QuestionType
     question: Optional[str] = None  # Required if question_type is "Direct"
@@ -232,12 +267,14 @@ class NodeSchema(BaseModel):
 
 class TopicWithNodesSchema(BaseModel):
     """A topic with its ordered list of nodes."""
+
     topic: str
     nodes: List[NodeSchema] = Field(..., min_length=1)
 
 
 class NodesSchema(BaseModel):
     """Container for topic-node flows across all topics."""
+
     topics_with_nodes: List[TopicWithNodesSchema] = Field(..., min_length=1)
 
 
@@ -249,6 +286,7 @@ QCountType = Literal["Twist", "Interrogatory"]
 
 class QAItem(BaseModel):
     """One question item within a block, with difficulty and example questions."""
+
     qa_id: str = Field(..., description="QA identifier like 'QA1'")
     q_type: QType
     q_difficulty: QDiff
@@ -258,6 +296,7 @@ class QAItem(BaseModel):
 
 class QABlock(BaseModel):
     """A block groups related QA items under a single guideline."""
+
     block_id: str = Field(..., description="Block identifier like 'B1'")
     guideline: str = Field(..., min_length=1)
     qa_items: List[QAItem] = Field(..., min_length=7, max_length=7)
@@ -265,18 +304,21 @@ class QABlock(BaseModel):
 
 class QASet(BaseModel):
     """All blocks generated for a single topic."""
+
     topic: str = Field(..., min_length=1)
     qa_blocks: List[QABlock] = Field(..., min_length=1)
 
 
 class QASetsSchema(BaseModel):
     """Top-level collection of QA sets across topics."""
+
     qa_sets: List[QASet] = Field(..., min_length=1)
 
 
 # ============================== OUTPUT ROOT ============================== #
 class OutputSchema(BaseModel):
     """Final pipeline output bundle."""
+
     summary: GeneratedSummarySchema
     interview_topics: CollectiveInterviewTopicSchema
     discussion_summary_per_topic: DiscussionSummaryPerTopicSchema

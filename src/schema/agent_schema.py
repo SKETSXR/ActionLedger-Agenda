@@ -1,21 +1,22 @@
 from typing import Annotated
-from pydantic import BaseModel, ConfigDict
+
 from langchain_core.messages import AnyMessage, RemoveMessage
 from langgraph.graph import add_messages
+from pydantic import BaseModel, ConfigDict
 
+from .input_schema import (
+    CandidateProfileSchema,
+    JobDescriptionSchema,
+    QuestionGuidelinesCompleteSchema,
+    SkillTreeSchema,
+)
 from .output_schema import (
-    GeneratedSummarySchema,
+    CollectiveInterviewTopicFeedbackSchema,
     CollectiveInterviewTopicSchema,
     DiscussionSummaryPerTopicSchema,
+    GeneratedSummarySchema,
     NodesSchema,
     QASetsSchema,
-    CollectiveInterviewTopicFeedbackSchema,
-)
-from .input_schema import (
-    JobDescriptionSchema,
-    SkillTreeSchema,
-    CandidateProfileSchema,
-    QuestionGuidelinesCompleteSchema,
 )
 
 

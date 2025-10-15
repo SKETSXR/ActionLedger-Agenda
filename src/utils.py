@@ -1,5 +1,6 @@
-import yaml
 from typing import Any
+
+import yaml
 
 
 def load_config(path: str) -> dict[str, Any] | list[Any]:

@@ -142,6 +142,20 @@ def _log_err(msg: str) -> None:
     LOGGER.error(msg)
 
 
+def _err(msg: str, *, exc: Exception | None = None) -> None:
+    """Error log with optional traceback."""
+    LOGGER.error(msg, exc_info=exc is not None)
+
+
+def _log_and_raise(message: str, exc_type: type[Exception] = ValueError) -> None:
+    """
+    Log the error message and raise the given exception type with the same message.
+    Keeps callsites concise and consistent.
+    """
+    _err(message)  # no stack unless you pass an exc
+    raise exc_type(message)
+
+
 # ==============================
 # JSON helpers + gated formatters
 # ==============================
@@ -285,7 +299,7 @@ class AgendaGenerationAgent:
         required = ("MONGO_CLIENT", "MONGO_DB", "MONGO_SUMMARY_COLLECTION")
         for key in required:
             if key not in AgendaGenerationAgent.env_vars:
-                raise ValueError(f"{key} is not set")
+                _log_and_raise(f"{key} is not set", ValueError)
 
         internal_state = AgentInternalState(
             job_description=state.job_description,
@@ -338,13 +352,13 @@ class AgendaGenerationAgent:
 
         # Precondition checks
         if not state.candidate_profile:
-            raise ValueError("`candidate profile` cannot be null")
+            _log_and_raise("`candidate profile` cannot be null", ValueError)
         if not state.job_description:
-            raise ValueError("`job description` cannot be null")
+            _log_and_raise("`job description` cannot be null", ValueError)
         if not state.skill_tree:
-            raise ValueError("`skill tree` cannot be null")
+            _log_and_raise("`skill tree` cannot be null", ValueError)
         if not state.generated_summary:
-            raise ValueError("`generated summary` cannot be null")
+            _log_and_raise("`generated summary` cannot be null", ValueError)
 
         # Prepare docs with _id = thread_id
         jd = state.job_description.model_dump()
@@ -392,15 +406,9 @@ class AgendaGenerationAgent:
     async def output_formatter(state: AgentInternalState) -> OutputSchema:
         """Package final artifacts into OutputSchema; log gated output view."""
         if state.generated_summary is None:
-            _log_err(
-                f"Output formatting failed | thread_id={state.id} | reason=missing generated_summary"
-            )
-            raise ValueError("Summary has not been generated")
+            _log_and_raise("Summary has not been generated", ValueError)
         if state.interview_topics is None:
-            _log_err(
-                f"Output formatting failed | thread_id={state.id} | reason=missing interview_topics"
-            )
-            raise ValueError("Interview topics have not been generated")
+            _log_and_raise("Interview topics have not been generated", ValueError)
 
         output = OutputSchema(
             summary=state.generated_summary,

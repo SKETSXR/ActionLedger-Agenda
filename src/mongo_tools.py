@@ -1,16 +1,15 @@
 import json
 import re
-from typing import List, Optional, Dict, Any, Literal, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
+from bson import json_util
 from dotenv import dotenv_values
-from langchain_core.tools import BaseTool, tool
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_mongodb.agent_toolkit.toolkit import MongoDBDatabaseToolkit
+from langchain_core.tools import BaseTool, tool
 from langchain_mongodb.agent_toolkit.database import MongoDBDatabase
+from langchain_mongodb.agent_toolkit.toolkit import MongoDBDatabaseToolkit
 from pydantic.v1 import BaseModel, Field
 from pymongo import MongoClient
-from bson import json_util
-
 
 # In-process cache of DB interfaces keyed by "<uri>::<database>"
 _CONN_CACHE: Dict[str, MongoDBDatabase] = {}
@@ -54,7 +53,9 @@ def _get_or_create_db(uri: str, database: str) -> MongoDBDatabase:
             client.admin.command("ping")
             _ = client[database].list_collection_names()
     except Exception as e:
-        raise ValueError(f"Failed to connect to MongoDB database '{database}': {e}") from e
+        raise ValueError(
+            f"Failed to connect to MongoDB database '{database}': {e}"
+        ) from e
 
     db = MongoDBDatabase.from_connection_string(uri, database=database)
     _CONN_CACHE[cache_key] = db
@@ -114,7 +115,10 @@ def _validate_allowed_shape(collection: str, qdict: Dict[str, Any]) -> tuple[boo
     """
     if collection in ("cv", "summary"):
         if not isinstance(qdict, dict) or qdict.get("_id") is None:
-            return False, "For 'cv' and 'summary', query must be {'_id': '<thread_id>'}."
+            return (
+                False,
+                "For 'cv' and 'summary', query must be {'_id': '<thread_id>'}.",
+            )
         if not isinstance(qdict["_id"], str):
             return False, "The '_id' value must be a string."
         return True, "ok"
@@ -125,14 +129,19 @@ def _validate_allowed_shape(collection: str, qdict: Dict[str, Any]) -> tuple[boo
         _id = qdict["_id"]
         if isinstance(_id, dict):
             if "$in" in _id:
-                if not isinstance(_id["$in"], list) or not all(isinstance(x, str) for x in _id["$in"]):
+                if not isinstance(_id["$in"], list) or not all(
+                    isinstance(x, str) for x in _id["$in"]
+                ):
                     return False, "'$in' must be a list of strings."
                 return True, "ok"
             if "$regex" in _id:
                 if not isinstance(_id["$regex"], str):
                     return False, "'$regex' must be a string."
                 return True, "ok"
-            return False, "Only '$in' or '$regex' supported for 'question_guidelines' _id."
+            return (
+                False,
+                "Only '$in' or '$regex' supported for 'question_guidelines' _id.",
+            )
         elif isinstance(_id, str):
             return True, "ok"
         else:
@@ -144,6 +153,7 @@ def _validate_allowed_shape(collection: str, qdict: Dict[str, Any]) -> tuple[boo
 # ------------------------------ Tool schemas ------------------------------ #
 class MongoQueryInput(BaseModel):
     """Arguments for Mongo query tools."""
+
     collection: Literal["cv", "summary", "question_guidelines"] = Field(
         description="Target MongoDB collection."
     )
@@ -154,7 +164,9 @@ class MongoQueryInput(BaseModel):
 
 # ------------------------------ Tools ------------------------------ #
 @tool("mongodb_query_checker", args_schema=MongoQueryInput)
-def mongodb_query_checker(collection: str, query: Union[Dict[str, Any], str]) -> Dict[str, Any]:
+def mongodb_query_checker(
+    collection: str, query: Union[Dict[str, Any], str]
+) -> Dict[str, Any]:
     """
     Validate and normalize a MongoDB query before execution.
     Returns a dict with:
@@ -175,7 +187,9 @@ def mongodb_query_checker(collection: str, query: Union[Dict[str, Any], str]) ->
 
 
 @tool("custom_mongodb_query", args_schema=MongoQueryInput)
-def custom_mongodb_query(collection: str, query: Union[Dict[str, Any], str]) -> Dict[str, Any]:
+def custom_mongodb_query(
+    collection: str, query: Union[Dict[str, Any], str]
+) -> Dict[str, Any]:
     """
     Execute a sanitized 'find' query on the specified collection.
     Expected call pattern: run `mongodb_query_checker` first and pass its normalized_query here.
@@ -208,6 +222,7 @@ def custom_mongodb_query(collection: str, query: Union[Dict[str, Any], str]) -> 
 
 class ListCollectionsInput(BaseModel):
     """No arguments."""
+
     pass
 
 

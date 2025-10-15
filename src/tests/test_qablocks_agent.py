@@ -1,15 +1,21 @@
 import pytest
+
 from src.agent.QABlocksAgent import QABlockGenerationAgent as QA
 from src.schema.agent_schema import AgentInternalState
-from src.schema.output_schema import QASetsSchema, QASet, QABlock, QAItem
+from src.schema.output_schema import QABlock, QAItem, QASet, QASetsSchema
 
 
 @pytest.mark.asyncio
-async def test_qablocks_generator_and_policy(monkeypatch, inp, summary, topics, dspt, nodes):
+async def test_qablocks_generator_and_policy(
+    monkeypatch, inp, summary, topics, dspt, nodes
+):
     state = AgentInternalState(
-        mongo_client="mongodb://localhost:27017", mongo_db="agenda_db",
-        mongo_jd_collection="jd", mongo_cv_collection="cv",
-        mongo_skill_tree_collection="skill_tree", mongo_summary_collection="summary",
+        mongo_client="mongodb://localhost:27017",
+        mongo_db="agenda_db",
+        mongo_jd_collection="jd",
+        mongo_cv_collection="cv",
+        mongo_skill_tree_collection="skill_tree",
+        mongo_summary_collection="summary",
         mongo_question_guidelines_collection="question_guidelines",
         id="thread-test-1",
         job_description=inp.job_description,
@@ -66,7 +72,13 @@ async def test_qablocks_generator_and_policy(monkeypatch, inp, summary, topics, 
     payloads = [topic1_set.model_dump(), topic2_set.model_dump()]
     idx = {"i": 0}
 
-    async def fake_gen_for_topic(topic_name, discussion_summary_json, deep_dive_nodes_json, thread_id, qa_error=""):
+    async def fake_gen_for_topic(
+        topic_name,
+        discussion_summary_json,
+        deep_dive_nodes_json,
+        thread_id,
+        qa_error="",
+    ):
         i = idx["i"]
         idx["i"] = i + 1
         # The real method returns (one_set_dict, error_string)
