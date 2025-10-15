@@ -62,41 +62,43 @@ from ..schema.agent_schema import AgentInternalState
 from ..schema.output_schema import GeneratedSummarySchema
 
 
-# ==============================
-# Configuration
-# ==============================
+# =============================================================================
+# Configuration (env-driven, safe defaults)
+# =============================================================================
 
 @dataclass(frozen=True)
 class SummaryAgentConfig:
+    # Logging
     log_dir: str = os.getenv("SUMMARY_AGENT_LOG_DIR", "logs")
     log_file: str = os.getenv("SUMMARY_AGENT_LOG_FILE", "summary_generation_agent.log")
     log_level_console: str = os.getenv("SUMMARY_AGENT_LOG_LEVEL_CONSOLE", "INFO")
     log_level_file: str = os.getenv("SUMMARY_AGENT_LOG_LEVEL_FILE", "INFO")
     log_backup_days: int = int(os.getenv("SUMMARY_AGENT_LOG_BACKUP_DAYS", "365"))
 
+    # LLM call behavior
     llm_timeout_seconds: float = float(os.getenv("SUMMARY_AGENT_LLM_TIMEOUT_SECONDS", "90"))
     llm_retries: int = int(os.getenv("SUMMARY_AGENT_LLM_RETRIES", "2"))
     llm_retry_backoff_seconds: float = float(os.getenv("SUMMARY_AGENT_LLM_RETRY_BACKOFF_SECONDS", "2.5"))
 
-    # Controls how much of the model output is logged
+    # Output logging: off | summary | full
     result_log_payload: str = os.getenv("SUMMARY_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
-    # NEW: toggle stack traces in logs
-    include_stacks: bool = os.getenv("SUMMARY_AGENT_INCLUDE_STACKS", "false").strip().lower() in {"1","true","yes"}
+
+    # Error verbosity: include traceback if true
+    include_stacks: bool = os.getenv("SUMMARY_AGENT_INCLUDE_STACKS", "false").strip().lower() in {"1", "true", "yes"}
 
 
 CONFIG = SummaryAgentConfig()
 
 
-# ==============================
-# Logging
-# ==============================
+# =============================================================================
+# Logger (rotating file + console; never crash on logging errors)
+# =============================================================================
 
 def _ensure_dir(path: str) -> None:
     try:
         os.makedirs(path, exist_ok=True)
     except Exception:
-        # Best-effort only; avoid crashing on log-dir issues
-        pass
+        pass  # best effort
 
 
 def _get_logger(name: str = "summary_generation_agent") -> logging.Logger:
@@ -125,92 +127,78 @@ def _get_logger(name: str = "summary_generation_agent") -> logging.Logger:
     console_handler.setLevel(getattr(logging, CONFIG.log_level_console.upper(), logging.INFO))
     console_handler.setFormatter(fmt)
 
-    logging.raiseExceptions = False  # Never crash on logging errors in production
-
+    logging.raiseExceptions = False
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
     logger.propagate = False
     logger._initialized = True  # type: ignore[attr-defined]
     return logger
 
-
 LOGGER = _get_logger()
 
 
-# ==============================
-# Serialization helpers (for safe logging)
-# ==============================
+# =============================================================================
+# Minimal, safe serialization helpers (for logs only)
+# =============================================================================
 
-def _pydantic_to_dict(obj) -> object:
-    """Convert Pydantic v1/v2 models to plain objects; otherwise return as is."""
+def _safe_dump_for_log(obj: object) -> str:
+    """Best-effort JSON for logs. Handles Pydantic v1/v2 and plain objects."""
+    # Try pydantic JSON first
     for attr in ("model_dump_json", "json"):
-        if hasattr(obj, attr):
-            try:
-                return json.loads(getattr(obj, attr)())
-            except Exception:
-                pass
-    for attr in ("model_dump", "dict"):
         if hasattr(obj, attr):
             try:
                 return getattr(obj, attr)()
             except Exception:
                 pass
-    return obj
-
-
-def _to_json_str(obj: object) -> str:
+    # Try pydantic dict, then JSON
+    for attr in ("model_dump", "dict"):
+        if hasattr(obj, attr):
+            try:
+                return json.dumps(getattr(obj, attr)(), ensure_ascii=False)
+            except Exception:
+                pass
+    # Last resort
     try:
-        return json.dumps(obj, ensure_ascii=False, indent=2)
+        return json.dumps(obj, ensure_ascii=False, default=str)
     except Exception:
-        try:
-            return json.dumps(str(obj), ensure_ascii=False)
-        except Exception:
-            return "<unserializable>"
-
-
-def _summarize_output(payload: object) -> str:
-    """
-    Produce a short, schema-agnostic description: top-level keys and common fields.
-    """
-    try:
-        data = _pydantic_to_dict(payload)
-        if isinstance(data, dict):
-            keys = list(data.keys())
-            parts = [f"keys={keys[:8]}{'...' if len(keys) > 8 else ''}"]
-            for k in ("total_questions", "topic_count", "topics", "interview_topics"):
-                if k in data:
-                    v = data[k]
-                    parts.append(f"{k}.len={len(v) if isinstance(v, list) else v}")
-            return "; ".join(parts)
-        if isinstance(data, list):
-            return f"list(len={len(data)})"
-        return type(data).__name__
-    except Exception:
-        return "<unavailable>"
+        return "<unserializable>"
 
 
 def _render_for_log(payload: object) -> str:
+    """off | summary | full"""
     mode = CONFIG.result_log_payload
     if mode == "off":
         return "<hidden>"
     if mode == "summary":
-        return _summarize_output(payload)
-    # "full"
-    return _to_json_str(_pydantic_to_dict(payload))
+        try:
+            # Try to peek top-level keys without materializing full payload
+            if hasattr(payload, "model_dump"):
+                data = payload.model_dump()
+            elif hasattr(payload, "dict"):
+                data = payload.dict()
+            else:
+                data = payload if isinstance(payload, dict) else None
+
+            if isinstance(data, dict):
+                keys = list(data.keys())
+                return f"keys={keys[:8]}{'...' if len(keys) > 8 else ''}"
+            if isinstance(payload, list):
+                return f"list(len={len(payload)})"
+            return type(payload).__name__
+        except Exception:
+            return "<unavailable>"
+    # full
+    return _safe_dump_for_log(payload)
 
 
-# ==============================
-# Prompt creation & LLM call
-# ==============================
+# =============================================================================
+# Prompt + LLM call
+# =============================================================================
 
 Msg = Union[SystemMessage, HumanMessage]
 
-
 def build_messages(state: AgentInternalState) -> List[Msg]:
-    """
-    Build deterministic System + Human messages from state.
-    Inputs are JSON-serialized to keep formatting stable across runs.
-    """
+    """Deterministic prompt construction; JSON inputs to keep formatting stable."""
     system = SystemMessage(
         content=SUMMARY_GENERATION_AGENT_PROMPT.format(
             job_description=state.job_description.model_dump_json(),
@@ -223,20 +211,12 @@ def build_messages(state: AgentInternalState) -> List[Msg]:
 
 
 def _brief_exception(exc: Exception) -> dict:
-    """
-    Return a compact, structured summary of the exception without a traceback.
-    Includes class name, short message, and any known HTTP/status info.
-    """
-    name = exc.__class__.__name__
-    msg = str(exc).strip()
-
-    out = {"type": name, "message": msg}
-
-    # Enrich for common types
+    """Compact, structured error without traceback."""
+    out = {"type": exc.__class__.__name__, "message": (str(exc) or "").strip()}
+    # Enrich common cases
     try:
         if isinstance(exc, httpx.HTTPStatusError):
             out["status_code"] = exc.response.status_code
-            # Try to include a short error code if present
             try:
                 body = exc.response.json() or {}
                 code = (body.get("error") or {}).get("code")
@@ -248,24 +228,15 @@ def _brief_exception(exc: Exception) -> dict:
             out["code"] = "timeout"
     except Exception:
         pass
-
-    # Trim very long messages
-    if len(out.get("message","")) > 300:
+    if len(out.get("message", "")) > 300:
         out["message"] = out["message"][:300] + "…"
-
     return out
 
 
 def _classify_error(exc: Exception) -> tuple[str, str]:
-    """
-    Returns (event, reason) with event in {"llm_error", "schema_error"}.
-    `reason` is a short string so observability keeps its diagnostic power.
-    """
-    # Timeouts: collapse to llm_error
+    """Return (event, reason) where event ∈ {llm_error, schema_error} for metrics."""
     if isinstance(exc, asyncio.TimeoutError):
         return "llm_error", "timeout"
-
-    # OpenAI/httpx HTTP status handling -> llm_error
     try:
         if isinstance(exc, httpx.HTTPStatusError):
             s = exc.response.status_code
@@ -274,7 +245,6 @@ def _classify_error(exc: Exception) -> tuple[str, str]:
             if s == 403:
                 return "llm_error", "permission"
             if s == 429:
-                # Try detect quota vs generic rate limit
                 try:
                     body = exc.response.json() or {}
                     code = (body.get("error") or {}).get("code")
@@ -287,117 +257,94 @@ def _classify_error(exc: Exception) -> tuple[str, str]:
                 return "llm_error", "server"
     except Exception:
         pass
-
-    # LangChain output/parser & Pydantic validation -> schema_error
+    # LangChain/Pydantic parsing/validation → schema_error
     try:
         from langchain.schema import OutputParserException
         if isinstance(exc, OutputParserException):
             return "schema_error", "parse"
     except Exception:
         pass
-
-    try:
-        from pydantic_core import ValidationError as PydanticCoreVE
-        if isinstance(exc, PydanticCoreVE):
-            return "schema_error", "pydantic"
-    except Exception:
-        pass
-
-    try:
-        from pydantic import ValidationError as PydanticVE
-        if isinstance(exc, PydanticVE):
-            return "schema_error", "pydantic"
-    except Exception:
-        pass
-
-    # Fallback
+    for mod, name in (("pydantic_core", "ValidationError"), ("pydantic", "ValidationError")):
+        try:
+            VE = getattr(__import__(mod, fromlist=[name]), name)
+            if isinstance(exc, VE):
+                return "schema_error", "pydantic"
+        except Exception:
+            pass
     return "llm_error", "unknown"
 
 
 async def invoke_llm_with_retry(messages: Sequence[Msg], request_id: str) -> GeneratedSummarySchema:
+    """Call the LLM with timeout + exponential backoff retries. Return structured output."""
     last_error: Optional[Exception] = None
 
     for attempt in range(CONFIG.llm_retries + 1):
         try:
-            LOGGER.info(
-                "LLM call start",
-                extra={"request_id": request_id, "event": "llm_call_start", "attempt": attempt + 1},
-            )
+            LOGGER.info("LLM call start", extra={"request_id": request_id, "event": "llm_call_start", "attempt": attempt + 1})
 
             coro = _llm_client.with_structured_output(GeneratedSummarySchema).ainvoke(messages)
             result: GeneratedSummarySchema = await asyncio.wait_for(coro, timeout=CONFIG.llm_timeout_seconds)
 
-            LOGGER.info(
-                "LLM call success",
-                extra={"request_id": request_id, "event": "llm_call_success", "attempt": attempt + 1},
-            )
+            LOGGER.info("LLM call success", extra={"request_id": request_id, "event": "llm_call_success", "attempt": attempt + 1})
             return result
 
         except Exception as exc:
             last_error = exc
             event, reason = _classify_error(exc)
-            # Only two events ever emitted from here: llm_error or schema_error
             LOGGER.warning(
                 "LLM call failed",
                 extra={
                     "request_id": request_id,
-                    "event": event,           # "llm_error" or "schema_error"
-                    "reason": reason,         # e.g., "timeout","quota","rate_limited","pydantic","parse"
-                    "attempt": attempt + 1,
-                    "error": _brief_exception(exc),  # <— concise error payload
-                },
-                exc_info=CONFIG.include_stacks,      # <— stack traces only if you flip the env
-            )
-
-        if attempt < CONFIG.llm_retries:
-            sleep_secs = CONFIG.llm_retry_backoff_seconds * (2 ** attempt)
-            await asyncio.sleep(sleep_secs)
-
-    # Final terminal error (same two-event policy)
-    assert last_error is not None
-    event, reason = _classify_error(last_error)
-    LOGGER.error(
-                "LLM call failed after retries",
-                extra={
-                    "request_id": request_id,
                     "event": event,
                     "reason": reason,
-                    "attempts": CONFIG.llm_retries + 1,
-                    "error": _brief_exception(last_error),  # <— concise summary
+                    "attempt": attempt + 1,
+                    "error": _brief_exception(exc),
                 },
                 exc_info=CONFIG.include_stacks,
             )
 
+        if attempt < CONFIG.llm_retries:
+            await asyncio.sleep(CONFIG.llm_retry_backoff_seconds * (2 ** attempt))
+
+    # Terminal failure
+    assert last_error is not None
+    event, reason = _classify_error(last_error)
+    LOGGER.error(
+        "LLM call failed after retries",
+        extra={
+            "request_id": request_id,
+            "event": event,
+            "reason": reason,
+            "attempts": CONFIG.llm_retries + 1,
+            "error": _brief_exception(last_error),
+        },
+        exc_info=CONFIG.include_stacks,
+    )
     raise last_error
 
 
-# ==============================
+# =============================================================================
 # Agent
-# ==============================
+# =============================================================================
 
 class SummaryGenerationAgent:
     """
-    Generate a structured interview summary from AgentInternalState fields:
-      • job_description
-      • skill_tree
-      • candidate_profile
+    Build messages from state and produce GeneratedSummarySchema at state.generated_summary.
 
-    Output is coerced to GeneratedSummarySchema and stored at:
-      state.generated_summary
+    Required fields on state:
+      - job_description
+      - skill_tree
+      - candidate_profile
     """
 
-    llm_client = _llm_client  # kept for easy swapping/mocking
+    llm_client = _llm_client  # easy swapping/mocking
 
     @staticmethod
     async def summary_generator(state: AgentInternalState) -> AgentInternalState:
-        """
-        Build prompt messages, call the LLM (with retries/timeouts),
-        write the result to state.generated_summary, and return state.
-        """
         request_id = getattr(state, "request_id", None) or str(uuid.uuid4())
         node = "summary_generator"
 
-        # Validate required inputs
+        # Input guardrails
         for field in ("job_description", "skill_tree", "candidate_profile"):
             if getattr(state, field, None) is None:
                 LOGGER.error(
@@ -405,7 +352,7 @@ class SummaryGenerationAgent:
                     field,
                     extra={"request_id": request_id, "node": node, "event": "state_validation_error"},
                 )
-                return state  # or raise if you prefer fail-fast
+                return state  # keep flow alive; flip to raise if you want fail-fast
 
         messages = build_messages(state)
 
@@ -413,43 +360,32 @@ class SummaryGenerationAgent:
             summary = await invoke_llm_with_retry(messages, request_id)
             state.generated_summary = summary
 
-            output_for_log = _render_for_log(summary)
             LOGGER.info(
-                f"Summary generation completed successfully | output={output_for_log}",
+                f"Summary generation completed | output={_render_for_log(summary)}",
                 extra={"request_id": request_id, "node": node, "event": "summary_generated"},
             )
         except Exception as exc:
             LOGGER.error(
                 "Summary generation failed",
-                extra={
-                    "request_id": request_id,
-                    "node": node,
-                    "event": "summary_failed",
-                    "error": _brief_exception(exc),
-                },
+                extra={"request_id": request_id, "node": node, "event": "summary_failed", "error": _brief_exception(exc)},
                 exc_info=CONFIG.include_stacks,
             )
-
         return state
 
     @staticmethod
     def get_graph(checkpointer=None):
-        """
-        Build and compile the LangGraph:
-          START -> summary_generator
-        """
         g = StateGraph(state_schema=AgentInternalState)
         g.add_node("summary_generator", SummaryGenerationAgent.summary_generator)
         g.add_edge(START, "summary_generator")
         return g.compile(checkpointer=checkpointer, name="Summary Generation Agent")
 
 
-# ==============================
-# CLI helper
-# ==============================
+# =============================================================================
+# CLI
+# =============================================================================
 
 def draw_graph_ascii() -> None:
-    """Print an ASCII preview of the compiled graph (for quick inspection)."""
+    """Quick ASCII preview for local inspection."""
     try:
         graph = SummaryGenerationAgent.get_graph()
         print(graph.get_graph().draw_ascii())
