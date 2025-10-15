@@ -100,7 +100,7 @@ elif config["configurable"]["model_provider_cv"] == "ollama":
 if config["configurable"]["model_provider_sg"] == "openai":
     model_sg = config["configurable"]["model_sg"]
     model_provider_sg = config["configurable"]["model_provider_sg"]
-    max_retries_sg = config["configurable"].get("max_retries_sg", 25)
+    max_retries_sg = config["configurable"].get("max_retries_sg", 10)
     temperature_sg = config["configurable"].get("temperature_sg", None)
     reasoning_effort_sg = config["configurable"].get("reasoning_effort_sg", None)
 

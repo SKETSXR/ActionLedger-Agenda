@@ -44,6 +44,7 @@
 
 import asyncio
 import json
+import httpx
 import logging
 import os
 import sys
@@ -79,6 +80,8 @@ class SummaryAgentConfig:
 
     # Controls how much of the model output is logged
     result_log_payload: str = os.getenv("SUMMARY_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
+    # NEW: toggle stack traces in logs
+    include_stacks: bool = os.getenv("SUMMARY_AGENT_INCLUDE_STACKS", "false").strip().lower() in {"1","true","yes"}
 
 
 CONFIG = SummaryAgentConfig()
@@ -219,11 +222,99 @@ def build_messages(state: AgentInternalState) -> List[Msg]:
     return [system, human]
 
 
+def _brief_exception(exc: Exception) -> dict:
+    """
+    Return a compact, structured summary of the exception without a traceback.
+    Includes class name, short message, and any known HTTP/status info.
+    """
+    name = exc.__class__.__name__
+    msg = str(exc).strip()
+
+    out = {"type": name, "message": msg}
+
+    # Enrich for common types
+    try:
+        if isinstance(exc, httpx.HTTPStatusError):
+            out["status_code"] = exc.response.status_code
+            # Try to include a short error code if present
+            try:
+                body = exc.response.json() or {}
+                code = (body.get("error") or {}).get("code")
+                if code:
+                    out["code"] = code
+            except Exception:
+                pass
+        elif isinstance(exc, asyncio.TimeoutError):
+            out["code"] = "timeout"
+    except Exception:
+        pass
+
+    # Trim very long messages
+    if len(out.get("message","")) > 300:
+        out["message"] = out["message"][:300] + "…"
+
+    return out
+
+
+def _classify_error(exc: Exception) -> tuple[str, str]:
+    """
+    Returns (event, reason) with event in {"llm_error", "schema_error"}.
+    `reason` is a short string so observability keeps its diagnostic power.
+    """
+    # Timeouts: collapse to llm_error
+    if isinstance(exc, asyncio.TimeoutError):
+        return "llm_error", "timeout"
+
+    # OpenAI/httpx HTTP status handling -> llm_error
+    try:
+        if isinstance(exc, httpx.HTTPStatusError):
+            s = exc.response.status_code
+            if s == 401:
+                return "llm_error", "auth"
+            if s == 403:
+                return "llm_error", "permission"
+            if s == 429:
+                # Try detect quota vs generic rate limit
+                try:
+                    body = exc.response.json() or {}
+                    code = (body.get("error") or {}).get("code")
+                    return ("llm_error", "quota") if code == "insufficient_quota" else ("llm_error", "rate_limited")
+                except Exception:
+                    return "llm_error", "rate_limited"
+            if 400 <= s < 500:
+                return "llm_error", "bad_request"
+            if s >= 500:
+                return "llm_error", "server"
+    except Exception:
+        pass
+
+    # LangChain output/parser & Pydantic validation -> schema_error
+    try:
+        from langchain.schema import OutputParserException
+        if isinstance(exc, OutputParserException):
+            return "schema_error", "parse"
+    except Exception:
+        pass
+
+    try:
+        from pydantic_core import ValidationError as PydanticCoreVE
+        if isinstance(exc, PydanticCoreVE):
+            return "schema_error", "pydantic"
+    except Exception:
+        pass
+
+    try:
+        from pydantic import ValidationError as PydanticVE
+        if isinstance(exc, PydanticVE):
+            return "schema_error", "pydantic"
+    except Exception:
+        pass
+
+    # Fallback
+    return "llm_error", "unknown"
+
+
 async def invoke_llm_with_retry(messages: Sequence[Msg], request_id: str) -> GeneratedSummarySchema:
-    """
-    Invoke the structured-output LLM with timeout and exponential-backoff retries.
-    Raises the last exception if all attempts fail.
-    """
     last_error: Optional[Exception] = None
 
     for attempt in range(CONFIG.llm_retries + 1):
@@ -233,13 +324,8 @@ async def invoke_llm_with_retry(messages: Sequence[Msg], request_id: str) -> Gen
                 extra={"request_id": request_id, "event": "llm_call_start", "attempt": attempt + 1},
             )
 
-            coro = _llm_client.with_structured_output(
-                GeneratedSummarySchema
-            ).ainvoke(messages)
-
-            result: GeneratedSummarySchema = await asyncio.wait_for(
-                coro, timeout=CONFIG.llm_timeout_seconds
-            )
+            coro = _llm_client.with_structured_output(GeneratedSummarySchema).ainvoke(messages)
+            result: GeneratedSummarySchema = await asyncio.wait_for(coro, timeout=CONFIG.llm_timeout_seconds)
 
             LOGGER.info(
                 "LLM call success",
@@ -247,25 +333,41 @@ async def invoke_llm_with_retry(messages: Sequence[Msg], request_id: str) -> Gen
             )
             return result
 
-        except asyncio.TimeoutError as exc:
-            last_error = exc
-            LOGGER.error(
-                "LLM call timeout",
-                extra={"request_id": request_id, "event": "llm_timeout", "attempt": attempt + 1},
-            )
         except Exception as exc:
             last_error = exc
-            LOGGER.error(
-                "LLM call error",
-                extra={"request_id": request_id, "event": "llm_error", "attempt": attempt + 1},
+            event, reason = _classify_error(exc)
+            # Only two events ever emitted from here: llm_error or schema_error
+            LOGGER.warning(
+                "LLM call failed",
+                extra={
+                    "request_id": request_id,
+                    "event": event,           # "llm_error" or "schema_error"
+                    "reason": reason,         # e.g., "timeout","quota","rate_limited","pydantic","parse"
+                    "attempt": attempt + 1,
+                    "error": _brief_exception(exc),  # <— concise error payload
+                },
+                exc_info=CONFIG.include_stacks,      # <— stack traces only if you flip the env
             )
 
-        # Backoff before next retry (if any)
         if attempt < CONFIG.llm_retries:
             sleep_secs = CONFIG.llm_retry_backoff_seconds * (2 ** attempt)
             await asyncio.sleep(sleep_secs)
 
+    # Final terminal error (same two-event policy)
     assert last_error is not None
+    event, reason = _classify_error(last_error)
+    LOGGER.error(
+                "LLM call failed after retries",
+                extra={
+                    "request_id": request_id,
+                    "event": event,
+                    "reason": reason,
+                    "attempts": CONFIG.llm_retries + 1,
+                    "error": _brief_exception(last_error),  # <— concise summary
+                },
+                exc_info=CONFIG.include_stacks,
+            )
+
     raise last_error
 
 
@@ -316,11 +418,18 @@ class SummaryGenerationAgent:
                 f"Summary generation completed successfully | output={output_for_log}",
                 extra={"request_id": request_id, "node": node, "event": "summary_generated"},
             )
-        except Exception:
+        except Exception as exc:
             LOGGER.error(
                 "Summary generation failed",
-                extra={"request_id": request_id, "node": node, "event": "summary_failed"},
+                extra={
+                    "request_id": request_id,
+                    "node": node,
+                    "event": "summary_failed",
+                    "error": _brief_exception(exc),
+                },
+                exc_info=CONFIG.include_stacks,
             )
+
         return state
 
     @staticmethod
@@ -344,8 +453,8 @@ def draw_graph_ascii() -> None:
     try:
         graph = SummaryGenerationAgent.get_graph()
         print(graph.get_graph().draw_ascii())
-    except Exception:
-        LOGGER.exception("Unable to draw ASCII graph.")
+    except Exception as exc:
+        LOGGER.error("Unable to draw ASCII graph.", extra={"error": _brief_exception(exc)}, exc_info=CONFIG.include_stacks)
 
 
 if __name__ == "__main__":
