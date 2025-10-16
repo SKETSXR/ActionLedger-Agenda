@@ -47,7 +47,9 @@ import logging
 import os
 import sys
 import uuid
+from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import wraps
 from logging.handlers import TimedRotatingFileHandler
 from typing import List, Optional, Sequence, Union
 
@@ -92,6 +94,62 @@ class SummaryAgentConfig:
     include_stacks: bool = os.getenv(
         "SUMMARY_AGENT_INCLUDE_STACKS", "false"
     ).strip().lower() in {"1", "true", "yes"}
+    # Split logs by thread id (default on). Set to 0/false for a single shared file.
+    split_log_by_thread: bool = os.getenv(
+        "SUMMARY_AGENT_LOG_SPLIT_BY_THREAD", "1"
+    ).strip().lower() in ("1", "true", "yes", "y")
+
+
+# Current thread id for logging context (used by all log records)
+THREAD_ID_VAR: ContextVar[str] = ContextVar("thread_id", default="-")
+
+
+class _ThreadIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            record.thread_id = THREAD_ID_VAR.get()
+        except Exception:
+            record.thread_id = "-"
+        return True
+
+
+# Avoid duplicate handlers per thread id
+_THREAD_FILE_HANDLERS: dict[str, logging.Handler] = {}
+
+
+def _attach_thread_file_handler(thread_id: str) -> None:
+    """Attach a TimedRotatingFileHandler for this thread_id (if enabled)."""
+    if not CONFIG.split_log_by_thread:
+        return
+    if not thread_id:
+        return
+    if thread_id in _THREAD_FILE_HANDLERS:
+        return
+
+    os.makedirs(CONFIG.log_dir, exist_ok=True)
+    file_name = f"summary_generation_agent.{thread_id}.log"
+    path = os.path.join(CONFIG.log_dir, file_name)
+
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | tid=%(thread_id)s | %(message)s"
+    )
+    handler = TimedRotatingFileHandler(
+        filename=path,
+        when="midnight",
+        interval=1,
+        backupCount=CONFIG.log_backup_days,
+        encoding="utf-8",
+        utc=False,
+        delay=True,
+    )
+    logging.raiseExceptions = False
+    handler.setLevel(getattr(logging, CONFIG.log_level_file.upper(), logging.INFO))
+    handler.setFormatter(fmt)
+    handler.set_name(f"file::thread::{thread_id}")
+    handler.addFilter(_ThreadIdFilter())
+
+    LOGGER.addHandler(handler)
+    _THREAD_FILE_HANDLERS[thread_id] = handler
 
 
 CONFIG = SummaryAgentConfig()
@@ -117,32 +175,61 @@ def _get_logger(name: str = "summary_generation_agent") -> logging.Logger:
     logger.setLevel(logging.DEBUG)
     _ensure_dir(CONFIG.log_dir)
 
-    fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
-
-    file_handler = TimedRotatingFileHandler(
-        filename=os.path.join(CONFIG.log_dir, CONFIG.log_file),
-        when="midnight",
-        interval=1,
-        backupCount=CONFIG.log_backup_days,
-        encoding="utf-8",
-        utc=False,
-        delay=True,
+    # Formatter that includes tid
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | tid=%(thread_id)s | %(message)s"
     )
-    file_handler.setLevel(getattr(logging, CONFIG.log_level_file.upper(), logging.INFO))
-    file_handler.setFormatter(fmt)
+    tid_filter = _ThreadIdFilter()
 
+    # Console handler
     console_handler = logging.StreamHandler(stream=sys.stdout)
     console_handler.setLevel(
         getattr(logging, CONFIG.log_level_console.upper(), logging.INFO)
     )
     console_handler.setFormatter(fmt)
+    console_handler.addFilter(tid_filter)
+    logger.addHandler(console_handler)
+
+    # Shared file handler only if per-thread split is OFF
+    if not CONFIG.split_log_by_thread:
+        file_handler = TimedRotatingFileHandler(
+            filename=os.path.join(CONFIG.log_dir, CONFIG.log_file),
+            when="midnight",
+            interval=1,
+            backupCount=CONFIG.log_backup_days,
+            encoding="utf-8",
+            utc=False,
+            delay=True,
+        )
+        file_handler.setLevel(
+            getattr(logging, CONFIG.log_level_file.upper(), logging.INFO)
+        )
+        file_handler.setFormatter(fmt)
+        file_handler.set_name("file::shared")
+        file_handler.addFilter(tid_filter)
+        logger.addHandler(file_handler)
 
     logging.raiseExceptions = False
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
     logger.propagate = False
     logger._initialized = True  # type: ignore[attr-defined]
     return logger
+
+
+def with_thread_context(fn):
+    """Set THREAD_ID_VAR from state.id, attach per-thread handler, then restore."""
+
+    @wraps(fn)
+    async def _inner(*args, **kwargs):
+        state = args[0] if args else kwargs.get("state")
+        tid = getattr(state, "id", None) or "-"
+        token = THREAD_ID_VAR.set(tid)
+        try:
+            _attach_thread_file_handler(tid)
+            return await fn(*args, **kwargs)
+        finally:
+            THREAD_ID_VAR.reset(token)
+
+    return _inner
 
 
 LOGGER = _get_logger()
@@ -384,6 +471,7 @@ class SummaryGenerationAgent:
     llm_client = _llm_client  # easy swapping/mocking
 
     @staticmethod
+    @with_thread_context
     async def summary_generator(state: AgentInternalState) -> AgentInternalState:
         request_id = getattr(state, "request_id", None) or str(uuid.uuid4())
         node = "summary_generator"

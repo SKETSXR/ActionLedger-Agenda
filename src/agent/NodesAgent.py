@@ -48,8 +48,10 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import date, datetime
+from functools import wraps
 from logging.handlers import TimedRotatingFileHandler
 from string import Template
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Sequence
@@ -104,6 +106,10 @@ class NodesAgentConfig:
     result_log_payload: str = (
         os.getenv("NODES_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
     )
+    # Split logs by thread id (default on). Set to 0/false to keep one shared file.
+    split_log_by_thread: bool = os.getenv(
+        "NODES_AGENT_LOG_SPLIT_BY_THREAD", "1"
+    ).strip().lower() in ("1", "true", "yes", "y")
 
 
 CFG = NodesAgentConfig()
@@ -120,6 +126,60 @@ _nodes_retry_counter = 1
 # ==============================
 
 
+# Thread id ContextVar; all nested calls read this
+THREAD_ID_VAR: ContextVar[str] = ContextVar("thread_id", default="-")
+
+
+class _ThreadIdFilter(logging.Filter):
+    """Inject 'thread_id' into each LogRecord so the formatter can print it."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            record.thread_id = THREAD_ID_VAR.get()
+        except Exception:
+            record.thread_id = "-"
+        return True
+
+
+# Avoid duplicate file handlers per thread id
+_THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
+
+
+def _attach_thread_file_handler(thread_id: str) -> None:
+    """Attach a TimedRotatingFileHandler for this thread_id (if enabled)."""
+    if not CFG.split_log_by_thread:
+        return
+    if not thread_id:
+        return
+    if thread_id in _THREAD_FILE_HANDLERS:
+        return
+
+    os.makedirs(CFG.log_dir, exist_ok=True)
+    file_name = f"{AGENT_NAME}.{thread_id}.log"
+    path = os.path.join(CFG.log_dir, file_name)
+
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | tid=%(thread_id)s | %(message)s"
+    )
+    handler = TimedRotatingFileHandler(
+        path,
+        when=CFG.log_rotate_when,
+        interval=CFG.log_rotate_interval,
+        backupCount=CFG.log_backup_count,
+        encoding="utf-8",
+        utc=False,
+        delay=True,
+    )
+    logging.raiseExceptions = False
+    handler.setLevel(CFG.log_level)
+    handler.setFormatter(fmt)
+    handler.set_name(f"file::thread::{thread_id}")
+    handler.addFilter(_ThreadIdFilter())
+
+    LOGGER.addHandler(handler)
+    _THREAD_FILE_HANDLERS[thread_id] = handler
+
+
 def _get_logger() -> logging.Logger:
     logger = logging.getLogger(AGENT_NAME)
     if logger.handlers:
@@ -129,29 +189,56 @@ def _get_logger() -> logging.Logger:
     logger.propagate = False
 
     os.makedirs(CFG.log_dir, exist_ok=True)
-    file_path = os.path.join(CFG.log_dir, CFG.log_file)
-    fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+    shared_path = os.path.join(CFG.log_dir, CFG.log_file)
+
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | tid=%(thread_id)s | %(message)s"
+    )
+    thread_filter = _ThreadIdFilter()
 
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(CFG.log_level)
     console.setFormatter(fmt)
-
-    rotating_file = TimedRotatingFileHandler(
-        file_path,
-        when=CFG.log_rotate_when,
-        interval=CFG.log_rotate_interval,
-        backupCount=CFG.log_backup_count,
-        encoding="utf-8",
-        utc=False,
-        delay=True,
-    )
-    logging.raiseExceptions = False  # never raise on logging I/O in production
-    rotating_file.setLevel(CFG.log_level)
-    rotating_file.setFormatter(fmt)
-
+    console.addFilter(thread_filter)
     logger.addHandler(console)
-    logger.addHandler(rotating_file)
+
+    # Only add the shared file if per-thread split is OFF
+    if not CFG.split_log_by_thread:
+        rotating_file = TimedRotatingFileHandler(
+            shared_path,
+            when=CFG.log_rotate_when,
+            interval=CFG.log_rotate_interval,
+            backupCount=CFG.log_backup_count,
+            encoding="utf-8",
+            utc=False,
+            delay=True,
+        )
+        logging.raiseExceptions = False
+        rotating_file.setLevel(CFG.log_level)
+        rotating_file.setFormatter(fmt)
+        rotating_file.set_name("file::shared")
+        rotating_file.addFilter(thread_filter)
+        logger.addHandler(rotating_file)
+
     return logger
+
+
+def with_thread_context(fn):
+    """Sets THREAD_ID_VAR from state.id, attaches per-thread handler, and restores after."""
+
+    @wraps(fn)
+    async def _inner(*args, **kwargs):
+        # Assume state is first positional or 'state' kwarg
+        state = args[0] if args else kwargs.get("state")
+        tid = getattr(state, "id", None) or "-"
+        token = THREAD_ID_VAR.set(tid)
+        try:
+            _attach_thread_file_handler(tid)
+            return await fn(*args, **kwargs)
+        finally:
+            THREAD_ID_VAR.reset(token)
+
+    return _inner
 
 
 LOGGER = _get_logger()
@@ -668,28 +755,34 @@ class NodesGenerationAgent:
     async def _gen_once(
         per_topic_summary_json: str, thread_id: str, nodes_error: str
     ) -> TopicWithNodesSchema:
-        class AtTemplate(Template):
-            delimiter = "@"
+        token = THREAD_ID_VAR.set(thread_id or "-")
+        try:
+            _attach_thread_file_handler(thread_id or "-")
 
-        tpl = AtTemplate(NODES_AGENT_PROMPT)
-        sys_content = tpl.substitute(
-            per_topic_summary_json=per_topic_summary_json,
-            thread_id=thread_id,
-            nodes_error=nodes_error,
-        )
+            class AtTemplate(Template):
+                delimiter = "@"
 
-        sys_msg = SystemMessage(content=sys_content)
-        trigger = HumanMessage(
-            content="Based on the provided instructions please start the process"
-        )
+            tpl = AtTemplate(NODES_AGENT_PROMPT)
+            sys_content = tpl.substitute(
+                per_topic_summary_json=per_topic_summary_json,
+                thread_id=thread_id,
+                nodes_error=nodes_error,
+            )
 
-        graph = NodesGenerationAgent._get_inner_graph()
-        result = await graph.ainvoke({"messages": [sys_msg, trigger]})
-        return result["final_response"]
+            sys_msg = SystemMessage(content=sys_content)
+            trigger = HumanMessage(
+                content="Based on the provided instructions please start the process"
+            )
+
+            graph = NodesGenerationAgent._get_inner_graph()
+            result = await graph.ainvoke({"messages": [sys_msg, trigger]})
+            return result["final_response"]
+        finally:
+            THREAD_ID_VAR.reset(token)
 
     # ----------------------------- Main node generation -----------------------------
-
     @staticmethod
+    @with_thread_context
     async def nodes_generator(state: AgentInternalState) -> AgentInternalState:
         if state.interview_topics is None or not getattr(
             state.interview_topics, "interview_topics", None
@@ -747,6 +840,7 @@ class NodesGenerationAgent:
         return state
 
     @staticmethod
+    @with_thread_context
     async def should_regenerate(state: AgentInternalState) -> bool:
         """
         Validate container and per-topic schemas. Return True to regenerate on any error.

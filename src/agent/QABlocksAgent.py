@@ -45,7 +45,9 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
+from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import wraps
 from logging.handlers import TimedRotatingFileHandler
 from string import Template
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Sequence, Tuple
@@ -101,6 +103,10 @@ class QAConfig:
     result_log_payload: str = (
         os.getenv("QA_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
     )
+    # Split logs by thread id (default on). Set to 0/false to keep one shared file.
+    split_log_by_thread: bool = os.getenv(
+        "QA_AGENT_LOG_SPLIT_BY_THREAD", "1"
+    ).strip().lower() in ("1", "true", "yes", "y")
 
 
 CFG = QAConfig()
@@ -108,6 +114,57 @@ _EXECUTOR = ThreadPoolExecutor(max_workers=CFG.tool_max_workers)
 
 # Global retry counter for logging only
 qa_retry_counter = 1
+
+# Current thread id for logging context
+THREAD_ID_VAR: ContextVar[str] = ContextVar("thread_id", default="-")
+
+
+class _ThreadIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            record.thread_id = THREAD_ID_VAR.get()
+        except Exception:
+            record.thread_id = "-"
+        return True
+
+
+# Avoid duplicate handlers per thread id
+_THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
+
+
+def _attach_thread_file_handler(thread_id: str) -> None:
+    """Attach a TimedRotatingFileHandler for this thread_id (if enabled)."""
+    if not CFG.split_log_by_thread:
+        return
+    if not thread_id:
+        return
+    if thread_id in _THREAD_FILE_HANDLERS:
+        return
+
+    os.makedirs(CFG.log_dir, exist_ok=True)
+    file_name = f"{CFG.agent_name}.{thread_id}.log"
+    path = os.path.join(CFG.log_dir, file_name)
+
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | tid=%(thread_id)s | %(message)s"
+    )
+    handler = TimedRotatingFileHandler(
+        path,
+        when=CFG.log_rotate_when,
+        interval=CFG.log_rotate_interval,
+        backupCount=CFG.log_backup_count,
+        encoding="utf-8",
+        utc=False,
+        delay=True,
+    )
+    logging.raiseExceptions = False
+    handler.setLevel(CFG.log_level)
+    handler.setFormatter(fmt)
+    handler.set_name(f"file::thread::{thread_id}")
+    handler.addFilter(_ThreadIdFilter())
+
+    LOGGER.addHandler(handler)
+    _THREAD_FILE_HANDLERS[thread_id] = handler
 
 
 # ==============================
@@ -125,28 +182,53 @@ def _get_logger() -> logging.Logger:
 
     os.makedirs(CFG.log_dir, exist_ok=True)
     path = os.path.join(CFG.log_dir, CFG.log_file)
-    fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | tid=%(thread_id)s | %(message)s"
+    )
+    tid_filter = _ThreadIdFilter()
 
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(CFG.log_level)
     console.setFormatter(fmt)
-
-    rotate_file = TimedRotatingFileHandler(
-        path,
-        when=CFG.log_rotate_when,
-        interval=CFG.log_rotate_interval,
-        backupCount=CFG.log_backup_count,
-        encoding="utf-8",
-        utc=False,
-        delay=True,
-    )
-    logging.raiseExceptions = False
-    rotate_file.setLevel(CFG.log_level)
-    rotate_file.setFormatter(fmt)
-
+    console.addFilter(tid_filter)
     logger.addHandler(console)
-    logger.addHandler(rotate_file)
+
+    if not CFG.split_log_by_thread:
+        rotate_file = TimedRotatingFileHandler(
+            path,
+            when=CFG.log_rotate_when,
+            interval=CFG.log_rotate_interval,
+            backupCount=CFG.log_backup_count,
+            encoding="utf-8",
+            utc=False,
+            delay=True,
+        )
+        logging.raiseExceptions = False
+        rotate_file.setLevel(CFG.log_level)
+        rotate_file.setFormatter(fmt)
+        rotate_file.set_name("file::shared")
+        rotate_file.addFilter(tid_filter)
+        logger.addHandler(rotate_file)
+
     return logger
+
+
+def with_thread_context(fn):
+    """Sets THREAD_ID_VAR from state.id, attaches per-thread handler, restores afterwards."""
+
+    @wraps(fn)
+    async def _inner(*args, **kwargs):
+        state = args[0] if args else kwargs.get("state")
+        tid = getattr(state, "id", None) or "-"
+        token = THREAD_ID_VAR.set(tid)
+        try:
+            _attach_thread_file_handler(tid)
+            return await fn(*args, **kwargs)
+        finally:
+            THREAD_ID_VAR.reset(token)
+
+    return _inner
 
 
 LOGGER = _get_logger()
@@ -624,79 +706,120 @@ class QABlockGenerationAgent:
         qa_error: str = "",
     ) -> Tuple[Dict[str, Any], str]:
         """
-        Generate QA blocks for a single topic. Enforce:
-          - number of blocks == number of deep-dive nodes
-          - each block has exactly 7 qa_items
-          - no 'Easy' difficulty for 'Counter Question' items
-        Returns (qa_set_dict, error_message) with error_message=="" if OK.
+        Generate QA blocks for a single topic and enforce:
+        - number of blocks == number of deep-dive nodes
+        - each block has exactly 7 qa_items
+        - 'Counter Question' items are never 'Easy'
+        Returns (qa_set_dict, error_message). error_message == "" means OK.
         """
-
-        class AtTemplate(Template):
-            delimiter = "@"
-
-        deep_dive_nodes = json.loads(deep_dive_nodes_json or "[]")
-        n_blocks = len(deep_dive_nodes)
-
-        count_directive = f"""
-        IMPORTANT COUNT RULE:
-        - This topic has {n_blocks} deep-dive nodes. Output exactly {n_blocks} QA blocks (one per deep-dive node, in order).
-        """
-
-        tpl = AtTemplate(QA_BLOCK_AGENT_PROMPT + count_directive)
-        sys_content = tpl.substitute(
-            discussion_summary=discussion_summary_json,
-            deep_dive_nodes=deep_dive_nodes_json,
-            thread_id=thread_id,
-            qa_error=qa_error or "",
-        )
-
-        sys_msg = SystemMessage(content=sys_content)
-        trigger = HumanMessage(
-            content="Based on the provided instructions please start the process"
-        )
-
+        token = THREAD_ID_VAR.set(thread_id or "-")
         try:
-            graph = QABlockGenerationAgent._get_inner_graph()
-            result = await graph.ainvoke({"messages": [sys_msg, trigger]})
-            schema = result["final_response"]  # QASetsSchema
+            _attach_thread_file_handler(thread_id or "-")
 
-            obj = schema.model_dump() if hasattr(schema, "model_dump") else schema
-            qa_sets = obj.get("qa_sets", []) or []
-            if not qa_sets:
-                return {"topic": topic_name, "qa_blocks": []}, "No qa_sets produced."
+            # --- Parse deep-dive nodes safely ---
+            parse_err = ""
+            try:
+                deep_dive_nodes = json.loads(deep_dive_nodes_json or "[]")
+                if not isinstance(deep_dive_nodes, list):
+                    raise ValueError("deep_dive_nodes_json is not a JSON array")
+            except Exception as e:
+                deep_dive_nodes = []
+                parse_err = f"Deep-dive nodes JSON parse error: {e}"
+            n_blocks = len(deep_dive_nodes)
 
-            one = qa_sets[0]
+            # --- Build prompt with explicit count directive ---
+            class AtTemplate(Template):
+                delimiter = "@"
+
+            count_directive = (
+                f"\nIMPORTANT COUNT RULE:\n"
+                f"- This topic has {n_blocks} deep-dive nodes. "
+                f"Output exactly {n_blocks} QA blocks (one per deep-dive node, in order).\n"
+            )
+
+            tpl = AtTemplate(QA_BLOCK_AGENT_PROMPT + count_directive)
+            sys_content = tpl.substitute(
+                discussion_summary=discussion_summary_json,
+                deep_dive_nodes=deep_dive_nodes_json,
+                thread_id=thread_id,
+                qa_error=qa_error or "",
+            )
+
+            sys_msg = SystemMessage(content=sys_content)
+            trigger = HumanMessage(
+                content="Based on the provided instructions please start the process"
+            )
+
+            # --- Invoke inner graph ---
+            try:
+                graph = QABlockGenerationAgent._get_inner_graph()
+                result = await graph.ainvoke({"messages": [sys_msg, trigger]})
+                schema = (
+                    result["final_response"] if isinstance(result, dict) else result
+                )  # QASetsSchema or dict
+            except (ValidationError, OutputParserException) as e:
+                return {
+                    "topic": topic_name,
+                    "qa_blocks": [],
+                }, f"Parser/Schema error: {e}"
+            except Exception as e:
+                return {"topic": topic_name, "qa_blocks": []}, f"Generation error: {e}"
+
+            # --- Normalize to plain dict ---
+            obj = (
+                schema.model_dump()
+                if hasattr(schema, "model_dump")
+                else (schema if isinstance(schema, dict) else {})
+            )
+            qa_sets = obj.get("qa_sets") or []
+            if not isinstance(qa_sets, list) or not qa_sets:
+                err = "No qa_sets produced."
+                if parse_err:
+                    err = f"{err} {parse_err}"
+                return {"topic": topic_name, "qa_blocks": []}, err
+
+            # We expect one QA set per topic; take the first and enforce rules
+            one = qa_sets[0] if isinstance(qa_sets[0], dict) else {}
             one["topic"] = topic_name
-            blocks = one.get("qa_blocks", []) or []
+            blocks = one.get("qa_blocks") or []
+            if not isinstance(blocks, list):
+                blocks = []
 
             errs: List[str] = []
+            if parse_err:
+                errs.append(parse_err)
             if len(blocks) != n_blocks:
                 errs.append(f"Expected {n_blocks} blocks, got {len(blocks)}.")
+
             for i, b in enumerate(blocks, start=1):
-                qi = b.get("qa_items", []) or []
+                bd = b if isinstance(b, dict) else {}
+                qi = bd.get("qa_items") or []
+                if not isinstance(qi, list):
+                    qi = []
                 if len(qi) != 7:
                     errs.append(f"Block {i} must have 7 qa_items, got {len(qi)}.")
                 for item in qi:
+                    it = item if isinstance(item, dict) else {}
                     if (
-                        item.get("q_type") == "Counter Question"
-                        and item.get("q_difficulty") == "Easy"
+                        it.get("q_type") == "Counter Question"
+                        and it.get("q_difficulty") == "Easy"
                     ):
                         errs.append(
-                            f"Block {i} has an Easy counter (qa_id={item.get('qa_id')}); not allowed."
+                            f"Block {i} has an Easy counter (qa_id={it.get('qa_id')}); not allowed."
                         )
 
             if errs:
                 return one, " ; ".join(errs)
+
             return one, ""
 
-        except (ValidationError, OutputParserException) as e:
-            return {"topic": topic_name, "qa_blocks": []}, f"Parser/Schema error: {e}"
-        except Exception as e:
-            return {"topic": topic_name, "qa_blocks": []}, f"Generation error: {e}"
+        finally:
+            THREAD_ID_VAR.reset(token)
 
     # ----------------- Main outer node -----------------
 
     @staticmethod
+    @with_thread_context
     async def qablock_generator(state: AgentInternalState) -> AgentInternalState:
         """
         For each topic in state.nodes.topics_with_nodes:
@@ -834,6 +957,7 @@ class QABlockGenerationAgent:
         return state
 
     @staticmethod
+    @with_thread_context
     async def should_regenerate(state: AgentInternalState) -> bool:
         """
         Regenerate when:

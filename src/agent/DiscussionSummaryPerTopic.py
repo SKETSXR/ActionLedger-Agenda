@@ -40,6 +40,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
+from contextvars import ContextVar
 from dataclasses import dataclass
 from logging.handlers import TimedRotatingFileHandler
 from string import Template
@@ -113,6 +114,10 @@ class DiscAgentConfig:
     result_log_payload: str = (
         os.getenv("DISC_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
     )  # off|summary|full
+    # Split logs into per-thread files (default on). Set to 0/false to keep one shared file.
+    split_log_by_thread: bool = os.getenv(
+        "DISC_AGENT_LOG_SPLIT_BY_THREAD", "1"
+    ).strip().lower() in ("1", "true", "yes", "y")
 
 
 CFG = DiscAgentConfig()
@@ -122,6 +127,63 @@ _EXECUTOR = ThreadPoolExecutor(max_workers=CFG.tool_max_workers)
 
 # Global retry counter (for logging iterations only)
 _disc_retry_counter = 1
+
+
+# ContextVar so all nested calls (tools, retries, etc.) see the current thread_id
+THREAD_ID_VAR: ContextVar[str] = ContextVar("thread_id", default="-")
+
+
+class _ThreadIdFilter(logging.Filter):
+    """Injects 'thread_id' into each LogRecord so formatters can print it."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            record.thread_id = THREAD_ID_VAR.get()
+        except Exception:
+            record.thread_id = "-"
+        return True
+
+
+# Registry to avoid duplicate handlers per thread
+_THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
+
+
+def _attach_thread_file_handler(thread_id: str) -> None:
+    """
+    Attach a TimedRotatingFileHandler for this thread_id.
+    No-op if disabled or already attached.
+    """
+    if not CFG.split_log_by_thread:
+        return
+    if not thread_id:
+        return
+    if thread_id in _THREAD_FILE_HANDLERS:
+        return
+
+    os.makedirs(CFG.log_dir, exist_ok=True)
+    file_name = f"{AGENT_NAME}.{thread_id}.log"
+    path = os.path.join(CFG.log_dir, file_name)
+
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | tid=%(thread_id)s | %(message)s"
+    )
+    handler = TimedRotatingFileHandler(
+        path,
+        when=CFG.log_rotate_when,
+        interval=CFG.log_rotate_interval,
+        backupCount=CFG.log_backup_count,
+        encoding="utf-8",
+        utc=False,
+        delay=True,
+    )
+    logging.raiseExceptions = False
+    handler.setLevel(CFG.log_level)
+    handler.setFormatter(fmt)
+    handler.set_name(f"file::thread::{thread_id}")
+    handler.addFilter(_ThreadIdFilter())
+
+    LOGGER.addHandler(handler)
+    _THREAD_FILE_HANDLERS[thread_id] = handler
 
 
 # ==============================
@@ -138,28 +200,40 @@ def _get_logger() -> logging.Logger:
     logger.propagate = False
 
     os.makedirs(CFG.log_dir, exist_ok=True)
-    file_path = os.path.join(CFG.log_dir, CFG.log_file)
-    fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+    # Shared file (used only if split_log_by_thread == False)
+    shared_file_path = os.path.join(CFG.log_dir, CFG.log_file)
 
+    # Include thread id in every line
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | tid=%(thread_id)s | %(message)s"
+    )
+    thread_filter = _ThreadIdFilter()
+
+    # Console
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(CFG.log_level)
     console.setFormatter(fmt)
-
-    rotating_file = TimedRotatingFileHandler(
-        file_path,
-        when=CFG.log_rotate_when,
-        interval=CFG.log_rotate_interval,
-        backupCount=CFG.log_backup_count,
-        encoding="utf-8",
-        utc=False,
-        delay=True,
-    )
-    logging.raiseExceptions = False  # production: never raise on logging I/O
-    rotating_file.setLevel(CFG.log_level)
-    rotating_file.setFormatter(fmt)
-
+    console.addFilter(thread_filter)
     logger.addHandler(console)
-    logger.addHandler(rotating_file)
+
+    # Shared file handler only if NOT splitting per thread
+    if not CFG.split_log_by_thread:
+        rotating_file = TimedRotatingFileHandler(
+            shared_file_path,
+            when=CFG.log_rotate_when,
+            interval=CFG.log_rotate_interval,
+            backupCount=CFG.log_backup_count,
+            encoding="utf-8",
+            utc=False,
+            delay=True,
+        )
+        logging.raiseExceptions = False
+        rotating_file.setLevel(CFG.log_level)
+        rotating_file.setFormatter(fmt)
+        rotating_file.set_name("file::shared")
+        rotating_file.addFilter(thread_filter)
+        logger.addHandler(rotating_file)
+
     return logger
 
 
@@ -820,28 +894,34 @@ class PerTopicDiscussionSummaryGenerationAgent:
     async def _one_topic_call(
         generated_summary_json: str, topic: Dict[str, Any], thread_id: str
     ):
-        class AtTemplate(Template):
-            delimiter = "@"
+        # Bind thread id for inner graph calls too
+        token = THREAD_ID_VAR.set(thread_id or "-")
+        try:
+            _attach_thread_file_handler(thread_id or "-")
 
-        tpl = AtTemplate(DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT)
-        sys_content = tpl.substitute(
-            generated_summary=generated_summary_json,
-            interview_topic=json.dumps(topic, ensure_ascii=False),
-            thread_id=thread_id,
-        )
+            class AtTemplate(Template):
+                delimiter = "@"
 
-        sys_msg = SystemMessage(content=sys_content)
-        trigger = HumanMessage(
-            content="Based on the provided instructions please start the process"
-        )
+            tpl = AtTemplate(DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT)
+            sys_content = tpl.substitute(
+                generated_summary=generated_summary_json,
+                interview_topic=json.dumps(topic, ensure_ascii=False),
+                thread_id=thread_id,
+            )
 
-        graph = PerTopicDiscussionSummaryGenerationAgent._get_graph()
-        result = await graph.ainvoke({"messages": [sys_msg, trigger]})
+            sys_msg = SystemMessage(content=sys_content)
+            trigger = HumanMessage(
+                content="Based on the provided instructions please start the process"
+            )
 
-        # Graph may return a dict or the model directly
-        if isinstance(result, dict):
-            return result["final_response"]
-        return result
+            graph = PerTopicDiscussionSummaryGenerationAgent._get_graph()
+            result = await graph.ainvoke({"messages": [sys_msg, trigger]})
+
+            if isinstance(result, dict):
+                return result["final_response"]
+            return result
+        finally:
+            THREAD_ID_VAR.reset(token)
 
 
 # ==============================
@@ -854,52 +934,54 @@ class PerTopicDiscussionSummaryAgent:
 
     @staticmethod
     async def should_regenerate(state: AgentInternalState) -> bool:
-        """
-        Regenerate if the set of topics in the output does not exactly match the
-        set of input topics. Includes a guard to avoid infinite loops if nothing
-        was produced (single extra retry).
-        """
-        global _disc_retry_counter
+        # Bind thread id for this node too
+        token = THREAD_ID_VAR.set(state.id or "-")
+        try:
+            _attach_thread_file_handler(state.id or "-")
 
-        # Guard: if nothing produced, allow at most 1 retry under this condition
-        if (
-            not getattr(state, "discussion_summary_per_topic", None)
-            or not getattr(
-                state.discussion_summary_per_topic, "discussion_topics", None
+            global _disc_retry_counter
+
+            # Guard: if nothing produced, allow at most 1 retry under this condition
+            if (
+                not getattr(state, "discussion_summary_per_topic", None)
+                or not getattr(
+                    state.discussion_summary_per_topic, "discussion_topics", None
+                )
+                or len(state.discussion_summary_per_topic.discussion_topics) == 0
+            ):
+                _log_retry(
+                    "No discussion topics produced; retrying once", _disc_retry_counter
+                )
+                _disc_retry_counter += 1
+                return _disc_retry_counter <= 2
+
+            input_topics = {t.topic for t in state.interview_topics.interview_topics}
+            output_topics = {
+                dt.topic for dt in state.discussion_summary_per_topic.discussion_topics
+            }
+
+            if input_topics != output_topics:
+                missing = sorted(input_topics - output_topics)
+                extra = sorted(output_topics - input_topics)
+                _log_retry(
+                    "Topic mismatch",
+                    _disc_retry_counter,
+                    {"missing": missing, "extra": extra},
+                )
+                _disc_retry_counter += 1
+                return True
+
+            # Gated final-output logging (this is your last line)
+            rendered = _render_final_result(
+                state.discussion_summary_per_topic.model_dump_json(indent=2)
             )
-            or len(state.discussion_summary_per_topic.discussion_topics) == 0
-        ):
-            _log_retry(
-                "No discussion topics produced; retrying once", _disc_retry_counter
+            _log_info(
+                f"Per-topic discussion summaries generated successfully | output={rendered}"
             )
-            _disc_retry_counter += 1
-            return _disc_retry_counter <= 2  # retry only once for the "no output" case
+            return False
 
-        input_topics = {t.topic for t in state.interview_topics.interview_topics}
-        output_topics = {
-            dt.topic for dt in state.discussion_summary_per_topic.discussion_topics
-        }
-
-        if input_topics != output_topics:
-            missing = sorted(input_topics - output_topics)
-            extra = sorted(output_topics - input_topics)
-            _log_retry(
-                "Topic mismatch",
-                _disc_retry_counter,
-                {"missing": missing, "extra": extra},
-            )
-            _disc_retry_counter += 1
-            return True
-
-        # Gated final-output logging
-        rendered = _render_final_result(
-            state.discussion_summary_per_topic.model_dump_json(indent=2)
-        )
-        _log_info(
-            f"Per-topic discussion summaries generated successfully | output={rendered}"
-        )
-
-        return False
+        finally:
+            THREAD_ID_VAR.reset(token)
 
     @staticmethod
     async def discussion_summary_per_topic_generator(
@@ -912,79 +994,91 @@ class PerTopicDiscussionSummaryAgent:
           3) Launch one inner-graph run per topic via asyncio.gather
           4) Force output topic names to match input names exactly
         """
-        # Normalize topics list coming from parent state
+
+        # Bind thread id in logging context and attach per-thread file
+        token = THREAD_ID_VAR.set(state.id or "-")
         try:
-            topics_list: List[Dict[str, Any]] = [
-                t.model_dump() for t in state.interview_topics.interview_topics
-            ]
-        except Exception:
-            topics_list = state.interview_topics  # already a list[dict]
-
-        if not isinstance(topics_list, list) or len(topics_list) == 0:
-            raise ValueError("interview_topics must be a non-empty list[dict]")
-
-        # Serialize generated_summary for prompt
-        try:
-            generated_summary_json = state.generated_summary.model_dump_json()
-        except Exception:
-            generated_summary_json = json.dumps(
-                state.generated_summary, ensure_ascii=False
-            )
-
-        # Run all topic calls concurrently (each via inner graph)
-        tasks = [
-            asyncio.create_task(
-                PerTopicDiscussionSummaryGenerationAgent._one_topic_call(
-                    generated_summary_json, topic, state.id
-                )
-            )
-            for topic in topics_list
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Collect successful DiscussionTopic entries and enforce exact topic names
-        discussion_topics: List[DiscussionSummaryPerTopicSchema.DiscussionTopic] = []
-        for idx, result in enumerate(results):
-            if isinstance(result, Exception):
-                _log_warn(f"Topic {idx} summarization failed: {result}")
-                continue
-
-            input_topic_name = (
-                topics_list[idx].get("topic")
-                or topics_list[idx].get("name")
-                or topics_list[idx].get("title")
-                or "Unknown"
-            )
-
-            # Coerce/update the topic name in the returned object
+            _attach_thread_file_handler(state.id or "-")
+            # Normalize topics list coming from parent state
             try:
-                if isinstance(result, dict):
-                    result["topic"] = input_topic_name
-                    result = DiscussionSummaryPerTopicSchema.DiscussionTopic(**result)
-                elif hasattr(result, "model_copy"):  # pydantic v2
-                    result = result.model_copy(update={"topic": input_topic_name})
-                elif hasattr(result, "copy"):  # pydantic v1
-                    result = result.copy(update={"topic": input_topic_name})
-                else:
-                    setattr(result, "topic", input_topic_name)
+                topics_list: List[Dict[str, Any]] = [
+                    t.model_dump() for t in state.interview_topics.interview_topics
+                ]
+            except Exception:
+                topics_list = state.interview_topics  # already a list[dict]
 
-                discussion_topics.append(result)
-            except Exception as exc:
-                _log_warn(
-                    f"Failed to append structured response for topic index {idx}: {exc}"
+            if not isinstance(topics_list, list) or len(topics_list) == 0:
+                raise ValueError("interview_topics must be a non-empty list[dict]")
+
+            # Serialize generated_summary for prompt
+            try:
+                generated_summary_json = state.generated_summary.model_dump_json()
+            except Exception:
+                generated_summary_json = json.dumps(
+                    state.generated_summary, ensure_ascii=False
                 )
 
-        state.discussion_summary_per_topic = DiscussionSummaryPerTopicSchema(
-            discussion_topics=discussion_topics
-        )
+            # Run all topic calls concurrently (each via inner graph)
+            tasks = [
+                asyncio.create_task(
+                    PerTopicDiscussionSummaryGenerationAgent._one_topic_call(
+                        generated_summary_json, topic, state.id
+                    )
+                )
+                for topic in topics_list
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Gated final-output logging
-        rendered = _render_final_result(
-            state.discussion_summary_per_topic.model_dump_json(indent=2)
-        )
-        _log_info(
-            f"Per-topic discussion summaries generated before retry checks | output={rendered}"
-        )
+            # Collect successful DiscussionTopic entries and enforce exact topic names
+            discussion_topics: List[
+                DiscussionSummaryPerTopicSchema.DiscussionTopic
+            ] = []
+            for idx, result in enumerate(results):
+                if isinstance(result, Exception):
+                    _log_warn(f"Topic {idx} summarization failed: {result}")
+                    continue
+
+                input_topic_name = (
+                    topics_list[idx].get("topic")
+                    or topics_list[idx].get("name")
+                    or topics_list[idx].get("title")
+                    or "Unknown"
+                )
+
+                # Coerce/update the topic name in the returned object
+                try:
+                    if isinstance(result, dict):
+                        result["topic"] = input_topic_name
+                        result = DiscussionSummaryPerTopicSchema.DiscussionTopic(
+                            **result
+                        )
+                    elif hasattr(result, "model_copy"):  # pydantic v2
+                        result = result.model_copy(update={"topic": input_topic_name})
+                    elif hasattr(result, "copy"):  # pydantic v1
+                        result = result.copy(update={"topic": input_topic_name})
+                    else:
+                        setattr(result, "topic", input_topic_name)
+
+                    discussion_topics.append(result)
+                except Exception as exc:
+                    _log_warn(
+                        f"Failed to append structured response for topic index {idx}: {exc}"
+                    )
+
+            state.discussion_summary_per_topic = DiscussionSummaryPerTopicSchema(
+                discussion_topics=discussion_topics
+            )
+
+            # Gated final-output logging
+            rendered = _render_final_result(
+                state.discussion_summary_per_topic.model_dump_json(indent=2)
+            )
+            _log_info(
+                f"Per-topic discussion summaries generated before retry checks | output={rendered}"
+            )
+        finally:
+            # restore ContextVar so other requests don't inherit this id
+            THREAD_ID_VAR.reset(token)
 
         return state
 

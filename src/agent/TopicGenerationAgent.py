@@ -43,10 +43,12 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
+from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import wraps
 from logging.handlers import TimedRotatingFileHandler
 from string import Template
-from typing import Any, Callable, Coroutine, List, Optional, Sequence, Union
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Sequence, Union
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
@@ -98,6 +100,10 @@ class TopicAgentConfig:
     result_log_payload: str = (
         os.getenv("TOPIC_AGENT_RESULT_LOG_PAYLOAD", "off").strip().lower()
     )
+    # Split logs by thread id (default on). Set to 0/false for a single shared file.
+    split_log_by_thread: bool = os.getenv(
+        "TOPIC_AGENT_LOG_SPLIT_BY_THREAD", "1"
+    ).strip().lower() in ("1", "true", "yes", "y")
 
 
 CFG = TopicAgentConfig()
@@ -107,6 +113,57 @@ _EXECUTOR = ThreadPoolExecutor(max_workers=CFG.tool_max_workers)
 
 # Global counter for outer-loop retry logs
 _topic_retry_counter = 1
+
+# Thread id for logging context
+THREAD_ID_VAR: ContextVar[str] = ContextVar("thread_id", default="-")
+
+
+class _ThreadIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            record.thread_id = THREAD_ID_VAR.get()
+        except Exception:
+            record.thread_id = "-"
+        return True
+
+
+# Avoid duplicate per-thread handlers
+_THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
+
+
+def _attach_thread_file_handler(thread_id: str) -> None:
+    """Attach a TimedRotatingFileHandler for this thread_id (if enabled)."""
+    if not CFG.split_log_by_thread:
+        return
+    if not thread_id:
+        return
+    if thread_id in _THREAD_FILE_HANDLERS:
+        return
+
+    os.makedirs(CFG.log_dir, exist_ok=True)
+    file_name = f"{AGENT_NAME}.{thread_id}.log"
+    path = os.path.join(CFG.log_dir, file_name)
+
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | tid=%(thread_id)s | %(message)s"
+    )
+    handler = TimedRotatingFileHandler(
+        path,
+        when=CFG.log_rotate_when,
+        interval=CFG.log_rotate_interval,
+        backupCount=CFG.log_backup_count,
+        encoding="utf-8",
+        utc=False,
+        delay=True,
+    )
+    logging.raiseExceptions = False
+    handler.setLevel(CFG.log_level)
+    handler.setFormatter(fmt)
+    handler.set_name(f"file::thread::{thread_id}")
+    handler.addFilter(_ThreadIdFilter())
+
+    LOGGER.addHandler(handler)
+    _THREAD_FILE_HANDLERS[thread_id] = handler
 
 
 # ==============================
@@ -123,29 +180,55 @@ def _get_logger() -> logging.Logger:
     logger.propagate = False
 
     os.makedirs(CFG.log_dir, exist_ok=True)
-    file_path = os.path.join(CFG.log_dir, CFG.log_file)
-    fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+    shared_path = os.path.join(CFG.log_dir, CFG.log_file)
+
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | tid=%(thread_id)s | %(message)s"
+    )
+    tid_filter = _ThreadIdFilter()
 
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(CFG.log_level)
     console.setFormatter(fmt)
-
-    rotate_file = TimedRotatingFileHandler(
-        file_path,
-        when=CFG.log_rotate_when,
-        interval=CFG.log_rotate_interval,
-        backupCount=CFG.log_backup_count,
-        encoding="utf-8",
-        utc=False,
-        delay=True,
-    )
-    logging.raiseExceptions = False  # never raise on logging I/O in production
-    rotate_file.setLevel(CFG.log_level)
-    rotate_file.setFormatter(fmt)
-
+    console.addFilter(tid_filter)
     logger.addHandler(console)
-    logger.addHandler(rotate_file)
+
+    # Only attach the shared file if per-thread split is OFF
+    if not CFG.split_log_by_thread:
+        rotate_file = TimedRotatingFileHandler(
+            shared_path,
+            when=CFG.log_rotate_when,
+            interval=CFG.log_rotate_interval,
+            backupCount=CFG.log_backup_count,
+            encoding="utf-8",
+            utc=False,
+            delay=True,
+        )
+        logging.raiseExceptions = False
+        rotate_file.setLevel(CFG.log_level)
+        rotate_file.setFormatter(fmt)
+        rotate_file.set_name("file::shared")
+        rotate_file.addFilter(tid_filter)
+        logger.addHandler(rotate_file)
+
     return logger
+
+
+def with_thread_context(fn):
+    """Set THREAD_ID_VAR from state.id, attach per-thread handler, restore afterwards."""
+
+    @wraps(fn)
+    async def _inner(*args, **kwargs):
+        state = args[0] if args else kwargs.get("state")
+        tid = getattr(state, "id", None) or "-"
+        token = THREAD_ID_VAR.set(tid)
+        try:
+            _attach_thread_file_handler(tid)
+            return await fn(*args, **kwargs)
+        finally:
+            THREAD_ID_VAR.reset(token)
+
+    return _inner
 
 
 LOGGER = _get_logger()
@@ -596,6 +679,7 @@ class TopicGenerationAgent:
     # ==========================
 
     @staticmethod
+    @with_thread_context
     async def topic_generator(state: AgentInternalState) -> AgentInternalState:
         if not state.generated_summary:
             raise ValueError("Summary cannot be null.")
@@ -644,6 +728,7 @@ class TopicGenerationAgent:
     # ==========================
 
     @staticmethod
+    @with_thread_context
     async def should_regenerate(state: AgentInternalState) -> bool:
         """
         Return True when satisfied (END). Return False to retry topic generation.

@@ -77,12 +77,13 @@ class AgendaConfig:
     log_backup_count: int = int(os.getenv("AGENDA_AGENT_LOG_BACKUP_COUNT", "365"))
 
     # IO payload logging
-    io_log_mode: str = (
-        os.getenv("AGENDA_IO_LOG_PAYLOAD", "off").strip().lower()
-    )  # off | summary | full
-    io_log_max_chars: int = int(
-        os.getenv("AGENDA_IO_LOG_MAX_CHARS", "0")
-    )  # soft cap for full mode
+    io_log_mode: str = os.getenv("AGENDA_IO_LOG_PAYLOAD", "off").strip().lower()
+    io_log_max_chars: int = int(os.getenv("AGENDA_IO_LOG_MAX_CHARS", "0"))
+
+    # NEW: split logs per thread id (default on)
+    split_log_by_thread: bool = os.getenv(
+        "AGENDA_AGENT_LOG_SPLIT_BY_THREAD", "1"
+    ).strip().lower() in ("1", "true", "yes", "y")
 
 
 CFG = AgendaConfig()
@@ -102,28 +103,32 @@ def _build_logger() -> logging.Logger:
     logger.propagate = False
 
     os.makedirs(CFG.log_dir, exist_ok=True)
-    path = os.path.join(CFG.log_dir, CFG.log_file)
     fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 
+    # console
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(CFG.log_level)
     console.setFormatter(fmt)
-
-    rotating = TimedRotatingFileHandler(
-        path,
-        when=CFG.log_rotate_when,
-        interval=CFG.log_rotate_interval,
-        backupCount=CFG.log_backup_count,
-        encoding="utf-8",
-        utc=False,
-        delay=True,
-    )
-    logging.raiseExceptions = False  # don’t raise on logging I/O errors
-    rotating.setLevel(CFG.log_level)
-    rotating.setFormatter(fmt)
-
     logger.addHandler(console)
-    logger.addHandler(rotating)
+
+    # Only attach the shared file if NOT splitting by thread
+    if not CFG.split_log_by_thread:
+        path = os.path.join(CFG.log_dir, CFG.log_file)
+        rotating = TimedRotatingFileHandler(
+            path,
+            when=CFG.log_rotate_when,
+            interval=CFG.log_rotate_interval,
+            backupCount=CFG.log_backup_count,
+            encoding="utf-8",
+            utc=False,
+            delay=True,
+        )
+        logging.raiseExceptions = False
+        rotating.setLevel(CFG.log_level)
+        rotating.setFormatter(fmt)
+        rotating.set_name("file::shared")
+        logger.addHandler(rotating)
+
     return logger
 
 
@@ -154,6 +159,44 @@ def _log_and_raise(message: str, exc_type: type[Exception] = ValueError) -> None
     """
     _err(message)  # no stack unless you pass an exc
     raise exc_type(message)
+
+
+# Keep a small registry so we don’t add duplicate handlers for the same thread
+_THREAD_FILE_HANDLERS: dict[str, logging.Handler] = {}
+
+
+def _attach_thread_file_handler(thread_id: str) -> None:
+    """
+    Create and attach a TimedRotatingFileHandler bound to this thread_id.
+    No-op if already attached or if split_log_by_thread is disabled.
+    """
+    if not CFG.split_log_by_thread:
+        return
+    if not thread_id:
+        return
+    if thread_id in _THREAD_FILE_HANDLERS:
+        return
+
+    fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+    file_name = f"{CFG.agent_name}.{thread_id}.log"
+    path = os.path.join(CFG.log_dir, file_name)
+
+    handler = TimedRotatingFileHandler(
+        path,
+        when=CFG.log_rotate_when,
+        interval=CFG.log_rotate_interval,
+        backupCount=CFG.log_backup_count,
+        encoding="utf-8",
+        utc=False,
+        delay=True,
+    )
+    logging.raiseExceptions = False
+    handler.setLevel(CFG.log_level)
+    handler.setFormatter(fmt)
+    handler.set_name(f"file::thread::{thread_id}")
+
+    LOGGER.addHandler(handler)
+    _THREAD_FILE_HANDLERS[thread_id] = handler
 
 
 # ==============================
@@ -301,6 +344,7 @@ class AgendaGenerationAgent:
             if key not in AgendaGenerationAgent.env_vars:
                 _log_and_raise(f"{key} is not set", ValueError)
 
+        thread_id = (config.get("configurable") or {}).get("thread_id") or ""
         internal_state = AgentInternalState(
             job_description=state.job_description,
             skill_tree=state.skill_tree,
@@ -319,16 +363,20 @@ class AgendaGenerationAgent:
             mongo_question_guidelines_collection=AgendaGenerationAgent.env_vars[
                 "MONGO_QUESTION_GENERATION_COLLECTION"
             ],
-            id=config["configurable"]["thread_id"],
+            id=thread_id,
         )
 
+        # Attach per-thread file handler BEFORE any logging
         try:
-            _log_info(
-                f"Agenda input prepared | thread_id={internal_state.id} | {_gate_payload('input', internal_state)}"
+            _attach_thread_file_handler(internal_state.id)
+        except Exception as e:
+            _log_warn(
+                f"tid={internal_state.id} | Failed to attach thread file handler | err={e}"
             )
-        except Exception:
-            _log_warn("Agenda input prepared (logging failed to render payload)")
 
+        _log_info(
+            f"tid={internal_state.id} | Agenda input prepared | {_gate_payload('input', internal_state)}"
+        )
         return internal_state
 
     # ---------- Node: Persist inputs + summary ----------
@@ -375,9 +423,9 @@ class AgendaGenerationAgent:
             cv_collection.replace_one({"_id": state.id}, cv, upsert=True)
             skill_tree_collection.replace_one({"_id": state.id}, st, upsert=True)
             summary_collection.replace_one({"_id": state.id}, sm, upsert=True)
-            _log_info(f"Mongo upserts completed | thread_id={state.id}")
+            _log_info(f"tid={state.id} | Mongo upserts completed")
         except ServerSelectionTimeoutError as e:
-            _log_err(f"Mongo server timeout | thread_id={state.id} | error={e}")
+            _log_err(f"tid={state.id} | Mongo server timeout | error={e}")
 
         # Upsert question guidelines by name
         for raw in state.question_guidelines.question_guidelines:
@@ -420,7 +468,7 @@ class AgendaGenerationAgent:
 
         try:
             _log_info(
-                f"Agenda output ready | thread_id={state.id} | {_gate_payload('output', state)}"
+                f"tid={state.id} | Agenda output ready | {_gate_payload('output', state)}"
             )
         except Exception:
             _log_warn("Agenda output ready (logging failed to render payload)")
