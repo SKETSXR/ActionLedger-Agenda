@@ -22,7 +22,7 @@
 #
 # Reliability & Observability
 #   • Timeouts + exponential-backoff retries for LLM and tools.
-#   • Rotating file logs + readable console logs.
+#   • Rotating per thread id, file logs + readable console logs.
 #   • Optional payload logging: off | summary | full.
 #
 # Configuration (Environment Variables)
@@ -33,6 +33,7 @@
 #   TOPIC_AGENT_TOOL_MAX_WORKERS
 #   TOPIC_AGENT_TOOL_LOG_PAYLOAD             off | summary | full
 #   TOPIC_AGENT_RESULT_LOG_PAYLOAD           off | summary | full
+#   TOPIC_AGENT_LOG_SPLIT_BY_THREAD          (0|1)
 # =============================================================================
 
 import asyncio

@@ -16,7 +16,7 @@
 #   Outer:
 #     START ──► discussion_summary_per_topic_generator
 #               ├─► discussion_summary_per_topic_generator (should_regenerate=True)
-#               └─► END                                  (should_regenerate=False)
+#               └─► END                                    (should_regenerate=False)
 #
 # Environment Variables
 #   DISCUSSION_SUMMARY_AGENT_LOG_DIR, DISCUSSION_SUMMARY_AGENT_LOG_FILE,
@@ -27,8 +27,9 @@
 #   DISC_AGENT_TOOL_TIMEOUT_SECONDS, DISC_AGENT_TOOL_RETRIES, DISC_AGENT_TOOL_RETRY_BACKOFF_SECONDS
 #   DISC_AGENT_TOOL_MAX_WORKERS
 #
-#   DISC_AGENT_TOOL_LOG_PAYLOAD (off|summary|full)
-#   DISC_AGENT_RESULT_LOG_PAYLOAD (off|summary|full)
+#   DISC_AGENT_TOOL_LOG_PAYLOAD    (off|summary|full)
+#   DISC_AGENT_RESULT_LOG_PAYLOAD  (off|summary|full)
+#   DISC_AGENT_LOG_SPLIT_BY_THREAD (0|1)
 # =============================================================================
 
 import asyncio

@@ -12,7 +12,7 @@
 #   • Invoke LLM with structured output (GeneratedSummarySchema).
 #   • Enforce timeout and bounded exponential-backoff retries.
 #   • Store the result in state.generated_summary.
-#   • Emit JSON-style logs to file and concise logs to console.
+#   • Emit JSON-style per thread id logs to file and concise logs to console.
 #
 # Data Flow
 #   START ──► summary_generator (async) ──► END
@@ -35,6 +35,7 @@
 #   SUMMARY_AGENT_LLM_RETRIES                 (default: 2)
 #   SUMMARY_AGENT_LLM_RETRY_BACKOFF_SECONDS   (default: 2.5)
 #   SUMMARY_AGENT_RESULT_LOG_PAYLOAD          off | summary | full   (default: off)
+#   SUMMARY_AGENT_LOG_SPLIT_BY_THREAD         (0|1)
 #
 # Notes
 #   • Inputs are JSON-serialized to reduce prompt drift.

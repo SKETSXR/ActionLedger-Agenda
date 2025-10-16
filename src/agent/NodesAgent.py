@@ -26,7 +26,7 @@
 #
 # Reliability & Observability
 #   • Timeouts + exponential-backoff retries for LLM and tools.
-#   • Console + rotating file logs.
+#   • Console + rotating file logs per thread id.
 #   • Optional payload logging: tools and final result (off | summary | full).
 #
 # Configuration (Environment Variables)
@@ -37,6 +37,7 @@
 #   NODES_AGENT_TOOL_MAX_WORKERS
 #   NODES_AGENT_TOOL_LOG_PAYLOAD            off | summary | full
 #   NODES_AGENT_RESULT_LOG_PAYLOAD          off | summary | full
+#   NODES_AGENT_LOG_SPLIT_BY_THREAD         (0|1)
 # =============================================================================
 
 import asyncio

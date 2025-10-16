@@ -13,7 +13,7 @@
 #       3) Produce exactly one QA block per deep-dive node (strict validation)
 #   • Aggregate validated QA blocks into QASetsSchema
 #   • Timeouts + exponential-backoff retries for LLM and tools
-#   • Log planned tool calls, tool results, and retry iterations
+#   • Log planned tool calls, tool results, outputs and retry iterations per thread id
 #
 # Data Flow
 #   Outer Graph:
@@ -32,7 +32,7 @@
 #   QA_AGENT_TOOL_MAX_WORKERS
 #   QA_AGENT_TOOL_LOG_PAYLOAD              off | summary | full
 #   QA_AGENT_RESULT_LOG_PAYLOAD            off | summary | full
-#   QA_LOG_SHOW_FULL_TEXT, QA_LOG_SHOW_FULL_FIELDS (not used here; removed)
+#   QA_AGENT_LOG_SPLIT_BY_THREAD           (0|1)
 # =============================================================================
 
 import asyncio

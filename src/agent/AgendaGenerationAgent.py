@@ -19,13 +19,14 @@
 #   END
 #
 # Logging
-#   - Console + timed rotating file logs (env-configurable)
+#   - Console + timed rotating file logs per thread id (env-configurable)
 #   - Input/Output payload gating: off | summary | full (+optional char cap)
 #
 # Environment Variables
 #   AGENDA_AGENT_LOG_DIR, AGENDA_AGENT_LOG_LEVEL, AGENDA_AGENT_LOG_FILE
 #   AGENDA_AGENT_LOG_ROTATE_WHEN, AGENDA_AGENT_LOG_ROTATE_INTERVAL
 #   AGENDA_AGENT_LOG_BACKUP_COUNT
+#   AGENDA_AGENT_LOG_SPLIT_BY_THREAD
 #   AGENDA_IO_LOG_PAYLOAD (off|summary|full), AGENDA_IO_LOG_MAX_CHARS
 #
 # Mongo (required in .env)
