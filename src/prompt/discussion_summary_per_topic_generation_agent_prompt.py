@@ -19,7 +19,7 @@ Instructions
       * Direct Question means those which are related to respective topic only.  
       * Deep Dive(s) means those that dive deep into the respective particular topic.      
       - Conditional Opening rule only for Case study topic (topic title contains "Case Study"):
-        - Opening MUST be a scenario set-up introducing a fresh, concrete problem with explicit constraints and mention all the techniques/methods you want for the candidate to use in their answer( for this you should include things like <example1>: you should use RAG, <example2>:you should use Fine Tuning, <example3>:you should make a scalable application), phrased as a live scenario (e.g., "Imagine you are...", "Suppose you are..."). No experience/biography.
+        - Opening MUST be a scenario set-up introducing a fresh, concrete problem with explicit constraints and if there are multiple techniques to use in their answer then mention all the specific technique/method names you want from the candidate in their answer, phrased as a live scenario (e.g., "Imagine you are...", "Suppose you are..."). No experience/biography.
       - Conditional Continuity rule only for Case study topic (topic title contains "Case Study"):
         - All Direct and Deep Dive steps MUST explicitly continue the Opening scenario (no restarts).
 
