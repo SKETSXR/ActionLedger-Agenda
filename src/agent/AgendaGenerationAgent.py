@@ -81,7 +81,7 @@ class AgendaConfig:
     io_log_mode: str = os.getenv("AGENDA_IO_LOG_PAYLOAD", "off").strip().lower()
     io_log_max_chars: int = int(os.getenv("AGENDA_IO_LOG_MAX_CHARS", "0"))
 
-    # NEW: split logs per thread id (default on)
+    # Split logs per thread id (default on)
     split_log_by_thread: bool = os.getenv(
         "AGENDA_AGENT_LOG_SPLIT_BY_THREAD", "1"
     ).strip().lower() in ("1", "true", "yes", "y")
