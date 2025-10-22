@@ -169,6 +169,14 @@ def _ensure_dir(path: str) -> None:
 
 
 def _get_logger(name: str = "summary_generation_agent") -> logging.Logger:
+    """Return a configured, idempotent logger for this agent.
+
+    Adds a stdout handler (level from CONFIG.log_level_console) and, when
+    `CONFIG.split_log_by_thread` is False, a timed-rotating file handler
+    (level from CONFIG.log_level_file). Both use a format that injects a
+    `thread_id` via `_ThreadIdFilter`. Disables propagation/raiseExceptions
+    and guards re-init with a private `_initialized` flag.
+    """
     logger = logging.getLogger(name)
     if getattr(logger, "_initialized", False):
         return logger

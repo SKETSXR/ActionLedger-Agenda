@@ -96,6 +96,12 @@ CFG = AgendaConfig()
 
 
 def _build_logger() -> logging.Logger:
+    """Create and return the agent logger.
+
+    Sets level/format, adds a stdout handler, and—if `CFG.split_log_by_thread`
+    is False—adds a timed rotating file handler. Disables propagation and is
+    idempotent (returns existing logger if already configured).
+    """
     logger = logging.getLogger(CFG.agent_name)
     if logger.handlers:
         return logger

@@ -173,6 +173,12 @@ def _attach_thread_file_handler(thread_id: str) -> None:
 
 
 def _get_logger() -> logging.Logger:
+    """Configure and return the agent logger.
+
+    Adds a stdout handler and, if `CFG.split_log_by_thread` is False, a
+    timed-rotating file handler. Injects `thread_id` via `_ThreadIdFilter`.
+    Idempotent: if handlers exist, returns the existing logger.
+    """
     logger = logging.getLogger(CFG.agent_name)
     if logger.handlers:
         return logger
