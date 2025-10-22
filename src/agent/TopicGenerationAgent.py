@@ -40,6 +40,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -133,7 +134,7 @@ _THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
 
 
 def _attach_thread_file_handler(thread_id: str) -> None:
-    """Attach a TimedRotatingFileHandler for this thread_id (if enabled)."""
+    """Attach a per-thread TimedRotatingFileHandler writing to <log_dir>/<thread_id>/<agent_name>.log."""
     if not CFG.split_log_by_thread:
         return
     if not thread_id:
@@ -141,9 +142,15 @@ def _attach_thread_file_handler(thread_id: str) -> None:
     if thread_id in _THREAD_FILE_HANDLERS:
         return
 
-    os.makedirs(CFG.log_dir, exist_ok=True)
-    file_name = f"{AGENT_NAME}.{thread_id}.log"
-    path = os.path.join(CFG.log_dir, file_name)
+    # Sanitize and create folder: <log_dir>/<thread_id>/
+
+    safe_tid = re.sub(r"[^\w.-]", "_", str(thread_id))
+    thread_dir = os.path.join(CFG.log_dir, safe_tid)
+    os.makedirs(thread_dir, exist_ok=True)
+
+    # Use configured log_file if present, else default to "<AGENT_NAME>.log"
+    log_filename = getattr(CFG, "log_file", f"{AGENT_NAME}.log")
+    path = os.path.join(thread_dir, log_filename)
 
     fmt = logging.Formatter(
         "%(asctime)s | %(levelname)s | %(name)s | tid=%(thread_id)s | %(message)s"
@@ -160,7 +167,7 @@ def _attach_thread_file_handler(thread_id: str) -> None:
     logging.raiseExceptions = False
     handler.setLevel(CFG.log_level)
     handler.setFormatter(fmt)
-    handler.set_name(f"file::thread::{thread_id}")
+    handler.set_name(f"file::thread::{safe_tid}")
     handler.addFilter(_ThreadIdFilter())
 
     LOGGER.addHandler(handler)

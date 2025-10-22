@@ -151,25 +151,31 @@ _THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
 
 def _attach_thread_file_handler(thread_id: str) -> None:
     """
-    Attach a TimedRotatingFileHandler for this thread_id.
-    No-op if disabled or already attached.
+    Attach a TimedRotatingFileHandler that writes to
+    <log_dir>/<thread_id>/<AGENT_NAME>.log.
+
+    No-op if per-thread logging is disabled or already attached.
     """
-    if not CFG.split_log_by_thread:
-        return
-    if not thread_id:
+    if not CFG.split_log_by_thread or not thread_id:
         return
     if thread_id in _THREAD_FILE_HANDLERS:
         return
 
-    os.makedirs(CFG.log_dir, exist_ok=True)
-    file_name = f"{AGENT_NAME}.{thread_id}.log"
-    path = os.path.join(CFG.log_dir, file_name)
+    # Sanitize thread_id to be a safe folder name
+    safe_tid = re.sub(r"[^\w.-]", "_", thread_id)
+
+    # logs/<thread_id>/
+    thread_dir = os.path.join(CFG.log_dir, safe_tid)
+    os.makedirs(thread_dir, exist_ok=True)
+
+    # logs/<thread_id>/<AGENT_NAME>.log  (uses CFG.log_file, e.g., "discussion_summary_agent.log")
+    file_path = os.path.join(thread_dir, CFG.log_file)
 
     fmt = logging.Formatter(
         "%(asctime)s | %(levelname)s | %(name)s | tid=%(thread_id)s | %(message)s"
     )
     handler = TimedRotatingFileHandler(
-        path,
+        file_path,
         when=CFG.log_rotate_when,
         interval=CFG.log_rotate_interval,
         backupCount=CFG.log_backup_count,
@@ -180,7 +186,7 @@ def _attach_thread_file_handler(thread_id: str) -> None:
     logging.raiseExceptions = False
     handler.setLevel(CFG.log_level)
     handler.setFormatter(fmt)
-    handler.set_name(f"file::thread::{thread_id}")
+    handler.set_name(f"file::thread_dir::{safe_tid}")
     handler.addFilter(_ThreadIdFilter())
 
     LOGGER.addHandler(handler)

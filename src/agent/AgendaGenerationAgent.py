@@ -38,6 +38,7 @@
 import json
 import logging
 import os
+import re
 import sys
 from dataclasses import dataclass
 from logging.handlers import TimedRotatingFileHandler
@@ -175,6 +176,7 @@ _THREAD_FILE_HANDLERS: dict[str, logging.Handler] = {}
 def _attach_thread_file_handler(thread_id: str) -> None:
     """
     Create and attach a TimedRotatingFileHandler bound to this thread_id.
+    Writes to: <log_dir>/<thread_id>/<agent_name>.log (folder per thread).
     No-op if already attached or if split_log_by_thread is disabled.
     """
     if not CFG.split_log_by_thread:
@@ -184,9 +186,17 @@ def _attach_thread_file_handler(thread_id: str) -> None:
     if thread_id in _THREAD_FILE_HANDLERS:
         return
 
+    # Create per-thread folder: <log_dir>/<thread_id>/
+
+    safe_tid = re.sub(r"[^\w.-]", "_", str(thread_id))
+    thread_dir = os.path.join(CFG.log_dir, safe_tid)
+    os.makedirs(thread_dir, exist_ok=True)
+
+    # Use configured log_file name if present, else default to "<agent_name>.log"
+    log_filename = getattr(CFG, "log_file", f"{CFG.agent_name}.log")
+    path = os.path.join(thread_dir, log_filename)
+
     fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
-    file_name = f"{CFG.agent_name}.{thread_id}.log"
-    path = os.path.join(CFG.log_dir, file_name)
 
     handler = TimedRotatingFileHandler(
         path,
@@ -200,7 +210,7 @@ def _attach_thread_file_handler(thread_id: str) -> None:
     logging.raiseExceptions = False
     handler.setLevel(CFG.log_level)
     handler.setFormatter(fmt)
-    handler.set_name(f"file::thread::{thread_id}")
+    handler.set_name(f"file::thread::{safe_tid}")
 
     LOGGER.addHandler(handler)
     _THREAD_FILE_HANDLERS[thread_id] = handler
