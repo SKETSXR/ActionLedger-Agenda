@@ -1,5 +1,4 @@
-
-NODES_AGENT_PROMPT = '''
+NODES_AGENT_PROMPT = """
 You are a structured technical interview designer.
 Your task is to convert a set of <a given input summary of discussion walkthrough for a topic> into <nodes>.
 These nodes will decide the flow of a technical interview.
@@ -116,7 +115,7 @@ The sequence must follow a walkthrough order for each topic.
 
 - Each topic produces its own ordered set of nodes.
 - First Direct node (conditional):
-  - If the topic is a Case study topic then you MUST convert the Opening scenario into a concise, scenario-framed question asking for the candidate's initial approach/architecture under the given constraints. Also:
+  - If the topic is a Case study topic then you MUST convert the Opening scenario into a concise, scenario-framed question asking for the candidate's initial approach/architecture and explicitly mention all the methods/techniques/constraints you want the candidate to use in their answer. Also:
     - It MUST begin with one of ["Imagine you are", "Suppose you are", "You are tasked with", "You are the lead engineer for"].
     - It MUST NOT ask about prior experience or biography.
   - If the topic is not a case-study topic then:
@@ -210,4 +209,4 @@ Pattern F (Direct->Direct->QA(4)) - It should have first node as Direct then its
 
 <Choose any of these patterns which suit best for this current topic but don't go outside of this>
 
-'''
+"""

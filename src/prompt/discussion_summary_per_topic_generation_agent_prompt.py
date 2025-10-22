@@ -1,5 +1,4 @@
-
-DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT = '''
+DISCUSSION_SUMMARY_PER_TOPIC_GENERATION_AGENT_PROMPT = """
 You are a meticulous interview architect.  
 Your task is to expand the given interview discussion topic into a structured walkthrough.  
 
@@ -20,7 +19,7 @@ Instructions
       * Direct Question means those which are related to respective topic only.  
       * Deep Dive(s) means those that dive deep into the respective particular topic.      
       - Conditional Opening rule only for Case study topic (topic title contains "Case Study"):
-        - Opening MUST be a scenario set-up introducing a fresh, concrete problem with explicit constraints, phrased as a live scenario (e.g., "Imagine you are...", "Suppose you are..."). No experience/biography.
+        - Opening MUST be a scenario set-up introducing a fresh, concrete problem with explicit constraints and mention all the techniques/methods you want for the candidate to use in their answer( for this you should include things like <example1>: you should use RAG, <example2>:you should use Fine Tuning, <example3>:you should make a scalable application), phrased as a live scenario (e.g., "Imagine you are...", "Suppose you are..."). No experience/biography.
       - Conditional Continuity rule only for Case study topic (topic title contains "Case Study"):
         - All Direct and Deep Dive steps MUST explicitly continue the Opening scenario (no restarts).
 
@@ -108,4 +107,4 @@ Return a JSON with this exact structure:
   "focus_areas_covered": ["Skill1", "Skill2", "Skill3", "Skill4", "Skill9"],
   "reference_material": ["Source1", "Source2", "Source3"]
 }}
-'''
+"""

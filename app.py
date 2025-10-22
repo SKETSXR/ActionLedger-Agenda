@@ -97,11 +97,11 @@ if __name__ == "__main__":
     # Keep question guidelines from file
     qg_json_path = Path(
         os.environ.get(
-            "QG_JSON_PATH", r"testing\custom_testing_inputs\question_guidelines1.json"
+            "QG_JSON_PATH", r"testing\custom_testing_inputs\question_guidelines2.json"
         )
     )
     config_yaml_path = Path(os.environ.get("CONFIG_YAML_PATH", "config.yaml"))
-    output_txt_path = Path(os.environ.get("OUTPUT_TXT_PATH", r"testing\op7.txt"))
+    output_txt_path = Path(os.environ.get("OUTPUT_TXT_PATH", r"testing\op21.txt"))
 
     try:
         client = _mongo_client()

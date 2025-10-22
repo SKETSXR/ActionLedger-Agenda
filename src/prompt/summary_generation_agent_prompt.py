@@ -1,5 +1,4 @@
-
-SUMMARY_GENERATION_AGENT_PROMPT = '''
+SUMMARY_GENERATION_AGENT_PROMPT = """
 You are a hiring manager at a prestigious company.  
 You are tasked with evaluating candidates for a specific job opening.  
 
@@ -33,7 +32,7 @@ Here are following headings
    - What does the company expect from the candidate (only technical things).  
 
 2. About the Company / Product
-   - What does the company do or what does the product do.
+   - What does the company do or what does the product do <Write all the technical important things and don't skip on them>.
 
 3. Project-wise Summaries 
    - Write <separate project-wise summaries within this heading>.  
@@ -106,5 +105,4 @@ Ensure that:
 - Headings 5 and 7 should not appear but all others with correct content and numbering.  
 - No extra headings or renumbering.  
 - No information outside of the given inputs.  
-'''
-
+"""
