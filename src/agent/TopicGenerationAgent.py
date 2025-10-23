@@ -521,7 +521,7 @@ async def _retry_async_with_backoff(
                 break
             await asyncio.sleep(backoff_base_s * (2 ** (attempt - 1)))
 
-    # --- NEW: single terminal error line with reason + structured details ---
+    # --- Single terminal error line with reason + structured details ---
     assert last_exc is not None
     try:
         reason, extra = _classify_provider_error(last_exc)  # uses helper above

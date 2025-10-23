@@ -559,7 +559,7 @@ async def _retry_async(
 
     assert last_exc is not None
 
-    # NEW: emit one terminal structured line with reason + details
+    # Emit one terminal structured line with reason + details
     try:
         reason, extra = _classify_provider_error(last_exc)  # type: ignore[arg-type]
     except Exception:

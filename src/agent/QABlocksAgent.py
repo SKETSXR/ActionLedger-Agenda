@@ -514,7 +514,7 @@ async def _retry_async(
             await asyncio.sleep(backoff_base_s * (2 ** (attempt - 1)))
 
     assert last_exc is not None
-    # NEW: one terminal line with reason + details (thread id is already injected)
+    # One terminal line with reason + details (thread id is already injected)
     try:
         reason, extra = _classify_provider_error(last_exc)
     except Exception:
