@@ -530,48 +530,65 @@ async def _retry_async(
     retry_reason: str,
     iteration_start: int = 1,
 ) -> Any:
-    """Run op_factory with timeout and exponential-backoff retries."""
+    """
+    Run `op_factory` with a per-attempt timeout and exponential backoff.
+    Uses the provided `retries`, `timeout_s`, `backoff_base_s`, and `iteration_start`
+    instead of any global config. Logs each retry and one terminal error.
+    """
     attempt = 0
     last_exc: Optional[BaseException] = None
 
-    while (
-        attempt <= CFG.llm_retries
-        if "llm" in retry_reason
-        else attempt <= CFG.tool_retries
-    ):
+    while attempt <= retries:
         try:
             return await asyncio.wait_for(op_factory(), timeout=timeout_s)
         except Exception as exc:
             last_exc = exc
             _log_retry(retry_reason, iteration_start + attempt, {"error": str(exc)})
             attempt += 1
-            # obey your separate retry budgets
-            if ("llm" in retry_reason and attempt > CFG.llm_retries) or (
-                "tool" in retry_reason and attempt > CFG.tool_retries
-            ):
+            if attempt > retries:
                 break
-            backoff = (
-                CFG.llm_backoff_base_s
-                if "llm" in retry_reason
-                else CFG.tool_backoff_base_s
-            ) * (2 ** (attempt - 1))
-            await asyncio.sleep(backoff)
+            # exponential backoff: base * 2^(n-1)
+            await asyncio.sleep(backoff_base_s * (2 ** (attempt - 1)))
 
-    assert last_exc is not None
+    # --- Terminal logging (classify a bit if httpx is available) ---
+    reason = "unknown"
+    extra: Dict[str, Any] = {"error": str(last_exc)}
 
-    # Emit one terminal structured line with reason + details
     try:
-        reason, extra = _classify_provider_error(last_exc)  # type: ignore[arg-type]
+        import httpx  # type: ignore
     except Exception:
-        reason, extra = "unknown", {"error": str(last_exc)}
+        httpx = None  # type: ignore
+
+    if httpx and isinstance(last_exc, httpx.HTTPStatusError):  # type: ignore[name-defined]
+        resp = last_exc.response
+        extra["status_code"] = resp.status_code
+        try:
+            body = resp.json()
+            extra["provider_error"] = body
+            err = body.get("error") or {}
+            code = err.get("code") or err.get("type")
+            if code:
+                extra["provider_error_code"] = code
+                if code in ("insufficient_quota", "billing_hard_limit_reached"):
+                    reason = "billing/quota"
+                elif resp.status_code in (401, 403):
+                    reason = "auth/permission"
+                elif resp.status_code == 429:
+                    reason = "rate_limited"
+        except Exception:
+            pass
+        if reason == "unknown":
+            reason = f"http_{resp.status_code}"
 
     LOGGER.error(
         "Terminal failure after %d attempt(s) | context=%s | reason=%s | extra=%s",
-        (CFG.llm_retries if "llm" in retry_reason else CFG.tool_retries) + 1,
+        retries + 1,
         retry_reason,
         reason,
         extra,
     )
+
+    assert last_exc is not None
     raise last_exc
 
 
