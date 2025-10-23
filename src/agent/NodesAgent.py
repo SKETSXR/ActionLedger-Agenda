@@ -241,6 +241,75 @@ def _get_logger() -> logging.Logger:
     return logger
 
 
+def _classify_provider_error(exc: Exception) -> tuple[str, Dict[str, Any]]:
+    """
+    Classify LLM/tool provider errors for one terminal log line.
+
+    Returns (reason, extra) where reason ∈:
+      'billing/quota' | 'auth' | 'permission' | 'rate_limited'
+      | 'http_<code>' | 'timeout' | 'provider_api_error' | 'unknown'
+    and extra carries structured fields (status_code, provider payload/code, etc.).
+    """
+    reason = "unknown"
+    extra: Dict[str, Any] = {"error": str(exc)}
+
+    # asyncio timeout surfaced by asyncio.wait_for
+    import asyncio as _asyncio
+
+    if isinstance(exc, _asyncio.TimeoutError):
+        return "timeout", extra
+
+    # httpx (common under LangChain SDKs)
+    try:
+        import httpx  # type: ignore
+    except Exception:
+        httpx = None  # type: ignore
+
+    if httpx and isinstance(exc, httpx.HTTPStatusError):
+        resp = exc.response
+        extra["status_code"] = resp.status_code
+        try:
+            body = resp.json()
+            extra["provider_error"] = body
+            err = (body.get("error") or {}) if isinstance(body, dict) else {}
+            code = err.get("code") or err.get("type")
+            if code:
+                extra["provider_error_code"] = code
+                if code in {"insufficient_quota", "billing_hard_limit_reached"}:
+                    reason = "billing/quota"
+                elif code in {"invalid_api_key", "authentication_error"}:
+                    reason = "auth"
+        except Exception:
+            pass
+        if reason == "unknown":
+            if resp.status_code == 401:
+                reason = "auth"
+            elif resp.status_code == 403:
+                reason = "permission"
+            elif resp.status_code == 429:
+                reason = "rate_limited"
+            else:
+                reason = f"http_{resp.status_code}"
+        return reason, extra
+
+    # If you ever call OpenAI SDK directly under LangChain, catch here
+    try:
+        import openai  # type: ignore
+
+        if isinstance(exc, openai.RateLimitError):
+            return "rate_limited", extra
+        if isinstance(exc, openai.AuthenticationError):
+            return "auth", extra
+        if isinstance(exc, openai.PermissionDeniedError):
+            return "permission", extra
+        if isinstance(exc, openai.APIError):
+            return "provider_api_error", extra
+    except Exception:
+        pass
+
+    return reason, extra
+
+
 def with_thread_context(fn):
     """Sets THREAD_ID_VAR from state.id, attaches per-thread handler, and restores after."""
 
@@ -464,6 +533,7 @@ async def _retry_async(
     """Run op_factory with timeout and exponential-backoff retries."""
     attempt = 0
     last_exc: Optional[BaseException] = None
+
     while (
         attempt <= CFG.llm_retries
         if "llm" in retry_reason
@@ -475,6 +545,7 @@ async def _retry_async(
             last_exc = exc
             _log_retry(retry_reason, iteration_start + attempt, {"error": str(exc)})
             attempt += 1
+            # obey your separate retry budgets
             if ("llm" in retry_reason and attempt > CFG.llm_retries) or (
                 "tool" in retry_reason and attempt > CFG.tool_retries
             ):
@@ -485,7 +556,22 @@ async def _retry_async(
                 else CFG.tool_backoff_base_s
             ) * (2 ** (attempt - 1))
             await asyncio.sleep(backoff)
+
     assert last_exc is not None
+
+    # NEW: emit one terminal structured line with reason + details
+    try:
+        reason, extra = _classify_provider_error(last_exc)  # type: ignore[arg-type]
+    except Exception:
+        reason, extra = "unknown", {"error": str(last_exc)}
+
+    LOGGER.error(
+        "Terminal failure after %d attempt(s) | context=%s | reason=%s | extra=%s",
+        (CFG.llm_retries if "llm" in retry_reason else CFG.tool_retries) + 1,
+        retry_reason,
+        reason,
+        extra,
+    )
     raise last_exc
 
 

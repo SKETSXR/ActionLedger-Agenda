@@ -47,6 +47,7 @@ from typing import Any
 import pymongo
 from dotenv import dotenv_values
 from langchain_core.runnables import RunnableConfig
+from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from pymongo.errors import ServerSelectionTimeoutError
 
@@ -94,6 +95,38 @@ CFG = AgendaConfig()
 # ==============================
 # Logger
 # ==============================
+
+
+async def run_agenda_with_logging(inp: InputSchema, config: dict | None = None):
+    """
+    Invoke Agenda graph and capture/record any unhandled exceptions,
+    tagging logs with tid and preserving the original traceback.
+    """
+    cfg = config or {}
+    tid = ((cfg.get("configurable") or {}).get("thread_id")) or ""
+    try:
+        # ensure per-thread log file exists for this tid
+        _attach_thread_file_handler(tid)
+    except Exception:
+        pass
+
+    try:
+        graph = AgendaGenerationAgent.get_graph()
+        return await graph.ainvoke(inp, cfg)
+    except GraphRecursionError:
+        # include full traceback and helpful context
+        LOGGER.exception(
+            "tid=%s | GraphRecursionError in Agenda graph. "
+            "Likely infinite retry loop (e.g., topic_generation_agent never satisfied). "
+            "Hint: consider restarting or modifying retries `recursion_limit` in config. "
+            "See LangGraph docs for details.",
+            tid,
+        )
+        raise
+    except Exception:
+        # catch-all: still log with tid + traceback
+        LOGGER.exception("tid=%s | Unhandled exception during Agenda graph run", tid)
+        raise
 
 
 def _build_logger() -> logging.Logger:

@@ -132,6 +132,73 @@ class _ThreadIdFilter(logging.Filter):
 _THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
 
 
+def _classify_provider_error(exc: Exception) -> tuple[str, Dict[str, Any]]:
+    """
+    Return (reason, extra) where reason is one of:
+      'billing/quota' | 'auth' | 'permission' | 'rate_limited'
+      | 'http_<code>' | 'timeout' | 'provider_api_error' | 'unknown'
+    and extra contains structured hints (status_code, provider_error/code, etc.).
+    """
+    reason = "unknown"
+    extra: Dict[str, Any] = {"error": str(exc)}
+
+    # asyncio timeout from wait_for(...)
+    import asyncio as _asyncio
+
+    if isinstance(exc, _asyncio.TimeoutError):
+        return "timeout", extra
+
+    # httpx (common under LangChain / SDKs)
+    try:
+        import httpx  # type: ignore
+    except Exception:
+        httpx = None
+
+    if httpx and isinstance(exc, httpx.HTTPStatusError):
+        resp = exc.response
+        extra["status_code"] = resp.status_code
+        try:
+            body = resp.json()
+            extra["provider_error"] = body
+            err = (body.get("error") or {}) if isinstance(body, dict) else {}
+            code = err.get("code") or err.get("type")
+            if code:
+                extra["provider_error_code"] = code
+                if code in {"insufficient_quota", "billing_hard_limit_reached"}:
+                    reason = "billing/quota"
+                elif code in {"invalid_api_key", "authentication_error"}:
+                    reason = "auth"
+        except Exception:
+            pass
+        if reason == "unknown":
+            if resp.status_code == 401:
+                reason = "auth"
+            elif resp.status_code == 403:
+                reason = "permission"
+            elif resp.status_code == 429:
+                reason = "rate_limited"
+            else:
+                reason = f"http_{resp.status_code}"
+        return reason, extra
+
+    # OpenAI (if you ever call SDK directly beneath LangChain)
+    try:
+        import openai  # type: ignore
+
+        if isinstance(exc, openai.RateLimitError):
+            return "rate_limited", extra
+        if isinstance(exc, openai.AuthenticationError):
+            return "auth", extra
+        if isinstance(exc, openai.PermissionDeniedError):
+            return "permission", extra
+        if isinstance(exc, openai.APIError):
+            return "provider_api_error", extra
+    except Exception:
+        pass
+
+    return reason, extra
+
+
 def _attach_thread_file_handler(thread_id: str) -> None:
     """Attach a per-thread TimedRotatingFileHandler writing to <log_dir>/<thread_id>/<agent>.log."""
     if not CFG.split_log_by_thread or not thread_id:
@@ -445,7 +512,21 @@ async def _retry_async(
             if attempt > retries:
                 break
             await asyncio.sleep(backoff_base_s * (2 ** (attempt - 1)))
+
     assert last_exc is not None
+    # NEW: one terminal line with reason + details (thread id is already injected)
+    try:
+        reason, extra = _classify_provider_error(last_exc)
+    except Exception:
+        reason, extra = "unknown", {"error": str(last_exc)}
+
+    LOGGER.error(
+        "Terminal failure after %d attempt(s) | context=%s | reason=%s | extra=%s",
+        retries + 1,
+        retry_reason,
+        reason,
+        extra,
+    )
     raise last_exc
 
 

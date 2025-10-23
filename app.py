@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
-from src.agent.AgendaGenerationAgent import AgendaGenerationAgent
+from src.agent.AgendaGenerationAgent import run_agenda_with_logging
 from src.schema.input_schema import (
     CandidateProfileSchema,
     InputSchema,
@@ -90,9 +90,9 @@ if __name__ == "__main__":
     start_ns = time.time_ns()
 
     # ---- IDs to fetch (ints). Set via env; defaults shown here. ----
-    JD_ID = int(os.environ.get("JD_ID", 1))
-    CV_ID = int(os.environ.get("CV_ID", 1))
-    ST_ID = int(os.environ.get("ST_ID", 1))
+    JD_ID = int(os.environ.get("JD_ID", 3))
+    CV_ID = int(os.environ.get("CV_ID", 3))
+    ST_ID = int(os.environ.get("ST_ID", 3))
 
     # Keep question guidelines from file
     qg_json_path = Path(
@@ -101,7 +101,7 @@ if __name__ == "__main__":
         )
     )
     config_yaml_path = Path(os.environ.get("CONFIG_YAML_PATH", "config.yaml"))
-    output_txt_path = Path(os.environ.get("OUTPUT_TXT_PATH", r"testing\op21.txt"))
+    output_txt_path = Path(os.environ.get("OUTPUT_TXT_PATH", r"testing\op24.txt"))
 
     try:
         client = _mongo_client()
@@ -150,8 +150,7 @@ if __name__ == "__main__":
     print(inp.skill_tree.model_dump_json(indent=2))
 
     config = _read_yaml(config_yaml_path)
-    graph = AgendaGenerationAgent.get_graph()
-    otpt = asyncio.run(graph.ainvoke(inp, config))
+    otpt = asyncio.run(run_agenda_with_logging(inp, config))
 
     # Collect & save outputs
     combined_text = ""

@@ -1,5 +1,4 @@
-
-TOPIC_GENERATION_AGENT_PROMPT = '''
+TOPIC_GENERATION_AGENT_PROMPT = """
 You are a meticulous and methodical technical interviewer for a leading company.
 Your task is to generate exactly three mutually exclusive and concrete interview discussion topics tailored to a specific candidate and job opening using the given input data.
 
@@ -116,4 +115,4 @@ class CollectiveInterviewTopicSchema(BaseModel):
 - You shall use the mongo db database fetching tools to fetch on data of question generation guidelines which will help you in giving out your output and they are being present in the collection named question_guidelines with each type being mentioned as the `_id` key (USE the truncated ids above; or use `$regex`).
 - You shall also use the mongo db database fetching tools to fetch on data for keys like P1, P2,... (collection `cv`), E1, E2,... (collection `cv`), D (collection `summary` key `domains_assess_D`), S (entire document in `summary`) and T (collection `summary` key `annotated_skill_tree_T`) with each relevant record having `_id = "@thread_id"`.
 - !!!!!! Do not write keys like P1, P2,..., E1, E2, E3,..., T, D, S etc anywhere except inside `necessary_reference_material` !!!!!!
-'''
+"""

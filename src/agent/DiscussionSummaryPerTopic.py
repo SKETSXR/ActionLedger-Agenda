@@ -591,7 +591,6 @@ async def _retry_async(
     retry_reason: str,
     iteration_start: int = 1,
 ) -> Any:
-    """Run op_factory with timeout and exponential-backoff retries."""
     attempt = 0
     last_exc: Optional[BaseException] = None
     while attempt <= retries:
@@ -604,6 +603,44 @@ async def _retry_async(
             if attempt > retries:
                 break
             await asyncio.sleep(backoff_base_s * (2 ** (attempt - 1)))
+
+    # Classify and log a terminal failure once, with tid via ContextVar
+    try:
+        import httpx
+    except Exception:
+        httpx = None  # optional
+
+    reason = "unknown"
+    extra: Dict[str, Any] = {"error": str(last_exc)}
+
+    if httpx and isinstance(last_exc, httpx.HTTPStatusError):
+        resp = last_exc.response
+        extra["status_code"] = resp.status_code
+        # try to surface provider error payload for quota/billing
+        try:
+            body = resp.json()
+            extra["provider_error"] = body
+            # common OpenAI-style fields if present
+            err = body.get("error") or {}
+            code = err.get("code") or err.get("type")
+            if code:
+                extra["provider_error_code"] = code
+                # heuristics
+                if code in ("insufficient_quota", "billing_hard_limit_reached"):
+                    reason = "billing/quota"
+                elif resp.status_code in (401, 403):
+                    reason = "auth/permission"
+                elif resp.status_code == 429:
+                    reason = "rate_limited"
+        except Exception:
+            pass
+        if reason == "unknown":
+            reason = f"http_{resp.status_code}"
+
+    LOGGER.error(
+        f"Terminal failure after {retries + 1} attempt(s) | reason={reason} | context={retry_reason} | extra={extra}"
+    )
+
     assert last_exc is not None
     raise last_exc
 
