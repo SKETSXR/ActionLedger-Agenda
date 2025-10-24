@@ -15,8 +15,6 @@ the domains are at level two, and the skills are the third-level nodes (leaf nod
 - Each domain and skill have a priority field as well which can be any of `must`, `high` or `low`. The priority field of any domain should be ignored although each skill's priority field should be taken into account.
 </annotated skill tree explanation>
 
-Previous feedbacks if any <use it to generate better entire topic set>:
-```@interview_topics_feedbacks```
 
 ---
 MONGODB USAGE (STRICT):
@@ -84,13 +82,22 @@ Topic Generation Instructions and Constraints:
 - Constraints for focus areas (STRICT, single-pass):
    - Build the set <MUST_SKILLS> = all leaf skills (which are at level 3 only of the annotated skill tree and not in any other level) whose priority is `"must"`.
    - Place every skill/leaf in <MUST_SKILLS> exactly once in any of the three topics.
-   - If some <MUST_SKILLS> do not naturally fit into any topic apart from the General Skill Assessment topic, then put "all remaining skills/leaves of the <MUST_SKILLS> set into the General Skill Assessment topic" so that all the skills/leaves (not domains) having a must priority are used.
-   - No <MUST_SKILLS> may be skipped or renamed.
+   - If some <MUST_SKILLS> do not naturally fit into any topic apart from the General Skill Assessment topic, then put "all remaining skills/leaves of the <MUST_SKILLS> set into the General Skill Assessment topic" so that all the skills/leaves (not domains) having a `must` priority are used and none are missed out.
+   - No <MUST_SKILLS> should be skipped or renamed.
    - After covering all the skills in the <MUST_SKILLS> set, you may add `"high"` priority skills/leaves (not domains) if they fit naturally and `"low"` priority skills are optional.
    - No skill/leaves (any priority) may appear in more than one topic.
+   - Previous feedbacks if any <just make sure any of the must skills aren't missing in your generated topics>:
+     ```@interview_topics_feedbacks```
 
 - Constraints for total_questions:
    - The sum of all `total_questions` must equal the number of questions specified in the summary.
+
+<Pre-validation Step for Zero Retry>:
+Before producing the JSON:
+   1. List internally all "must" skills from the annotated skill tree.
+   2. Verify that every one of them is included exactly once across the three topics.
+   3. If any must skill is missing, automatically include it in the General Skill Assessment topic before final output.
+   4. Only output the JSON when all must skills are accounted for exactly once.
 
 <Remember>:
 - Output is only a JSON object that follows the given schema as defined below:
@@ -115,4 +122,5 @@ class CollectiveInterviewTopicSchema(BaseModel):
 - You shall use the mongo db database fetching tools to fetch on data of question generation guidelines which will help you in giving out your output and they are being present in the collection named question_guidelines with each type being mentioned as the `_id` key (USE the truncated ids above; or use `$regex`).
 - You shall also use the mongo db database fetching tools to fetch on data for keys like P1, P2,... (collection `cv`), E1, E2,... (collection `cv`), D (collection `summary` key `domains_assess_D`), S (entire document in `summary`) and T (collection `summary` key `annotated_skill_tree_T`) with each relevant record having `_id = "@thread_id"`.
 - !!!!!! Do not write keys like P1, P2,..., E1, E2, E3,..., T, D, S etc anywhere except inside `necessary_reference_material` !!!!!!
+
 """

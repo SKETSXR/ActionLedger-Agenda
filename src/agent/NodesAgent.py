@@ -41,6 +41,8 @@
 # =============================================================================
 
 import asyncio
+import atexit
+import contextlib
 import copy
 import json
 import logging
@@ -123,6 +125,14 @@ _EXECUTOR = ThreadPoolExecutor(max_workers=CFG.tool_max_workers)
 _nodes_retry_counter = 1
 
 
+def shutdown_executor():
+    # Best-effort shutdown; mirrors prior behavior but also cancels pending futures.
+    try:
+        _EXECUTOR.shutdown(wait=True, cancel_futures=True)
+    except Exception:
+        pass
+
+
 # ==============================
 # Logging
 # ==============================
@@ -190,6 +200,26 @@ def _attach_thread_file_handler(thread_id: str) -> None:
 
     LOGGER.addHandler(handler)
     _THREAD_FILE_HANDLERS[thread_id] = handler
+
+
+def _detach_thread_file_handler(thread_id: str) -> None:
+    """
+    Close and remove the per-thread file handler if it exists.
+    (Added for graceful shutdown; no changes to existing logging flow.)
+    """
+    h = _THREAD_FILE_HANDLERS.pop(thread_id, None)
+    if h:
+        try:
+            LOGGER.removeHandler(h)
+        finally:
+            with contextlib.suppress(Exception):
+                h.close()
+
+
+def _close_all_thread_file_handlers() -> None:
+    """Best-effort close of all per-thread file handlers."""
+    for tid in list(_THREAD_FILE_HANDLERS.keys()):
+        _detach_thread_file_handler(tid)
 
 
 def _get_logger() -> logging.Logger:
@@ -635,9 +665,14 @@ class RetryTool(BaseTool):
             try:
                 return future.result(timeout=self._timeout_s)
             except FuturesTimeout as exc:
+                # Ensure we don't keep collecting zombie results
+                with contextlib.suppress(Exception):
+                    future.cancel()
                 last_exc = exc
                 _log_retry(f"tool_timeout:{self.name}", attempt + 1)
             except BaseException as exc:
+                with contextlib.suppress(Exception):
+                    future.cancel()
                 last_exc = exc
                 _log_retry(f"tool_error:{self.name}", attempt + 1, {"error": str(exc)})
             attempt += 1
@@ -657,7 +692,9 @@ class RetryTool(BaseTool):
                 )
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None, lambda: self._inner._run(*args, **{**kwargs, "config": config})
+                # Use shared executor so we own its lifecycle
+                _EXECUTOR,
+                lambda: self._inner._run(*args, **{**kwargs, "config": config}),
             )
 
         return await _retry_async(
@@ -714,7 +751,7 @@ class NodesGenerationAgent:
                 return await NodesGenerationAgent._AGENT_MODEL.ainvoke(messages)
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None, NodesGenerationAgent._AGENT_MODEL.invoke, messages
+                _EXECUTOR, NodesGenerationAgent._AGENT_MODEL.invoke, messages
             )
 
         _log_info("Calling LLM (agent)")
@@ -737,7 +774,7 @@ class NodesGenerationAgent:
                 return await NodesGenerationAgent._STRUCTURED_MODEL.ainvoke(payload)
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None, NodesGenerationAgent._STRUCTURED_MODEL.invoke, payload
+                _EXECUTOR, NodesGenerationAgent._STRUCTURED_MODEL.invoke, payload
             )
 
         _log_info("Calling LLM (structured)")
@@ -1028,7 +1065,8 @@ class NodesGenerationAgent:
             # Gated final-output logging
             rendered = _render_nodes_result(state.nodes.model_dump_json(indent=2))
             _log_info(f"Nodes generation successfully completed | output={rendered}")
-
+            _nodes_retry_counter = 1
+            shutdown_executor()
         return any_invalid
 
     @staticmethod
@@ -1046,6 +1084,15 @@ class NodesGenerationAgent:
             {True: "nodes_generator", False: END},
         )
         return g.compile(checkpointer=checkpointer, name="Nodes Generation Agent")
+
+
+# -------- Process-exit safety nets (no behavior change to main flow) --------
+@atexit.register
+def _shutdown_nodes_agent_at_exit() -> None:
+    with contextlib.suppress(Exception):
+        _close_all_thread_file_handlers()
+    with contextlib.suppress(Exception):
+        shutdown_executor()
 
 
 if __name__ == "__main__":

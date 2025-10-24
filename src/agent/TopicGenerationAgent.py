@@ -37,6 +37,8 @@
 # =============================================================================
 
 import asyncio
+import atexit
+import contextlib
 import json
 import logging
 import os
@@ -70,6 +72,8 @@ from src.schema.output_schema import CollectiveInterviewTopicSchema
 # ==============================
 
 AGENT_NAME = "topic_generation_agent"
+
+FEEDBACK_HEADER = "<Please don't miss/skip on any of these skills from the provided MUST_SKILLS set in your focus areas of the last topic of General Skill Assessment>\n"
 
 
 @dataclass(frozen=True)
@@ -106,6 +110,16 @@ class TopicAgentConfig:
     split_log_by_thread: bool = os.getenv(
         "TOPIC_AGENT_LOG_SPLIT_BY_THREAD", "1"
     ).strip().lower() in ("1", "true", "yes", "y")
+    # --- Feedback logging toggle + level ---
+    # If False: feedback is accumulated in state but NOT printed to logs.
+    log_feedbacks: bool = os.getenv(
+        "TOPIC_AGENT_LOG_FEEDBACKS", "0"
+    ).strip().lower() in ("1", "true", "yes", "y")
+
+    # Level at which feedback bodies are printed (e.g. DEBUG to keep logs tidy).
+    feedback_log_level: str = (
+        os.getenv("TOPIC_AGENT_FEEDBACK_LOG_LEVEL", "INFO").strip().upper()
+    )
 
 
 CFG = TopicAgentConfig()
@@ -131,6 +145,17 @@ class _ThreadIdFilter(logging.Filter):
 
 # Avoid duplicate per-thread handlers
 _THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
+
+
+def shutdown_executor():
+    # Graceful shutdown; cancel any pending futures when supported.
+    try:
+        _EXECUTOR.shutdown(wait=True, cancel_futures=True)
+    except TypeError:
+        with contextlib.suppress(Exception):
+            _EXECUTOR.shutdown(wait=True)
+    except Exception:
+        pass
 
 
 def _classify_provider_error(exc: Exception) -> tuple[str, Dict[str, Any]]:
@@ -210,7 +235,6 @@ def _attach_thread_file_handler(thread_id: str) -> None:
         return
 
     # Sanitize and create folder: <log_dir>/<thread_id>/
-
     safe_tid = re.sub(r"[^\w.-]", "_", str(thread_id))
     thread_dir = os.path.join(CFG.log_dir, safe_tid)
     os.makedirs(thread_dir, exist_ok=True)
@@ -239,6 +263,23 @@ def _attach_thread_file_handler(thread_id: str) -> None:
 
     LOGGER.addHandler(handler)
     _THREAD_FILE_HANDLERS[thread_id] = handler
+
+
+def _detach_thread_file_handler(thread_id: str) -> None:
+    """Close and remove the per-thread file handler if present (graceful cleanup only)."""
+    h = _THREAD_FILE_HANDLERS.pop(thread_id, None)
+    if h:
+        try:
+            LOGGER.removeHandler(h)
+        finally:
+            with contextlib.suppress(Exception):
+                h.close()
+
+
+def _close_all_thread_file_handlers() -> None:
+    """Best-effort close of all per-thread file handlers."""
+    for tid in list(_THREAD_FILE_HANDLERS.keys()):
+        _detach_thread_file_handler(tid)
 
 
 # ==============================
@@ -493,6 +534,31 @@ def _log_retry(reason: str, iteration: int, extra: Optional[dict] = None) -> Non
     _log_warn(f"Retry {iteration}: {reason}{suffix}")
 
 
+def _log_feedback_event(action: str, text: str) -> None:
+    """
+    Log a feedback body (entire text) only when CFG.log_feedbacks=True.
+    Uses CFG.feedback_log_level; retains WARNING lines elsewhere.
+    """
+    if not CFG.log_feedbacks:
+        return
+    level = getattr(logging, CFG.feedback_log_level, logging.INFO)
+    body = text or ""
+    LOGGER.log(level, "Feedback %s (len=%d)", action, len(body))
+    LOGGER.log(level, "%s", body)
+
+
+def _log_feedback_cumulative(all_text: str) -> None:
+    """
+    Log the entire cumulative feedback string only when CFG.log_feedbacks=True.
+    """
+    if not CFG.log_feedbacks:
+        return
+    level = getattr(logging, CFG.feedback_log_level, logging.INFO)
+    body = all_text or ""
+    LOGGER.log(level, "Cumulative feedbacks (len=%d)", len(body))
+    LOGGER.log(level, "%s", body)
+
+
 # ==============================
 # Async retry helper
 # ==============================
@@ -577,9 +643,13 @@ class RetryTool(BaseTool):
             try:
                 return future.result(timeout=self._timeout_s)
             except FuturesTimeout as exc:
+                with contextlib.suppress(Exception):
+                    future.cancel()
                 last_exc = exc
                 _log_retry(f"tool_timeout:{self.name}", attempt + 1)
             except BaseException as exc:
+                with contextlib.suppress(Exception):
+                    future.cancel()
                 last_exc = exc
                 _log_retry(f"tool_error:{self.name}", attempt + 1, {"error": str(exc)})
             attempt += 1
@@ -599,7 +669,8 @@ class RetryTool(BaseTool):
                 )
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None, lambda: self._inner._run(*args, **{**kwargs, "config": config})
+                _EXECUTOR,
+                lambda: self._inner._run(*args, **{**kwargs, "config": config}),
             )
 
         return await _retry_async_with_backoff(
@@ -663,7 +734,7 @@ class TopicGenerationAgent:
                 return await TopicGenerationAgent._AGENT_MODEL.ainvoke(messages)
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None, TopicGenerationAgent._AGENT_MODEL.invoke, messages
+                _EXECUTOR, TopicGenerationAgent._AGENT_MODEL.invoke, messages
             )
 
         _log_info("Calling LLM (agent)")
@@ -686,7 +757,7 @@ class TopicGenerationAgent:
                 return await TopicGenerationAgent._STRUCTURED_MODEL.ainvoke(payload)
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None, TopicGenerationAgent._STRUCTURED_MODEL.invoke, payload
+                _EXECUTOR, TopicGenerationAgent._STRUCTURED_MODEL.invoke, payload
             )
 
         _log_info("Calling LLM (structured)")
@@ -775,19 +846,26 @@ class TopicGenerationAgent:
         if not state.generated_summary:
             raise ValueError("Summary cannot be null.")
 
-        # Append latest feedback (if any) into the cumulative feedback string
-        feedback_text = (
-            state.interview_topics_feedback.feedback
-            if state.interview_topics_feedback
-            else ""
-        )
+        # Append latest feedback (if any) to cumulative
+        fb = getattr(state, "interview_topics_feedback", None)
+        if isinstance(fb, dict):
+            feedback_text = fb.get("feedback", "")
+        else:
+            feedback_text = getattr(fb, "feedback", "") or ""
+
         if feedback_text:
-            state.interview_topics_feedbacks += f"\n{feedback_text}\n"
+            # Just append verbatim; do not modify or add extra headers here
+            if state.interview_topics_feedbacks:
+                state.interview_topics_feedbacks += "\n"
+            state.interview_topics_feedbacks += feedback_text
+
+            # Optional logs: individual feedback and current cumulative
+            _log_feedback_event("appended", feedback_text)
+            _log_feedback_cumulative(state.interview_topics_feedbacks)
 
         class AtTemplate(Template):
             delimiter = "@"
 
-        # Render System prompt with @placeholders
         sys_content = AtTemplate(TOPIC_GENERATION_AGENT_PROMPT).substitute(
             generated_summary=state.generated_summary.model_dump_json(),
             interview_topics_feedbacks=state.interview_topics_feedbacks,
@@ -803,15 +881,12 @@ class TopicGenerationAgent:
 
         inner_graph = TopicGenerationAgent._get_inner_graph()
         result = await inner_graph.ainvoke({"messages": messages})
-
         state.interview_topics = result["final_response"]
 
-        # Log generated topics as per toggle
         rendered = _render_topics_for_log(
             state.interview_topics.model_dump_json(indent=2)
         )
         _log_info(f"Topics generated before all retry checks | output={rendered}")
-
         return state
 
     # ==========================
@@ -823,12 +898,6 @@ class TopicGenerationAgent:
     async def should_regenerate(state: AgentInternalState) -> bool:
         """
         Return True when satisfied (END). Return False to retry topic generation.
-
-        Checks:
-          • Sum of topic.total_questions equals generated_summary.total_questions.
-          • Every focus_area.skill is a valid leaf in the SkillTree (level-3).
-          • All 'must' priority leaf skills appear in the focus areas; otherwise
-            inject feedback onto the state and request a retry.
         """
         global _topic_retry_counter
 
@@ -873,7 +942,7 @@ class TopicGenerationAgent:
                 if val and val not in focus_area_skills:
                     focus_area_skills.append(val)
 
-        # 1) Question count must match
+        # 1) total_questions must match
         total_questions = sum(
             t.total_questions for t in state.interview_topics.interview_topics
         )
@@ -889,7 +958,7 @@ class TopicGenerationAgent:
             _topic_retry_counter += 1
             return False
 
-        # 2) Every focus skill must be a valid leaf
+        # 2) every focus skill must be a valid leaf
         leaf_set = set(all_skill_leaves)
         for s in focus_area_skills:
             if s not in leaf_set:
@@ -897,30 +966,37 @@ class TopicGenerationAgent:
                 _topic_retry_counter += 1
                 return False
 
-        # 3) All MUST leaves must be present
+        # 3) all MUST leaves must be present
         missing_musts = sorted(set(must_skill_leaves) - set(focus_area_skills))
         if missing_musts:
-            feedback = (
-                "<Please keep this topic set as is irrespective of other instructions apart from this feedback ones:\n"
-                f"```\n{state.interview_topics.model_dump()}\n```\n"
-                "But add this list of missing `must` priority skills as given below to the focus areas of the last topic being (General Skill Assessment):\n"
-                + ", ".join(missing_musts)
-                + ">"
-            )
-
-            state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
+            # WARNING line (kept exactly as before)
             _log_retry(
                 "Missing MUST skills", _topic_retry_counter, {"missing": missing_musts}
             )
             _topic_retry_counter += 1
+
+            feedback = FEEDBACK_HEADER + ", ".join(missing_musts) + "\n"
+
+            state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
+
+            # Optional: print this full feedback + cumulative (if toggle is ON)
+            _log_feedback_event("generated", feedback)
+            combined = state.interview_topics_feedbacks or ""
+            if combined:
+                combined += "\n"
+            combined += feedback
+            _log_feedback_cumulative(combined)
+
             return False
 
-        # Log generated topics as per toggle
+        # Success
         rendered = _render_topics_for_log(
             state.interview_topics.model_dump_json(indent=2)
         )
         _log_info(f"Topic generation successfully completed | output={rendered}")
-        return True  # satisfied
+        _topic_retry_counter = 1
+        shutdown_executor()
+        return True
 
     # ==========================
     # Outer graph: builder
@@ -940,6 +1016,15 @@ class TopicGenerationAgent:
             {True: END, False: "topic_generator"},
         )
         return g.compile(checkpointer=checkpointer, name="Topic Generation Agent")
+
+
+# -------- Process-exit safety nets (no behavior change to main flow) --------
+@atexit.register
+def _shutdown_topic_agent_at_exit() -> None:
+    with contextlib.suppress(Exception):
+        _close_all_thread_file_handlers()
+    with contextlib.suppress(Exception):
+        shutdown_executor()
 
 
 if __name__ == "__main__":

@@ -36,6 +36,8 @@
 # =============================================================================
 
 import asyncio
+import atexit
+import contextlib
 import copy
 import json
 import logging
@@ -130,6 +132,18 @@ class _ThreadIdFilter(logging.Filter):
 
 # Avoid duplicate handlers per thread id
 _THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
+
+
+def shutdown_executor():
+    # Graceful shutdown; also cancels pending futures if supported by runtime.
+    try:
+        _EXECUTOR.shutdown(wait=True, cancel_futures=True)
+    except TypeError:
+        # Python <3.9 compatibility (no cancel_futures)
+        with contextlib.suppress(Exception):
+            _EXECUTOR.shutdown(wait=True)
+    except Exception:
+        pass
 
 
 def _classify_provider_error(exc: Exception) -> tuple[str, Dict[str, Any]]:
@@ -234,6 +248,23 @@ def _attach_thread_file_handler(thread_id: str) -> None:
 
     LOGGER.addHandler(handler)
     _THREAD_FILE_HANDLERS[thread_id] = handler
+
+
+def _detach_thread_file_handler(thread_id: str) -> None:
+    """Close and remove the per-thread file handler if present (graceful cleanup only)."""
+    h = _THREAD_FILE_HANDLERS.pop(thread_id, None)
+    if h:
+        try:
+            LOGGER.removeHandler(h)
+        finally:
+            with contextlib.suppress(Exception):
+                h.close()
+
+
+def _close_all_thread_file_handlers() -> None:
+    """Best-effort close of all per-thread file handlers."""
+    for tid in list(_THREAD_FILE_HANDLERS.keys()):
+        _detach_thread_file_handler(tid)
 
 
 # ==============================
@@ -572,9 +603,14 @@ class RetryTool(BaseTool):
             try:
                 return fut.result(timeout=self._timeout_s)
             except FuturesTimeout as exc:
+                # Ensure we don't keep a pending future around
+                with contextlib.suppress(Exception):
+                    fut.cancel()
                 last_exc = exc
                 log_retry_iteration(f"tool_timeout:{self.name}", attempt + 1)
             except BaseException as exc:
+                with contextlib.suppress(Exception):
+                    fut.cancel()
                 last_exc = exc
                 log_retry_iteration(
                     f"tool_error:{self.name}", attempt + 1, {"error": str(exc)}
@@ -594,8 +630,10 @@ class RetryTool(BaseTool):
                     *args, **{**kwargs, "config": config}
                 )
             loop = asyncio.get_running_loop()
+            # Use the shared executor so we control lifecycle
             return await loop.run_in_executor(
-                None, lambda: self._inner._run(*args, **{**kwargs, "config": config})
+                _EXECUTOR,
+                lambda: self._inner._run(*args, **{**kwargs, "config": config}),
             )
 
         return await _retry_async(
@@ -652,7 +690,7 @@ class QABlockGenerationAgent:
                 return await QABlockGenerationAgent._AGENT_MODEL.ainvoke(messages)
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None, QABlockGenerationAgent._AGENT_MODEL.invoke, messages
+                _EXECUTOR, QABlockGenerationAgent._AGENT_MODEL.invoke, messages
             )
 
         log_info("Calling LLM (agent)")
@@ -675,7 +713,7 @@ class QABlockGenerationAgent:
                 return await QABlockGenerationAgent._STRUCTURED_MODEL.ainvoke(payload)
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None, QABlockGenerationAgent._STRUCTURED_MODEL.invoke, payload
+                _EXECUTOR, QABlockGenerationAgent._STRUCTURED_MODEL.invoke, payload
             )
 
         log_info("Calling LLM (structured)")
@@ -1112,6 +1150,8 @@ class QABlockGenerationAgent:
 
         rendered = _gated_qa_result(state.qa_blocks.model_dump_json(indent=2))
         log_info(f"QA block generation successfully completed | output={rendered}")
+        qa_retry_counter = 1
+        shutdown_executor()
         return False
 
     @staticmethod
@@ -1129,6 +1169,15 @@ class QABlockGenerationAgent:
             {True: "qablock_generator", False: END},
         )
         return g.compile(checkpointer=checkpointer, name="QA Block Generation Agent")
+
+
+# -------- Process-exit safety nets (no behavior change to main flow) --------
+@atexit.register
+def _shutdown_qa_agent_at_exit() -> None:
+    with contextlib.suppress(Exception):
+        _close_all_thread_file_handlers()
+    with contextlib.suppress(Exception):
+        shutdown_executor()
 
 
 if __name__ == "__main__":

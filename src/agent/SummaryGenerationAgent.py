@@ -43,6 +43,8 @@
 # =============================================================================
 
 import asyncio
+import atexit
+import contextlib
 import json
 import logging
 import os
@@ -152,6 +154,23 @@ def _attach_thread_file_handler(thread_id: str) -> None:
 
     LOGGER.addHandler(handler)
     _THREAD_FILE_HANDLERS[thread_id] = handler
+
+
+def _detach_thread_file_handler(thread_id: str) -> None:
+    """Close and remove a per-thread handler if present (best-effort)."""
+    h = _THREAD_FILE_HANDLERS.pop(thread_id, None)
+    if h:
+        try:
+            LOGGER.removeHandler(h)
+        finally:
+            with contextlib.suppress(Exception):
+                h.close()
+
+
+def _close_all_thread_file_handlers() -> None:
+    """Close all per-thread handlers on process exit (best-effort)."""
+    for tid in list(_THREAD_FILE_HANDLERS.keys()):
+        _detach_thread_file_handler(tid)
 
 
 CONFIG = SummaryAgentConfig()
@@ -551,6 +570,13 @@ def draw_graph_ascii() -> None:
             extra={"error": _brief_exception(exc)},
             exc_info=CONFIG.include_stacks,
         )
+
+
+# -------- Process-exit safety net (no behavior change to main flow) --------
+@atexit.register
+def _shutdown_summary_agent_at_exit() -> None:
+    with contextlib.suppress(Exception):
+        _close_all_thread_file_handlers()
 
 
 if __name__ == "__main__":

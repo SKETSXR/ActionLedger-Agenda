@@ -33,6 +33,8 @@
 # =============================================================================
 
 import asyncio
+import atexit
+import contextlib
 import json
 import logging
 import os
@@ -191,6 +193,26 @@ def _attach_thread_file_handler(thread_id: str) -> None:
 
     LOGGER.addHandler(handler)
     _THREAD_FILE_HANDLERS[thread_id] = handler
+
+
+def _detach_thread_file_handler(thread_id: str) -> None:
+    """
+    Close and remove the per-thread file handler if it exists.
+    (Added for graceful shutdown; no changes to existing logging flow.)
+    """
+    h = _THREAD_FILE_HANDLERS.pop(thread_id, None)
+    if h:
+        try:
+            LOGGER.removeHandler(h)
+        finally:
+            with contextlib.suppress(Exception):
+                h.close()
+
+
+def _close_all_thread_file_handlers() -> None:
+    """Best-effort close of all per-thread file handlers."""
+    for tid in list(_THREAD_FILE_HANDLERS.keys()):
+        _detach_thread_file_handler(tid)
 
 
 # ==============================
@@ -378,6 +400,15 @@ def _render_tool_payload(payload: Any) -> str:
         except Exception:
             return "<unavailable>"
     return _compact(_jsonish(payload))
+
+
+def shutdown_executor():
+    # Best-effort shutdown; keeps existing call sites intact.
+    try:
+        _EXECUTOR.shutdown(wait=True, cancel_futures=True)
+    except Exception:
+        # Mirror prior behavior of swallowing shutdown errors.
+        pass
 
 
 def _render_final_result(payload: Any) -> str:
@@ -685,9 +716,12 @@ class RetryTool(BaseTool):
             try:
                 return fut.result(timeout=self._timeout_s)
             except FuturesTimeout as exc:
+                # Ensure we don't keep collecting zombie results
+                fut.cancel()
                 last_exc = exc
                 _log_retry(f"tool_timeout:{self.name}", attempt + 1)
             except BaseException as exc:
+                fut.cancel()
                 last_exc = exc
                 _log_retry(f"tool_error:{self.name}", attempt + 1, {"error": str(exc)})
             attempt += 1
@@ -705,7 +739,9 @@ class RetryTool(BaseTool):
                 return await self._inner._arun(*args, **{**kwargs, "config": config})
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None, lambda: self._inner._run(*args, **{**kwargs, "config": config})
+                # Use shared executor so we own its lifecycle
+                _EXECUTOR,
+                lambda: self._inner._run(*args, **{**kwargs, "config": config}),
             )
 
         return await _retry_async(
@@ -769,7 +805,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
                 )
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None,
+                _EXECUTOR,
                 PerTopicDiscussionSummaryGenerationAgent._AGENT_MODEL.invoke,
                 messages,
             )
@@ -850,7 +886,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
                 )
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
-                None,
+                _EXECUTOR,
                 PerTopicDiscussionSummaryGenerationAgent._STRUCTURED_MODEL.invoke,
                 payload,
             )
@@ -1028,6 +1064,8 @@ class PerTopicDiscussionSummaryAgent:
             _log_info(
                 f"Per-topic discussion summaries generated successfully | output={rendered}"
             )
+            _disc_retry_counter = 1
+            shutdown_executor()
             return False
 
         finally:
@@ -1077,7 +1115,15 @@ class PerTopicDiscussionSummaryAgent:
                 )
                 for topic in topics_list
             ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+            finally:
+                # Ensure pending tasks are cancelled if the parent is interrupted
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await t
 
             # Collect successful DiscussionTopic entries and enforce exact topic names
             discussion_topics: List[
@@ -1158,3 +1204,12 @@ class PerTopicDiscussionSummaryAgent:
 if __name__ == "__main__":
     graph = PerTopicDiscussionSummaryAgent.get_graph()
     print(graph.get_graph().draw_ascii())
+
+
+# -------- Process-exit safety nets (no behavior change to main flow) --------
+@atexit.register
+def _shutdown_at_exit() -> None:
+    with contextlib.suppress(Exception):
+        _close_all_thread_file_handlers()
+    with contextlib.suppress(Exception):
+        shutdown_executor()

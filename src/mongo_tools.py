@@ -1,3 +1,4 @@
+import atexit
 import json
 import re
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -11,6 +12,7 @@ from langchain_mongodb.agent_toolkit.toolkit import MongoDBDatabaseToolkit
 from pydantic.v1 import BaseModel, Field
 from pymongo import MongoClient
 
+_CLIENT_CACHE: Dict[str, MongoClient] = {}
 # In-process cache of DB interfaces keyed by "<uri>::<database>"
 _CONN_CACHE: Dict[str, MongoDBDatabase] = {}
 
@@ -19,6 +21,17 @@ _ALLOWED_TOOL_NAMES = {
     "custom_mongodb_query",
     "mongodb_query_checker",
 }
+
+
+def _get_or_create_client(uri: str) -> MongoClient:
+    cli = _CLIENT_CACHE.get(uri)
+    if cli is not None:
+        return cli
+    cli = MongoClient(uri, serverSelectionTimeoutMS=5000)
+    # quick sanity check
+    cli.admin.command("ping")
+    _CLIENT_CACHE[uri] = cli
+    return cli
 
 
 def _get_env_uri_db(uri: Optional[str], database: Optional[str]) -> tuple[str, str]:
@@ -40,24 +53,22 @@ def _get_env_uri_db(uri: Optional[str], database: Optional[str]) -> tuple[str, s
 
 def _get_or_create_db(uri: str, database: str) -> MongoDBDatabase:
     """
-    Return a MongoDBDatabase (langchain-mongodb) instance, creating and caching it if needed.
-    Performs a quick 'ping' and lists collections to validate connectivity.
+    Return a MongoDBDatabase instance backed by a cached MongoClient.
     """
     cache_key = f"{uri}::{database}"
     if cache_key in _CONN_CACHE:
         return _CONN_CACHE[cache_key]
 
-    try:
-        # Lightweight connectivity check before constructing toolkit DB wrapper
-        with MongoClient(uri, serverSelectionTimeoutMS=5000) as client:
-            client.admin.command("ping")
-            _ = client[database].list_collection_names()
-    except Exception as e:
-        raise ValueError(
-            f"Failed to connect to MongoDB database '{database}': {e}"
-        ) from e
+    client = _get_or_create_client(uri)
+    # validate db once
+    _ = client[database].list_collection_names()
 
-    db = MongoDBDatabase.from_connection_string(uri, database=database)
+    # Build the toolkit DB wrapper. If your version supports passing client directly, prefer that.
+    try:
+        db = MongoDBDatabase(client=client, database=database)  # if supported
+    except TypeError:
+        db = MongoDBDatabase.from_connection_string(uri, database=database)
+
     _CONN_CACHE[cache_key] = db
     return db
 
@@ -268,5 +279,14 @@ def get_mongo_tools(
 
 
 def close_all_mongo_connections() -> None:
-    """Clear the in-process DB interface cache."""
+    """Close all cached clients and clear caches."""
+    for cli in list(_CLIENT_CACHE.values()):
+        try:
+            cli.close()
+        except Exception:
+            pass
+    _CLIENT_CACHE.clear()
     _CONN_CACHE.clear()
+
+
+atexit.register(close_all_mongo_connections)

@@ -16,6 +16,7 @@
 # =============================================================================
 
 import asyncio
+import gc
 import json
 import os
 import time
@@ -28,6 +29,7 @@ from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
 from src.agent.AgendaGenerationAgent import run_agenda_with_logging
+from src.mongo_tools import close_all_mongo_connections
 from src.schema.input_schema import (
     CandidateProfileSchema,
     InputSchema,
@@ -87,12 +89,13 @@ def _skill_tree_from_dict(tree_dict: dict) -> SkillTreeSchema:
 # ---------------------------------------------------------------------
 if __name__ == "__main__":
     load_dotenv()
+    close_all_mongo_connections()
     start_ns = time.time_ns()
 
     # ---- IDs to fetch (ints). Set via env; defaults shown here. ----
-    JD_ID = int(os.environ.get("JD_ID", 3))
-    CV_ID = int(os.environ.get("CV_ID", 3))
-    ST_ID = int(os.environ.get("ST_ID", 3))
+    JD_ID = int(os.environ.get("JD_ID", 5))
+    CV_ID = int(os.environ.get("CV_ID", 5))
+    ST_ID = int(os.environ.get("ST_ID", 5))
 
     # Keep question guidelines from file
     qg_json_path = Path(
@@ -101,7 +104,7 @@ if __name__ == "__main__":
         )
     )
     config_yaml_path = Path(os.environ.get("CONFIG_YAML_PATH", "config.yaml"))
-    output_txt_path = Path(os.environ.get("OUTPUT_TXT_PATH", r"testing\op24.txt"))
+    output_txt_path = Path(os.environ.get("OUTPUT_TXT_PATH", r"testing\op241.txt"))
 
     try:
         client = _mongo_client()
@@ -116,53 +119,57 @@ if __name__ == "__main__":
     except (PyMongoError, KeyError, RuntimeError) as e:
         raise SystemExit(f"[Mongo Error] {e}")
 
-    # ---- Build Pydantic models ----
-    # Drop '_id' fields if present; schemas likely don't take them.
-    jdes = JobDescriptionSchema(
-        job_role=jd_doc["job_role"],
-        company_background=jd_doc["company_background"],
-        fundamental_knowledge=jd_doc.get("fundamental_knowledge"),
-    )
+    try:
+        # ---- Build Pydantic models ----
+        # Drop '_id' fields if present; schemas likely don't take them.
+        jdes = JobDescriptionSchema(
+            job_role=jd_doc["job_role"],
+            company_background=jd_doc["company_background"],
+            fundamental_knowledge=jd_doc.get("fundamental_knowledge"),
+        )
 
-    cp = CandidateProfileSchema(
-        skills=cv_doc["skills"],
-        projects=cv_doc["projects"],
-        experience=cv_doc["experience"],
-    )
+        cp = CandidateProfileSchema(
+            skills=cv_doc["skills"],
+            projects=cv_doc["projects"],
+            experience=cv_doc["experience"],
+        )
 
-    skill_tree = _skill_tree_from_dict(st_doc)
+        skill_tree = _skill_tree_from_dict(st_doc)
 
-    # Question guidelines: plain dict from file
-    with qg_json_path.open("r", encoding="utf-8") as f:
-        question_guidelines = json.load(f)
+        # Question guidelines: plain dict from file
+        with qg_json_path.open("r", encoding="utf-8") as f:
+            question_guidelines = json.load(f)
 
-    # ---- Build InputSchema and run your graph ----
-    inp = InputSchema(
-        job_description=jdes,
-        skill_tree=skill_tree,
-        candidate_profile=cp,
-        question_guidelines=question_guidelines,
-    )
+        # ---- Build InputSchema and run your graph ----
+        inp = InputSchema(
+            job_description=jdes,
+            skill_tree=skill_tree,
+            candidate_profile=cp,
+            question_guidelines=question_guidelines,
+        )
 
-    # Debug prints (preserved)
-    print(inp.candidate_profile.model_dump_json(indent=2) + "\n")
-    print(inp.job_description.model_dump_json(indent=2) + "\n")
-    print(inp.skill_tree.model_dump_json(indent=2))
+        # Debug prints (preserved)
+        print(inp.candidate_profile.model_dump_json(indent=2) + "\n")
+        print(inp.job_description.model_dump_json(indent=2) + "\n")
+        print(inp.skill_tree.model_dump_json(indent=2))
 
-    config = _read_yaml(config_yaml_path)
-    otpt = asyncio.run(run_agenda_with_logging(inp, config))
+        config = _read_yaml(config_yaml_path)
+        otpt = asyncio.run(run_agenda_with_logging(inp, config))
 
-    # Collect & save outputs
-    combined_text = ""
-    for k, v in otpt.items():
-        section = str(k).capitalize()
-        body = v.model_dump_json(indent=2)
-        print(f"\n{section} --->\n\n {body}\n")
-        combined_text += f"\n{section} --->\n\n {body}\n"
+        # Collect & save outputs
+        combined_text = ""
+        for k, v in otpt.items():
+            section = str(k).capitalize()
+            body = v.model_dump_json(indent=2)
+            print(f"\n{section} --->\n\n {body}\n")
+            combined_text += f"\n{section} --->\n\n {body}\n"
 
-    output_txt_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_txt_path.open("w", encoding="utf-8") as f:
-        f.write(combined_text)
+        output_txt_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_txt_path.open("w", encoding="utf-8") as f:
+            f.write(combined_text)
 
-    end_ns = time.time_ns()
-    print(f"\nTime taken: {(end_ns - start_ns) / 60000000000} mins")
+        end_ns = time.time_ns()
+        print(f"\nTime taken: {(end_ns - start_ns) / 60000000000} mins")
+    finally:
+        client.close()
+        gc.collect()
