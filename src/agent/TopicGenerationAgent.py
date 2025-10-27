@@ -2,38 +2,65 @@
 # Module: topic_generation_agent
 # =============================================================================
 # Purpose
-#   Generate a structured set of interview topics from an already-generated
-#   summary, via a compact ReAct-style inner loop with Mongo-backed tools.
-#   The final assistant content is coerced to CollectiveInterviewTopicSchema.
+#   Generate structured interview topics from a generated summary using a ReAct-style
+#   agent architecture with concurrent processing, robust error handling, and
+#   comprehensive logging. Each topic generation attempt is processed via an inner LLM loop
+#   with Mongo-backed tools, while the outer graph manages validation and regeneration.
 #
-# Responsibilities
-#   • Build a System prompt from prior outputs (generated summary + feedback).
-#   • Invoke an LLM bound to Mongo tools (ToolNode) to propose topics.
-#   • Convert the final assistant message to the typed schema.
-#   • Validate alignment against the SkillTree (coverage & must-have skills).
-#   • Retry topic generation until validations pass (outer loop).
+# Architecture
+#   Inner Graph:
+#     agent ─► (tools)* ─► respond
+#       - agent: LLM with tool access for planning and execution
+#       - tools: ThreadPoolExecutor-backed tool calls with timeouts/retries
+#       - respond: Coerce final tool-free response to CollectiveInterviewTopicSchema
 #
-# Data Flow
 #   Outer Graph:
-#     START ──► topic_generator ──► should_regenerate ──┬─► END (True)
-#                                                      └─► topic_generator (False)
-#   Inner ReAct Loop:
-#     agent (LLM w/ tools) ─► (tools)* ─► respond (coerce to schema)
+#     START ──► topic_generator
+#               ├─► topic_generator (regenerate if invalid)
+#               └─► END                    (valid output)
 #
-# Reliability & Observability
-#   • Timeouts + exponential-backoff retries for LLM and tools.
-#   • Rotating per thread id, file logs + readable console logs.
-#   • Optional payload logging: off | summary | full.
+# Key Features
+#   • System prompt generation from prior outputs
+#   • Robust JSON extraction and schema coercion
+#   • Exponential backoff retries for LLM/tools
+#   • Thread-safe logging with optional per-thread files
+#   • Graceful shutdown of thread pools and resources
+#   • Comprehensive input/output validation
+#   • Strict topic validation:
+#     - Total questions match summary
+#     - Focus skills are valid leaf nodes
+#     - All must-have skills are covered
 #
-# Configuration (Environment Variables)
-#   TOPIC_AGENT_LOG_DIR, TOPIC_AGENT_LOG_FILE, TOPIC_AGENT_LOG_LEVEL
-#   TOPIC_AGENT_LOG_ROTATE_WHEN, TOPIC_AGENT_LOG_ROTATE_INTERVAL, TOPIC_AGENT_LOG_BACKUP_COUNT
-#   TOPIC_AGENT_LLM_TIMEOUT_SECONDS, TOPIC_AGENT_LLM_RETRIES, TOPIC_AGENT_LLM_RETRY_BACKOFF_SECONDS
-#   TOPIC_AGENT_TOOL_TIMEOUT_SECONDS, TOPIC_AGENT_TOOL_RETRIES, TOPIC_AGENT_TOOL_RETRY_BACKOFF_SECONDS
-#   TOPIC_AGENT_TOOL_MAX_WORKERS
-#   TOPIC_AGENT_TOOL_LOG_PAYLOAD             off | summary | full
-#   TOPIC_AGENT_RESULT_LOG_PAYLOAD           off | summary | full
-#   TOPIC_AGENT_LOG_SPLIT_BY_THREAD          (0|1)
+# Environment Variables
+#   Logging Configuration:
+#     TOPIC_AGENT_LOG_DIR        Base directory for log files
+#     TOPIC_AGENT_LOG_FILE       Log filename (default: topic_agent.log)
+#     TOPIC_AGENT_LOG_LEVEL      DEBUG|INFO|WARNING|ERROR|CRITICAL
+#     TOPIC_AGENT_LOG_ROTATE_WHEN      Rotation schedule (default: midnight)
+#     TOPIC_AGENT_LOG_ROTATE_INTERVAL  Rotation interval (default: 1)
+#     TOPIC_AGENT_LOG_BACKUP_COUNT    Maximum backups (default: 365)
+#
+#   LLM Settings:
+#     TOPIC_AGENT_LLM_TIMEOUT_SECONDS         Timeout per LLM call (default: 90)
+#     TOPIC_AGENT_LLM_RETRIES                 Maximum retries (default: 2)
+#     TOPIC_AGENT_LLM_RETRY_BACKOFF_SECONDS   Base backoff time (default: 2.5)
+#
+#   Tool Settings:
+#     TOPIC_AGENT_TOOL_TIMEOUT_SECONDS        Timeout per tool call (default: 30)
+#     TOPIC_AGENT_TOOL_RETRIES               Maximum retries (default: 2)
+#     TOPIC_AGENT_TOOL_RETRY_BACKOFF_SECONDS  Base backoff time (default: 1.5)
+#     TOPIC_AGENT_TOOL_MAX_WORKERS           ThreadPool size (default: 8)
+#
+#   Logging Controls:
+#     TOPIC_AGENT_TOOL_LOG_PAYLOAD           Tool payload logging (off|summary|full)
+#     TOPIC_AGENT_RESULT_LOG_PAYLOAD         Result payload logging (off|summary|full)
+#     TOPIC_AGENT_LOG_SPLIT_BY_THREAD        Enable per-thread log files (0|1)
+#
+# Dependencies
+#   • langchain-core: LLM interfaces and tools
+#   • langgraph: Graph orchestration
+#   • pydantic: Schema validation
+#   • pymongo: MongoDB operations
 # =============================================================================
 
 import asyncio

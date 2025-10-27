@@ -2,42 +2,61 @@
 # Module: nodes_generation_agent
 # =============================================================================
 # Purpose
-#   Build per-topic “nodes” (question/deep-dive/etc.) from previously generated
-#   per-topic discussion summaries via a compact ReAct-style inner loop that
-#   uses Mongo-backed tools. The final assistant message is coerced to:
-#     • TopicWithNodesSchema (per topic)
-#     • NodesSchema (container across topics)
+#   Generate structured discussion nodes for interview topics using a ReAct-style
+#   agent architecture with concurrent processing, robust error handling, and
+#   comprehensive logging. Each topic is processed independently via an inner LLM loop
+#   with Mongo-backed tools, while the outer graph manages aggregation and validation.
 #
-# Responsibilities
-#   • For each (topic, per-topic summary) pair, render a System prompt.
-#   • Invoke an LLM bound to Mongo tools (ToolNode) inside an inner ReAct loop.
-#   • Convert the last tool-free assistant message to TopicWithNodesSchema.
-#   • Aggregate all topic results into a NodesSchema on shared state.
-#   • Validate container and per-topic schemas; retry if invalid.
+# Architecture
+#   Inner Graph (per topic):
+#     agent ─► (tools)* ─► respond
+#       - agent: LLM with tool access for planning and execution
+#       - tools: ThreadPoolExecutor-backed tool calls with timeouts/retries
+#       - respond: Coerce final tool-free response to TopicWithNodesSchema
 #
-# Data Flow
 #   Outer Graph:
 #     START ──► nodes_generator
-#                ├─► nodes_generator (should_regenerate=True)
-#                └─► END              (should_regenerate=False)
+#               ├─► nodes_generator (regenerate if invalid)
+#               └─► END                    (valid output)
 #
-#   Inner Graph (per topic):
-#     agent (LLM w/ tools) ─► (tools)* ─► respond (coerce to schema)
+# Key Features
+#   • Concurrent topic processing via asyncio.gather
+#   • Robust JSON extraction and schema coercion
+#   • Exponential backoff retries for LLM/tools
+#   • Thread-safe logging with optional per-thread files
+#   • Graceful shutdown of thread pools and resources
+#   • Comprehensive input/output validation
 #
-# Reliability & Observability
-#   • Timeouts + exponential-backoff retries for LLM and tools.
-#   • Console + rotating file logs per thread id.
-#   • Optional payload logging: tools and final result (off | summary | full).
+# Environment Variables
+#   Logging Configuration:
+#     NODES_AGENT_LOG_DIR        Base directory for log files
+#     NODES_AGENT_LOG_FILE       Log filename (default: nodes_agent.log)
+#     NODES_AGENT_LOG_LEVEL      DEBUG|INFO|WARNING|ERROR|CRITICAL
+#     NODES_AGENT_LOG_ROTATE_WHEN      Rotation schedule (default: midnight)
+#     NODES_AGENT_LOG_ROTATE_INTERVAL  Rotation interval (default: 1)
+#     NODES_AGENT_LOG_BACKUP_COUNT    Maximum backups (default: 365)
 #
-# Configuration (Environment Variables)
-#   NODES_AGENT_LOG_DIR, NODES_AGENT_LOG_FILE, NODES_AGENT_LOG_LEVEL
-#   NODES_AGENT_LOG_ROTATE_WHEN, NODES_AGENT_LOG_ROTATE_INTERVAL, NODES_AGENT_LOG_BACKUP_COUNT
-#   NODES_AGENT_LLM_TIMEOUT_SECONDS, NODES_AGENT_LLM_RETRIES, NODES_AGENT_LLM_RETRY_BACKOFF_SECONDS
-#   NODES_AGENT_TOOL_TIMEOUT_SECONDS, NODES_AGENT_TOOL_RETRIES, NODES_AGENT_TOOL_RETRY_BACKOFF_SECONDS
-#   NODES_AGENT_TOOL_MAX_WORKERS
-#   NODES_AGENT_TOOL_LOG_PAYLOAD            off | summary | full
-#   NODES_AGENT_RESULT_LOG_PAYLOAD          off | summary | full
-#   NODES_AGENT_LOG_SPLIT_BY_THREAD         (0|1)
+#   LLM Settings:
+#     NODES_AGENT_LLM_TIMEOUT_SECONDS         Timeout per LLM call (default: 90)
+#     NODES_AGENT_LLM_RETRIES                 Maximum retries (default: 2)
+#     NODES_AGENT_LLM_RETRY_BACKOFF_SECONDS   Base backoff time (default: 2.5)
+#
+#   Tool Settings:
+#     NODES_AGENT_TOOL_TIMEOUT_SECONDS        Timeout per tool call (default: 30)
+#     NODES_AGENT_TOOL_RETRIES               Maximum retries (default: 2)
+#     NODES_AGENT_TOOL_RETRY_BACKOFF_SECONDS  Base backoff time (default: 1.5)
+#     NODES_AGENT_TOOL_MAX_WORKERS           ThreadPool size (default: 8)
+#
+#   Logging Controls:
+#     NODES_AGENT_TOOL_LOG_PAYLOAD           Tool payload logging (off|summary|full)
+#     NODES_AGENT_RESULT_LOG_PAYLOAD         Result payload logging (off|summary|full)
+#     NODES_AGENT_LOG_SPLIT_BY_THREAD        Enable per-thread log files (0|1)
+#
+# Dependencies
+#   • langchain-core: LLM interfaces and tools
+#   • langgraph: Graph orchestration
+#   • pydantic: Schema validation
+#   • pymongo: MongoDB operations
 # =============================================================================
 
 import asyncio

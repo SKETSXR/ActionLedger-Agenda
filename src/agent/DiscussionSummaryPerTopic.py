@@ -2,34 +2,61 @@
 # Module: discussion_summary_per_topic_agent
 # =============================================================================
 # Purpose
-#   Generate a structured discussion summary for each interview topic using an
-#   inner ReAct loop (Mongo-backed tools) and aggregate the results at the outer
-#   graph level. Includes robust JSON coercion, timeouts, retries, and logging.
+#   Generate structured discussion summaries for interview topics using a ReAct-style
+#   agent architecture with concurrent processing, robust error handling, and
+#   comprehensive logging. Each topic is processed independently via an inner LLM loop
+#   with Mongo-backed tools, while the outer graph manages aggregation and validation.
 #
-# Graphs
-#   Inner (per topic):
+# Architecture
+#   Inner Graph (per topic):
 #     agent ─► (tools)* ─► respond
-#       - agent: tool-enabled LLM plans and may call tools
-#       - tools: ToolNode executes planned tool calls
-#       - respond: coerce final tool-free assistant content to schema
+#       - agent: LLM with tool access for planning and execution
+#       - tools: ThreadPoolExecutor-backed tool calls with timeouts/retries
+#       - respond: Coerce final tool-free response to DiscussionTopic schema
 #
-#   Outer:
+#   Outer Graph:
 #     START ──► discussion_summary_per_topic_generator
-#               ├─► discussion_summary_per_topic_generator (should_regenerate=True)
-#               └─► END                                    (should_regenerate=False)
+#               ├─► discussion_summary_per_topic_generator (regenerate if invalid)
+#               └─► END                                    (valid output)
+#
+# Key Features
+#   • Concurrent topic processing via asyncio.gather
+#   • Robust JSON extraction and schema coercion
+#   • Exponential backoff retries for LLM/tools
+#   • Thread-safe logging with optional per-thread files
+#   • Graceful shutdown of thread pools and resources
+#   • Comprehensive input/output validation
 #
 # Environment Variables
-#   DISCUSSION_SUMMARY_AGENT_LOG_DIR, DISCUSSION_SUMMARY_AGENT_LOG_FILE,
-#   DISCUSSION_SUMMARY_AGENT_LOG_LEVEL, DISCUSSION_SUMMARY_AGENT_LOG_ROTATE_WHEN,
-#   DISCUSSION_SUMMARY_AGENT_LOG_ROTATE_INTERVAL, DISCUSSION_SUMMARY_AGENT_LOG_BACKUP_COUNT
+#   Logging Configuration:
+#     DISCUSSION_SUMMARY_AGENT_LOG_DIR        Base directory for log files
+#     DISCUSSION_SUMMARY_AGENT_LOG_FILE       Log filename (default: discussion_summary_agent.log)
+#     DISCUSSION_SUMMARY_AGENT_LOG_LEVEL      DEBUG|INFO|WARNING|ERROR|CRITICAL
+#     DISCUSSION_SUMMARY_AGENT_LOG_ROTATE_WHEN      Rotation schedule (default: midnight)
+#     DISCUSSION_SUMMARY_AGENT_LOG_ROTATE_INTERVAL  Rotation interval (default: 1)
+#     DISCUSSION_SUMMARY_AGENT_LOG_BACKUP_COUNT    Maximum backups (default: 365)
 #
-#   DISC_AGENT_LLM_TIMEOUT_SECONDS, DISC_AGENT_LLM_RETRIES, DISC_AGENT_LLM_RETRY_BACKOFF_SECONDS
-#   DISC_AGENT_TOOL_TIMEOUT_SECONDS, DISC_AGENT_TOOL_RETRIES, DISC_AGENT_TOOL_RETRY_BACKOFF_SECONDS
-#   DISC_AGENT_TOOL_MAX_WORKERS
+#   LLM Settings:
+#     DISC_AGENT_LLM_TIMEOUT_SECONDS         Timeout per LLM call (default: 90)
+#     DISC_AGENT_LLM_RETRIES                 Maximum retries (default: 2)
+#     DISC_AGENT_LLM_RETRY_BACKOFF_SECONDS   Base backoff time (default: 2.5)
 #
-#   DISC_AGENT_TOOL_LOG_PAYLOAD    (off|summary|full)
-#   DISC_AGENT_RESULT_LOG_PAYLOAD  (off|summary|full)
-#   DISC_AGENT_LOG_SPLIT_BY_THREAD (0|1)
+#   Tool Settings:
+#     DISC_AGENT_TOOL_TIMEOUT_SECONDS        Timeout per tool call (default: 30)
+#     DISC_AGENT_TOOL_RETRIES               Maximum retries (default: 2)
+#     DISC_AGENT_TOOL_RETRY_BACKOFF_SECONDS  Base backoff time (default: 1.5)
+#     DISC_AGENT_TOOL_MAX_WORKERS           ThreadPool size (default: 8)
+#
+#   Logging Controls:
+#     DISC_AGENT_TOOL_LOG_PAYLOAD           Tool payload logging (off|summary|full)
+#     DISC_AGENT_RESULT_LOG_PAYLOAD         Result payload logging (off|summary|full)
+#     DISC_AGENT_LOG_SPLIT_BY_THREAD        Enable per-thread log files (0|1)
+#
+# Dependencies
+#   • langchain-core: LLM interfaces and tools
+#   • langgraph: Graph orchestration
+#   • pydantic: Schema validation
+#   • pymongo: MongoDB operations
 # =============================================================================
 
 import asyncio

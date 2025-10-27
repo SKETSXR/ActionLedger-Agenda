@@ -2,37 +2,65 @@
 # Module: qa_block_generation_agent
 # =============================================================================
 # Purpose
-#   Generate structured QA blocks for each topic's deep-dive nodes via a compact
-#   ReAct-style inner loop (LLM + Mongo-backed tools). The final tool-free
-#   assistant output is coerced to QASetsSchema and attached to state.
+#   Generate structured discussion nodes for interview topics using a ReAct-style
+#   agent architecture with concurrent processing, robust error handling, and
+#   comprehensive logging. Each topic is processed independently via an inner LLM loop
+#   with Mongo-backed tools, while the outer graph manages aggregation and validation.
 #
-# Responsibilities
-#   • For each topic:
-#       1) Find matching discussion summary
-#       2) Collect deep-dive nodes
-#       3) Produce exactly one QA block per deep-dive node (strict validation)
-#   • Aggregate validated QA blocks into QASetsSchema
-#   • Timeouts + exponential-backoff retries for LLM and tools
-#   • Log planned tool calls, tool results, outputs and retry iterations per thread id
+# Architecture
+#   Inner Graph (per topic):
+#     agent ─► (tools)* ─► respond
+#       - agent: LLM with tool access for planning and execution
+#       - tools: ThreadPoolExecutor-backed tool calls with timeouts/retries
+#       - respond: Coerce final tool-free response to QASetsSchema
 #
-# Data Flow
 #   Outer Graph:
 #     START ──► qablock_generator
-#                ├─► qablock_generator (should_regenerate=True)
-#                └─► END               (should_regenerate=False)
+#               ├─► qablock_generator (regenerate if invalid)
+#               └─► END                    (valid output)
 #
-#   Inner Graph (per topic):
-#     agent (LLM w/ tools) ─► (tools)* ─► respond (coerce to schema)
+# Key Features
+#   • Concurrent topic processing via asyncio.gather
+#   • Robust JSON extraction and schema coercion
+#   • Exponential backoff retries for LLM/tools
+#   • Thread-safe logging with optional per-thread files
+#   • Graceful shutdown of thread pools and resources
+#   • Comprehensive input/output validation
+#   • Strict QA block validation:
+#     - One block per deep-dive node
+#     - Exactly 7 QA items per block
+#     - No "Easy" counter questions allowed
 #
-# Configuration (Environment Variables)
-#   QA_AGENT_NAME, QA_AGENT_LOG_DIR, QA_AGENT_LOG_LEVEL, QA_AGENT_LOG_FILE
-#   QA_AGENT_LOG_ROTATE_WHEN, QA_AGENT_LOG_ROTATE_INTERVAL, QA_AGENT_LOG_BACKUP_COUNT
-#   QA_AGENT_LLM_TIMEOUT_SECONDS, QA_AGENT_LLM_RETRIES, QA_AGENT_LLM_RETRY_BACKOFF_SECONDS
-#   QA_AGENT_TOOL_TIMEOUT_SECONDS, QA_AGENT_TOOL_RETRIES, QA_AGENT_TOOL_RETRY_BACKOFF_SECONDS
-#   QA_AGENT_TOOL_MAX_WORKERS
-#   QA_AGENT_TOOL_LOG_PAYLOAD              off | summary | full
-#   QA_AGENT_RESULT_LOG_PAYLOAD            off | summary | full
-#   QA_AGENT_LOG_SPLIT_BY_THREAD           (0|1)
+# Environment Variables
+#   Logging Configuration:
+#     QA_AGENT_LOG_DIR        Base directory for log files
+#     QA_AGENT_LOG_FILE       Log filename (default: qa_agent.log)
+#     QA_AGENT_LOG_LEVEL      DEBUG|INFO|WARNING|ERROR|CRITICAL
+#     QA_AGENT_LOG_ROTATE_WHEN      Rotation schedule (default: midnight)
+#     QA_AGENT_LOG_ROTATE_INTERVAL  Rotation interval (default: 1)
+#     QA_AGENT_LOG_BACKUP_COUNT    Maximum backups (default: 365)
+#
+#   LLM Settings:
+#     QA_AGENT_LLM_TIMEOUT_SECONDS         Timeout per LLM call (default: 120)
+#     QA_AGENT_LLM_RETRIES                 Maximum retries (default: 2)
+#     QA_AGENT_LLM_RETRY_BACKOFF_SECONDS   Base backoff time (default: 2.5)
+#
+#   Tool Settings:
+#     QA_AGENT_TOOL_TIMEOUT_SECONDS        Timeout per tool call (default: 30)
+#     QA_AGENT_TOOL_RETRIES               Maximum retries (default: 2)
+#     QA_AGENT_TOOL_RETRY_BACKOFF_SECONDS  Base backoff time (default: 1.5)
+#     QA_AGENT_TOOL_MAX_WORKERS           ThreadPool size (default: 8)
+#
+#   Logging Controls:
+#     QA_AGENT_TOOL_LOG_PAYLOAD           Tool payload logging (off|summary|full)
+#     QA_AGENT_RESULT_LOG_PAYLOAD         Result payload logging (off|summary|full)
+#     QA_AGENT_LOG_SPLIT_BY_THREAD        Enable per-thread log files (0|1)
+#
+# Dependencies
+#   • langchain-core: LLM interfaces and tools
+#   • langgraph: Graph orchestration
+#   • pydantic: Schema validation
+#   • pymongo: MongoDB operations
 # =============================================================================
 
 import asyncio
