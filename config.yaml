@@ -40,6 +40,3 @@ configurable:
   model_qa: gpt-4o
   temperature_qa: 0
   # reasoning_effort_qa: minimal
-
-  # Unique identifier for this run
-  thread_id: thread_27
