@@ -23,15 +23,16 @@
 #     underlying agents.
 # =============================================================================
 
-
 import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
+import pymongo
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from pymongo.errors import PyMongoError
 
 from src.agent.AgendaGenerationAgent import run_agenda_with_logging
 from src.mongo_tools import close_all_mongo_connections
@@ -121,6 +122,90 @@ class AgendaResultResponse(BaseModel):
 
 
 # ----------------------------
+# Mongo helpers (API-local upsertion of question guidelines)
+# ----------------------------
+def _mongo_env() -> tuple[str, str, str]:
+    """
+    Read Mongo env for guidelines upsert.
+    Expected:
+      MONGO_CLIENT, MONGO_DB, MONGO_QUESTION_GENERATION_COLLECTION
+    """
+    uri = os.environ.get("MONGO_CLIENT")
+    db = os.environ.get("MONGO_DB")
+    coll = os.environ.get("MONGO_QUESTION_GENERATION_COLLECTION")
+    missing = [
+        k
+        for k, v in {
+            "MONGO_CLIENT": uri,
+            "MONGO_DB": db,
+            "MONGO_QUESTION_GENERATION_COLLECTION": coll,
+        }.items()
+        if not v
+    ]
+    if missing:
+        raise RuntimeError(f"Missing Mongo env: {', '.join(missing)}")
+    return uri, db, coll
+
+
+def _upsert_question_guidelines(qg_payload: Optional[Dict[str, Any]]) -> None:
+    """
+    Upsert each guideline:
+      _id = question_type_name
+      doc = { _id, question_type_name, question_guidelines }
+    Ignores empty/malformed entries but logs warnings.
+    """
+    if not qg_payload or not isinstance(qg_payload, dict):
+        logger.info("No question_guidelines payload provided; skipping upsert.")
+        return
+
+    items = qg_payload.get("question_guidelines")
+    if not isinstance(items, list) or not items:
+        logger.info("question_guidelines list empty or invalid; skipping upsert.")
+        return
+
+    try:
+        uri, db_name, coll_name = _mongo_env()
+    except RuntimeError as e:
+        # Don't fail the whole job if env is absent; just log.
+        logger.warning("Guidelines upsert skipped: %s", e)
+        return
+
+    client = None
+    try:
+        client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=5000)
+        coll = client[db_name][coll_name]
+        upserted = 0
+        for raw in items:
+            if not isinstance(raw, dict):
+                logger.warning("Skipping non-dict guideline entry: %r", raw)
+                continue
+            name = str(raw.get("question_type_name", "")).strip()
+            text = str(raw.get("question_guidelines", "")).strip()
+            if not name:
+                logger.warning("Skipping guideline: empty 'question_type_name'")
+                continue
+            if not text:
+                logger.warning(
+                    "Skipping guideline '%s': empty 'question_guidelines'", name
+                )
+                continue
+
+            doc = {"_id": name, "question_type_name": name, "question_guidelines": text}
+            try:
+                coll.replace_one({"_id": name}, doc, upsert=True)
+                upserted += 1
+            except PyMongoError as e:
+                logger.error("Failed to upsert guideline '%s': %s", name, e)
+
+        logger.info("Question guidelines upsert complete | count=%d", upserted)
+    except PyMongoError as e:
+        logger.error("Mongo error during guidelines upsert: %s", e)
+    finally:
+        if client:
+            client.close()
+
+
+# ----------------------------
 # Helpers
 # ----------------------------
 def _normalize_output(otpt: Dict[str, Any]) -> Dict[str, Any]:
@@ -146,21 +231,27 @@ async def _run_job(job_id: str, req: AgendaRequest):
         JOBS[job_id]["status"] = "running"
         thread_id = JOBS[job_id]["thread_id"]
 
-        # Build InputSchema
+        # 1) API-local upsert of question guidelines (independent of pipeline)
+        _upsert_question_guidelines(req.question_guidelines)
+
+        # 2) Build InputSchema for the agenda pipeline
         inp = InputSchema(
             job_description=req.job_description,
             skill_tree=req.skill_tree,
             candidate_profile=req.candidate_profile,
-            # The pipeline accepts dict or model; keep structure the same as earlier usage
+            # Keep structure compatible with your pipeline
             question_guidelines=req.question_guidelines or {"question_guidelines": []},
         )
 
-        # Merge user-provided config, ensure thread_id flows to the graph
+        # 3) Merge config and ensure thread_id flows to the graph
         merged_config = (req.config or {}).copy()
         merged_config.setdefault("configurable", {})
         merged_config["configurable"].setdefault("thread_id", thread_id)
 
+        # 4) Run pipeline
         out = await run_agenda_with_logging(inp, merged_config)
+
+        # 5) Store result
         JOBS[job_id]["status"] = "done"
         JOBS[job_id]["result"] = _normalize_output(out)
     except Exception as e:
@@ -187,7 +278,6 @@ async def agenda_create(req: AgendaRequest):
     base_id = req.thread_id or f"thread_{os.urandom(4).hex()}"
     job_id = base_id  # keep them identical so logs and API ids match
     if job_id in JOBS:
-        # avoid accidental collision; extremely unlikely unless reused by caller
         job_id = f"{base_id}_{os.urandom(2).hex()}"
 
     JOBS[job_id] = {
@@ -196,7 +286,6 @@ async def agenda_create(req: AgendaRequest):
         "error": None,
         "thread_id": job_id,
     }
-    # Run-and-forget task
     asyncio.create_task(_run_job(job_id, req))
 
     return AgendaCreateResponse(job_id=job_id, status="queued", thread_id=job_id)
@@ -221,7 +310,6 @@ async def agenda_result(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="job_id not found")
     if job["status"] != "done":
-        # Return status until finished; client can poll
         return AgendaResultResponse(
             job_id=job_id,
             status=job["status"],

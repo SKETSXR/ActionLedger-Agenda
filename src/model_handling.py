@@ -282,7 +282,7 @@ if config["configurable"]["model_provider_qa"] == "openai":
         max_retries=max_retries_qa,
         temperature=temperature_qa,
         reasoning_effort=reasoning_effort_qa,
-        timeout=60,
+        timeout=120,
     )
 
 elif config["configurable"]["model_provider_qa"] == "google_genai":
