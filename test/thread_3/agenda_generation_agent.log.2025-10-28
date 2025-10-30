@@ -1,8 +1,0 @@
-2025-10-28 11:16:45,041 | INFO | agenda_generation_agent | tid=thread_3 | Agenda input prepared | input=<hidden>
-2025-10-28 11:16:50,588 | INFO | agenda_generation_agent | tid=thread_2 | Mongo upserts completed
-2025-10-28 11:17:00,688 | INFO | agenda_generation_agent | tid=thread_3 | Mongo upserts completed
-2025-10-28 11:23:03,146 | INFO | agenda_generation_agent | tid=thread_2 | Agenda output ready | output=<hidden>
-2025-10-28 11:23:37,862 | INFO | agenda_generation_agent | tid=thread_3 | Agenda output ready | output=<hidden>
-2025-10-28 14:12:17,043 | INFO | agenda_generation_agent | tid=thread_3 | Agenda input prepared | input=<hidden>
-2025-10-28 14:13:40,317 | INFO | agenda_generation_agent | tid=thread_3 | Mongo upserts completed
-2025-10-28 14:25:27,894 | INFO | agenda_generation_agent | tid=thread_3 | Agenda output ready | output=<hidden>
