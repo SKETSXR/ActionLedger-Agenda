@@ -45,22 +45,20 @@ from src.schema.input_schema import (
 
 APP_NAME = "agenda_api"
 logger = logging.getLogger(APP_NAME)
+
+# force this API to only show WARNING and above
 if not logger.handlers:
     logging.basicConfig(
-        level=getattr(
-            logging, os.getenv("AGENDA_API_LOG_LEVEL", "INFO").upper(), logging.INFO
-        ),
+        level=logging.WARNING,  # <- key change
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
 
-# Simple in-memory job store. Swap with Redis/Celery/RQ in prod.
-# JOBS[job_id] = {"status": "queued|running|done|error", "result": dict|None, "error": str|None, "thread_id": str}
+# Simple in-memory job store
 JOBS: Dict[str, Dict[str, Any]] = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ---- STARTUP ----
     try:
         pass
     except Exception:
@@ -69,7 +67,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # ---- SHUTDOWN ----
     try:
         close_all_mongo_connections()
     except Exception:
@@ -122,14 +119,9 @@ class AgendaResultResponse(BaseModel):
 
 
 # ----------------------------
-# Mongo helpers (API-local upsertion of question guidelines)
+# Mongo helpers
 # ----------------------------
 def _mongo_env() -> tuple[str, str, str]:
-    """
-    Read Mongo env for guidelines upsert.
-    Expected:
-      MONGO_CLIENT, MONGO_DB, MONGO_QUESTION_GENERATION_COLLECTION
-    """
     uri = os.environ.get("MONGO_CLIENT")
     db = os.environ.get("MONGO_DB")
     coll = os.environ.get("MONGO_QUESTION_GENERATION_COLLECTION")
@@ -152,21 +144,21 @@ def _upsert_question_guidelines(qg_payload: Optional[Dict[str, Any]]) -> None:
     Upsert each guideline:
       _id = question_type_name
       doc = { _id, question_type_name, question_guidelines }
-    Ignores empty/malformed entries but logs warnings.
+    Only WARNING/ERROR logs are allowed here.
     """
     if not qg_payload or not isinstance(qg_payload, dict):
-        logger.info("No question_guidelines payload provided; skipping upsert.")
+        # was: logger.info(...)
         return
 
     items = qg_payload.get("question_guidelines")
     if not isinstance(items, list) or not items:
-        logger.info("question_guidelines list empty or invalid; skipping upsert.")
+        # was: logger.info(...)
         return
 
     try:
         uri, db_name, coll_name = _mongo_env()
     except RuntimeError as e:
-        # Don't fail the whole job if env is absent; just log.
+        # this is an actual issue, so WARNING
         logger.warning("Guidelines upsert skipped: %s", e)
         return
 
@@ -174,10 +166,9 @@ def _upsert_question_guidelines(qg_payload: Optional[Dict[str, Any]]) -> None:
     try:
         client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=5000)
         coll = client[db_name][coll_name]
-        upserted = 0
         for raw in items:
             if not isinstance(raw, dict):
-                logger.warning("Skipping non-dict guideline entry: %r", raw)
+                logger.warning("Skipping non-dictionary guideline entry: %r", raw)
                 continue
             name = str(raw.get("question_type_name", "")).strip()
             text = str(raw.get("question_guidelines", "")).strip()
@@ -193,11 +184,11 @@ def _upsert_question_guidelines(qg_payload: Optional[Dict[str, Any]]) -> None:
             doc = {"_id": name, "question_type_name": name, "question_guidelines": text}
             try:
                 coll.replace_one({"_id": name}, doc, upsert=True)
-                upserted += 1
             except PyMongoError as e:
                 logger.error("Failed to upsert guideline '%s': %s", name, e)
 
-        logger.info("Question guidelines upsert complete | count=%d", upserted)
+        # was: logger.info("Question guidelines upsert complete ...")
+        # skip info
     except PyMongoError as e:
         logger.error("Mongo error during guidelines upsert: %s", e)
     finally:
@@ -209,7 +200,6 @@ def _upsert_question_guidelines(qg_payload: Optional[Dict[str, Any]]) -> None:
 # Helpers
 # ----------------------------
 def _normalize_output(otpt: Dict[str, Any]) -> Dict[str, Any]:
-    """Convert Pydantic models / dicts into plain JSON-able dicts."""
     norm: Dict[str, Any] = {}
     for k, v in otpt.items():
         key = str(k)
@@ -226,38 +216,26 @@ def _normalize_output(otpt: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def _run_job(job_id: str, req: AgendaRequest):
-    """Background task: executes the agenda pipeline and caches the result."""
     try:
         JOBS[job_id]["status"] = "running"
-        thread_id = JOBS[job_id]["thread_id"]
 
-        # 1) API-local upsert of question guidelines (independent of pipeline)
         _upsert_question_guidelines(req.question_guidelines)
 
-        # 2) Build InputSchema for the agenda pipeline
         inp = InputSchema(
             job_description=req.job_description,
             skill_tree=req.skill_tree,
             candidate_profile=req.candidate_profile,
-            # Keep structure compatible with your pipeline
             question_guidelines=req.question_guidelines or {"question_guidelines": []},
         )
 
-        # 3) Merge config and ensure thread_id flows to the graph
-        merged_config = (req.config or {}).copy()
-        merged_config.setdefault("configurable", {})
-        merged_config["configurable"].setdefault("thread_id", thread_id)
+        # pass config as-is if you like, or wrap it
+        out = await run_agenda_with_logging(inp, {"thread_id": req.thread_id})
 
-        # 4) Run pipeline
-        out = await run_agenda_with_logging(inp, merged_config)
-
-        # 5) Store result
         JOBS[job_id]["status"] = "done"
         JOBS[job_id]["result"] = _normalize_output(out)
     except Exception as e:
         JOBS[job_id]["status"] = "error"
         JOBS[job_id]["error"] = str(e)
-        logger.exception("Job %s failed", job_id)
 
 
 # ----------------------------
@@ -270,15 +248,9 @@ async def health():
 
 @app.post("/agenda_create", response_model=AgendaCreateResponse, status_code=202)
 async def agenda_create(req: AgendaRequest):
-    """
-    Enqueue a long-running agenda generation task.
-    Returns immediately with a job_id and thread_id.
-    """
-    # Use provided thread_id or derive from job_id for consistent per-thread logs
-    base_id = req.thread_id or f"thread_{os.urandom(4).hex()}"
-    job_id = base_id  # keep them identical so logs and API ids match
-    if job_id in JOBS:
-        job_id = f"{base_id}_{os.urandom(2).hex()}"
+    job_id = req.thread_id
+    if not job_id:
+        raise HTTPException(status_code=400, detail="thread_id is required")
 
     JOBS[job_id] = {
         "status": "queued",

@@ -1,0 +1,177 @@
+2025-10-28 11:18:08,480 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 11:18:09,679 | INFO | nodes_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:18:09,679 | INFO | nodes_agent | tid=thread_2 | Tool plan:
+2025-10-28 11:18:09,679 | INFO | nodes_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:18:09,680 | INFO | nodes_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:18:09,686 | INFO | nodes_agent | tid=thread_2 | Tool results:
+2025-10-28 11:18:09,687 | INFO | nodes_agent | tid=thread_2 |   result -> id=call_Hct1nIdFq18CcLV6qbx4z9hc data=<hidden>
+2025-10-28 11:18:09,687 | INFO | nodes_agent | tid=thread_2 |   result -> id=call_j2v73Mdqwf2aGoVoPsVSrWrF data=<hidden>
+2025-10-28 11:18:09,687 | INFO | nodes_agent | tid=thread_2 | Calling LLM (agent)
+2025-10-28 11:18:11,813 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:18:11,814 | INFO | nodes_agent | tid=thread_3 | Tool plan:
+2025-10-28 11:18:11,814 | INFO | nodes_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:18:11,814 | INFO | nodes_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:18:11,817 | INFO | nodes_agent | tid=thread_3 | Tool results:
+2025-10-28 11:18:11,817 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_yst4fRTfR2huaW3Q2aGqgOqJ data=<hidden>
+2025-10-28 11:18:11,817 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_PP6ofpS7sUdQbugCKYh0GpMb data=<hidden>
+2025-10-28 11:18:11,818 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 11:18:13,897 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:18:13,898 | INFO | nodes_agent | tid=thread_3 | Tool plan:
+2025-10-28 11:18:13,898 | INFO | nodes_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:18:13,898 | INFO | nodes_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:18:13,906 | INFO | nodes_agent | tid=thread_3 | Tool results:
+2025-10-28 11:18:13,906 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_a0k8fcd6ho0UWlhinlTvyuDl data=<hidden>
+2025-10-28 11:18:13,906 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_zauEE5oLUjD8S68p8ASD8hw0 data=<hidden>
+2025-10-28 11:18:13,906 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 11:18:26,760 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:18:26,764 | INFO | nodes_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 11:18:27,910 | INFO | nodes_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:18:27,911 | INFO | nodes_agent | tid=thread_2 | Calling LLM (structured)
+2025-10-28 11:18:30,575 | INFO | nodes_agent | tid=thread_3 | LLM (structured) call succeeded
+2025-10-28 11:18:30,576 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 11:18:30,706 | INFO | nodes_agent | tid=thread_2 | LLM (structured) call succeeded
+2025-10-28 11:18:30,708 | INFO | nodes_agent | tid=thread_2 | Calling LLM (agent)
+2025-10-28 11:18:33,299 | INFO | nodes_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:18:33,300 | INFO | nodes_agent | tid=thread_2 | Tool plan:
+2025-10-28 11:18:33,300 | INFO | nodes_agent | tid=thread_2 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:18:33,300 | INFO | nodes_agent | tid=thread_2 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:18:33,302 | INFO | nodes_agent | tid=thread_2 | Tool results:
+2025-10-28 11:18:33,302 | INFO | nodes_agent | tid=thread_2 |   result -> id=call_uI3L6pP9zCMVEXAlW1t5SI1q data=<hidden>
+2025-10-28 11:18:33,302 | INFO | nodes_agent | tid=thread_2 |   result -> id=call_xeynBLBfSZ9kOZaEFzIybBmN data=<hidden>
+2025-10-28 11:18:33,302 | INFO | nodes_agent | tid=thread_2 | Calling LLM (agent)
+2025-10-28 11:18:33,634 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:18:33,635 | INFO | nodes_agent | tid=thread_3 | Tool plan:
+2025-10-28 11:18:33,636 | INFO | nodes_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:18:33,636 | INFO | nodes_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:18:33,640 | INFO | nodes_agent | tid=thread_3 | Tool results:
+2025-10-28 11:18:33,640 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_RWh1SW3qxb4kb8Pvf2JtMPMn data=<hidden>
+2025-10-28 11:18:33,641 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_BVUaNqzzGOtfmc8wBHXPkaDD data=<hidden>
+2025-10-28 11:18:33,641 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 11:18:35,788 | INFO | nodes_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:18:35,788 | INFO | nodes_agent | tid=thread_2 | Tool plan:
+2025-10-28 11:18:35,789 | INFO | nodes_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:18:35,789 | INFO | nodes_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:18:35,796 | INFO | nodes_agent | tid=thread_2 | Tool results:
+2025-10-28 11:18:35,797 | INFO | nodes_agent | tid=thread_2 |   result -> id=call_GgPbUxtlQWhkEaV8C9dZFUQn data=<hidden>
+2025-10-28 11:18:35,797 | INFO | nodes_agent | tid=thread_2 |   result -> id=call_12NPl2r9Stt3kcLZqnUhurVU data=<hidden>
+2025-10-28 11:18:35,797 | INFO | nodes_agent | tid=thread_2 | Calling LLM (agent)
+2025-10-28 11:18:36,120 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:18:36,122 | INFO | nodes_agent | tid=thread_3 | Tool plan:
+2025-10-28 11:18:36,123 | INFO | nodes_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:18:36,123 | INFO | nodes_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:18:36,133 | INFO | nodes_agent | tid=thread_3 | Tool results:
+2025-10-28 11:18:36,133 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_hxzu3e9cgzcpaayCebHIJENY data=<hidden>
+2025-10-28 11:18:36,133 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_XmvGkF6PPNfUXSDLDinUp9mX data=<hidden>
+2025-10-28 11:18:36,134 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 11:18:44,784 | INFO | nodes_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:18:44,788 | INFO | nodes_agent | tid=thread_2 | Calling LLM (structured)
+2025-10-28 11:18:48,853 | INFO | nodes_agent | tid=thread_2 | LLM (structured) call succeeded
+2025-10-28 11:18:48,854 | INFO | nodes_agent | tid=thread_2 | Calling LLM (agent)
+2025-10-28 11:18:52,315 | INFO | nodes_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:18:52,316 | INFO | nodes_agent | tid=thread_2 | Tool plan:
+2025-10-28 11:18:52,317 | INFO | nodes_agent | tid=thread_2 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:18:52,317 | INFO | nodes_agent | tid=thread_2 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:18:52,320 | INFO | nodes_agent | tid=thread_2 | Tool results:
+2025-10-28 11:18:52,321 | INFO | nodes_agent | tid=thread_2 |   result -> id=call_mmURVxt7kYIQDtScuAtrcpEI data=<hidden>
+2025-10-28 11:18:52,321 | INFO | nodes_agent | tid=thread_2 |   result -> id=call_JvbclfN75LDYfIO0IBTLMQnt data=<hidden>
+2025-10-28 11:18:52,321 | INFO | nodes_agent | tid=thread_2 | Calling LLM (agent)
+2025-10-28 11:18:53,636 | INFO | nodes_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:18:53,638 | INFO | nodes_agent | tid=thread_2 | Tool plan:
+2025-10-28 11:18:53,638 | INFO | nodes_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:18:53,639 | INFO | nodes_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:18:53,649 | INFO | nodes_agent | tid=thread_2 | Tool results:
+2025-10-28 11:18:53,649 | INFO | nodes_agent | tid=thread_2 |   result -> id=call_KTEFpttCmfSfPgvKxVQNx03W data=<hidden>
+2025-10-28 11:18:53,649 | INFO | nodes_agent | tid=thread_2 |   result -> id=call_gTu5jP217EbgFZqQU7lobYRh data=<hidden>
+2025-10-28 11:18:53,649 | INFO | nodes_agent | tid=thread_2 | Calling LLM (agent)
+2025-10-28 11:18:58,935 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:18:58,939 | INFO | nodes_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 11:19:04,739 | INFO | nodes_agent | tid=thread_3 | LLM (structured) call succeeded
+2025-10-28 11:19:04,742 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 11:19:09,862 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:19:09,862 | INFO | nodes_agent | tid=thread_3 | Tool plan:
+2025-10-28 11:19:09,864 | INFO | nodes_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:19:09,865 | INFO | nodes_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:19:09,868 | INFO | nodes_agent | tid=thread_3 | Tool results:
+2025-10-28 11:19:09,868 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_IBYQbD5hlBtHMiUhPnpJdIgX data=<hidden>
+2025-10-28 11:19:09,868 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_gcx0tR8vwBnxq1afgxOChUtT data=<hidden>
+2025-10-28 11:19:09,868 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 11:19:15,230 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:19:15,231 | INFO | nodes_agent | tid=thread_3 | Tool plan:
+2025-10-28 11:19:15,232 | INFO | nodes_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:19:15,232 | INFO | nodes_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:19:15,241 | INFO | nodes_agent | tid=thread_3 | Tool results:
+2025-10-28 11:19:15,241 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_Bt5vvjS7Y46VjTI5yGiqDiev data=<hidden>
+2025-10-28 11:19:15,241 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_iiQmUIpzHmkb9CsEC17fZSla data=<hidden>
+2025-10-28 11:19:15,241 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 11:19:20,522 | INFO | nodes_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:19:20,526 | INFO | nodes_agent | tid=thread_2 | Calling LLM (structured)
+2025-10-28 11:19:25,096 | INFO | nodes_agent | tid=thread_2 | LLM (structured) call succeeded
+2025-10-28 11:19:25,098 | INFO | nodes_agent | tid=thread_2 | Nodes generated before retry checks | output=<hidden>
+2025-10-28 11:19:25,099 | INFO | nodes_agent | tid=thread_2 | Nodes generation successfully completed | output=<hidden>
+2025-10-28 11:19:38,205 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:19:38,207 | INFO | nodes_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 11:19:42,548 | INFO | nodes_agent | tid=thread_3 | LLM (structured) call succeeded
+2025-10-28 11:19:42,549 | INFO | nodes_agent | tid=thread_3 | Nodes generated before retry checks | output=<hidden>
+2025-10-28 11:19:42,550 | INFO | nodes_agent | tid=thread_3 | Nodes generation successfully completed | output=<hidden>
+2025-10-28 14:15:51,800 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 14:15:55,100 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:15:55,101 | INFO | nodes_agent | tid=thread_3 | Tool plan:
+2025-10-28 14:15:55,101 | INFO | nodes_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 14:15:55,101 | INFO | nodes_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 14:15:55,103 | INFO | nodes_agent | tid=thread_3 | Tool results:
+2025-10-28 14:15:55,103 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_ZHSihqVkd71v88UMJh0YIJTD data=<hidden>
+2025-10-28 14:15:55,103 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_JwkJf6xhEdoh8zl8KnmOjaTK data=<hidden>
+2025-10-28 14:15:55,103 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 14:15:57,491 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:15:57,492 | INFO | nodes_agent | tid=thread_3 | Tool plan:
+2025-10-28 14:15:57,493 | INFO | nodes_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 14:15:57,493 | INFO | nodes_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 14:15:57,502 | INFO | nodes_agent | tid=thread_3 | Tool results:
+2025-10-28 14:15:57,503 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_TwrOSkGN7b7plZAOR7DdJuw9 data=<hidden>
+2025-10-28 14:15:57,503 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_WiWh2vHvntqOaxjlOKXMBM0N data=<hidden>
+2025-10-28 14:15:57,503 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 14:16:08,069 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:16:08,071 | INFO | nodes_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 14:16:13,383 | INFO | nodes_agent | tid=thread_3 | LLM (structured) call succeeded
+2025-10-28 14:16:13,387 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 14:16:15,281 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:16:15,281 | INFO | nodes_agent | tid=thread_3 | Tool plan:
+2025-10-28 14:16:15,281 | INFO | nodes_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 14:16:15,281 | INFO | nodes_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 14:16:15,283 | INFO | nodes_agent | tid=thread_3 | Tool results:
+2025-10-28 14:16:15,285 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_R1nFC8p6PEyCDowQPYQiUPtQ data=<hidden>
+2025-10-28 14:16:15,286 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_MrtgaQLEt8ahXqnjUewM1h8g data=<hidden>
+2025-10-28 14:16:15,286 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 14:16:17,016 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:16:17,017 | INFO | nodes_agent | tid=thread_3 | Tool plan:
+2025-10-28 14:16:17,017 | INFO | nodes_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 14:16:17,019 | INFO | nodes_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 14:16:17,030 | INFO | nodes_agent | tid=thread_3 | Tool results:
+2025-10-28 14:16:17,030 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_JGeaUo1hGoALjX3PEkJ2BEeq data=<hidden>
+2025-10-28 14:16:17,030 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_NbhGm0woVjcPxz0xKYUba3ky data=<hidden>
+2025-10-28 14:16:17,030 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 14:16:30,423 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:16:30,426 | INFO | nodes_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 14:16:35,170 | INFO | nodes_agent | tid=thread_3 | LLM (structured) call succeeded
+2025-10-28 14:16:35,172 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 14:16:39,354 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:16:39,356 | INFO | nodes_agent | tid=thread_3 | Tool plan:
+2025-10-28 14:16:39,357 | INFO | nodes_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 14:16:39,358 | INFO | nodes_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 14:16:39,362 | INFO | nodes_agent | tid=thread_3 | Tool results:
+2025-10-28 14:16:39,362 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_QfjqzB456RESHU5FNFjtMQcG data=<hidden>
+2025-10-28 14:16:39,363 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_4WBFUMOx7Mu1Ncm8TkKYhRal data=<hidden>
+2025-10-28 14:16:39,363 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 14:16:41,309 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:16:41,310 | INFO | nodes_agent | tid=thread_3 | Tool plan:
+2025-10-28 14:16:41,310 | INFO | nodes_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 14:16:41,311 | INFO | nodes_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 14:16:41,321 | INFO | nodes_agent | tid=thread_3 | Tool results:
+2025-10-28 14:16:41,321 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_umawZE9dwoqwLkC3w2M8Hb8I data=<hidden>
+2025-10-28 14:16:41,321 | INFO | nodes_agent | tid=thread_3 |   result -> id=call_DdEZtC5F4cuaHNl1JQjaI6A7 data=<hidden>
+2025-10-28 14:16:41,321 | INFO | nodes_agent | tid=thread_3 | Calling LLM (agent)
+2025-10-28 14:17:22,857 | INFO | nodes_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:17:22,859 | INFO | nodes_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 14:17:26,254 | INFO | nodes_agent | tid=thread_3 | LLM (structured) call succeeded
+2025-10-28 14:17:26,255 | INFO | nodes_agent | tid=thread_3 | Nodes generated before retry checks | output=<hidden>
+2025-10-28 14:17:26,256 | INFO | nodes_agent | tid=thread_3 | Nodes generation successfully completed | output=<hidden>

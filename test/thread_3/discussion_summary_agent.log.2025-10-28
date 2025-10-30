@@ -1,0 +1,127 @@
+2025-10-28 11:17:29,606 | INFO | discussion_summary_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 11:17:29,607 | INFO | discussion_summary_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 11:17:29,608 | INFO | discussion_summary_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 11:17:32,637 | INFO | discussion_summary_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:17:32,639 | INFO | discussion_summary_agent | tid=thread_3 | Tool plan:
+2025-10-28 11:17:32,640 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:32,640 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:32,654 | INFO | discussion_summary_agent | tid=thread_3 | Tool results:
+2025-10-28 11:17:32,654 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_qAhUnfvw3Mn7x6Zxg6Qd6guU data=<hidden>
+2025-10-28 11:17:32,655 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_Bqn1RhEoIwrV0vmjyVPAL8vp data=<hidden>
+2025-10-28 11:17:32,655 | INFO | discussion_summary_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 11:17:33,704 | INFO | discussion_summary_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:17:33,705 | INFO | discussion_summary_agent | tid=thread_3 | Tool plan:
+2025-10-28 11:17:33,706 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:33,706 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:33,717 | INFO | discussion_summary_agent | tid=thread_3 | Tool results:
+2025-10-28 11:17:33,717 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_f9o5zFQyW1zCVahZow1loFFP data=<hidden>
+2025-10-28 11:17:33,717 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_LMHLtVunWbTlojffJU9QXsv2 data=<hidden>
+2025-10-28 11:17:33,718 | INFO | discussion_summary_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 11:17:35,001 | INFO | discussion_summary_agent | tid=thread_2 | Calling LLM (structured)
+2025-10-28 11:17:35,004 | INFO | discussion_summary_agent | tid=thread_2 | Calling LLM (structured)
+2025-10-28 11:17:35,004 | INFO | discussion_summary_agent | tid=thread_2 | Calling LLM (structured)
+2025-10-28 11:17:36,483 | INFO | discussion_summary_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:17:36,486 | INFO | discussion_summary_agent | tid=thread_2 | Tool plan:
+2025-10-28 11:17:36,487 | INFO | discussion_summary_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:36,488 | INFO | discussion_summary_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:36,489 | INFO | discussion_summary_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:36,503 | INFO | discussion_summary_agent | tid=thread_2 | Tool results:
+2025-10-28 11:17:36,503 | INFO | discussion_summary_agent | tid=thread_2 |   result -> id=call_ReaR1R79iaIEKP2wQ0tOqQEv data=<hidden>
+2025-10-28 11:17:36,503 | INFO | discussion_summary_agent | tid=thread_2 |   result -> id=call_TZnmGwd4zwm9w4DejulDIFYk data=<hidden>
+2025-10-28 11:17:36,503 | INFO | discussion_summary_agent | tid=thread_2 |   result -> id=call_AgA7ceojioufepWAe3jMdSzk data=<hidden>
+2025-10-28 11:17:36,503 | INFO | discussion_summary_agent | tid=thread_2 | Calling LLM (structured)
+2025-10-28 11:17:37,954 | INFO | discussion_summary_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:17:37,955 | INFO | discussion_summary_agent | tid=thread_2 | Tool plan:
+2025-10-28 11:17:37,955 | INFO | discussion_summary_agent | tid=thread_2 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:17:37,955 | INFO | discussion_summary_agent | tid=thread_2 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:17:37,957 | INFO | discussion_summary_agent | tid=thread_2 | Tool results:
+2025-10-28 11:17:37,957 | INFO | discussion_summary_agent | tid=thread_2 |   result -> id=call_HiLFMTt7GeY32gsRuCZ721km data=<hidden>
+2025-10-28 11:17:37,958 | INFO | discussion_summary_agent | tid=thread_2 |   result -> id=call_CVxHqcWmXVE5cHoZMMTpuDwH data=<hidden>
+2025-10-28 11:17:37,958 | INFO | discussion_summary_agent | tid=thread_2 | Calling LLM (structured)
+2025-10-28 11:17:38,983 | INFO | discussion_summary_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:17:38,985 | INFO | discussion_summary_agent | tid=thread_2 | Tool plan:
+2025-10-28 11:17:38,986 | INFO | discussion_summary_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:38,987 | INFO | discussion_summary_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:38,988 | INFO | discussion_summary_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:39,003 | INFO | discussion_summary_agent | tid=thread_2 | Tool results:
+2025-10-28 11:17:39,003 | INFO | discussion_summary_agent | tid=thread_2 |   result -> id=call_AfnHYuZZPhh19rMcPCfQmsNs data=<hidden>
+2025-10-28 11:17:39,003 | INFO | discussion_summary_agent | tid=thread_2 |   result -> id=call_ihNOdTLw8dNXgMEgVf1sN7j4 data=<hidden>
+2025-10-28 11:17:39,003 | INFO | discussion_summary_agent | tid=thread_2 |   result -> id=call_1AqzfT3GGBQhtVatvg8EUYEt data=<hidden>
+2025-10-28 11:17:39,003 | INFO | discussion_summary_agent | tid=thread_2 | Calling LLM (structured)
+2025-10-28 11:17:39,256 | INFO | discussion_summary_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:17:39,257 | INFO | discussion_summary_agent | tid=thread_2 | Tool plan:
+2025-10-28 11:17:39,258 | INFO | discussion_summary_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:39,259 | INFO | discussion_summary_agent | tid=thread_2 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:39,269 | INFO | discussion_summary_agent | tid=thread_2 | Tool results:
+2025-10-28 11:17:39,269 | INFO | discussion_summary_agent | tid=thread_2 |   result -> id=call_v65UwBvVNYga5xWj5KKYouph data=<hidden>
+2025-10-28 11:17:39,269 | INFO | discussion_summary_agent | tid=thread_2 |   result -> id=call_O0DQB4MuY2kXj8mqArvyyNTb data=<hidden>
+2025-10-28 11:17:39,269 | INFO | discussion_summary_agent | tid=thread_2 | Calling LLM (structured)
+2025-10-28 11:17:40,259 | INFO | discussion_summary_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:17:40,264 | INFO | discussion_summary_agent | tid=thread_2 | Coercion succeeded (during pydantic model instantiation tests).
+2025-10-28 11:17:46,257 | INFO | discussion_summary_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:17:46,260 | INFO | discussion_summary_agent | tid=thread_3 | Coercion succeeded (during pydantic model instantiation tests).
+2025-10-28 11:17:55,065 | INFO | discussion_summary_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:17:55,066 | INFO | discussion_summary_agent | tid=thread_3 | Coercion succeeded (during pydantic model instantiation tests).
+2025-10-28 11:17:55,147 | INFO | discussion_summary_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:17:55,148 | INFO | discussion_summary_agent | tid=thread_3 | Tool plan:
+2025-10-28 11:17:55,148 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:17:55,148 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> mongodb_query_checker args=<hidden>
+2025-10-28 11:17:55,151 | INFO | discussion_summary_agent | tid=thread_3 | Tool results:
+2025-10-28 11:17:55,151 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_0EMP5nLXHjIPibBr7An92FpA data=<hidden>
+2025-10-28 11:17:55,151 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_AscwIuEHindyjPxDU4gyHpxk data=<hidden>
+2025-10-28 11:17:55,151 | INFO | discussion_summary_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 11:17:56,741 | INFO | discussion_summary_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:17:56,742 | INFO | discussion_summary_agent | tid=thread_3 | Tool plan:
+2025-10-28 11:17:56,743 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:56,744 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 11:17:56,754 | INFO | discussion_summary_agent | tid=thread_3 | Tool results:
+2025-10-28 11:17:56,754 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_Xz15IohEaV9j8M10oRnGlNaU data=<hidden>
+2025-10-28 11:17:56,755 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_FooOvAKiZGlUZtXCe97Zj1oe data=<hidden>
+2025-10-28 11:17:56,755 | INFO | discussion_summary_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 11:17:59,331 | INFO | discussion_summary_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:17:59,333 | INFO | discussion_summary_agent | tid=thread_2 | Coercion succeeded (during pydantic model instantiation tests).
+2025-10-28 11:18:02,992 | INFO | discussion_summary_agent | tid=thread_2 | LLM (agent) call succeeded
+2025-10-28 11:18:02,993 | INFO | discussion_summary_agent | tid=thread_2 | Coercion succeeded (during pydantic model instantiation tests).
+2025-10-28 11:18:02,994 | INFO | discussion_summary_agent | tid=thread_2 | Per-topic discussion summaries generated before retry checks | output=<hidden>
+2025-10-28 11:18:02,994 | INFO | discussion_summary_agent | tid=thread_2 | Per-topic discussion summaries generated successfully | output=<hidden>
+2025-10-28 11:18:08,476 | INFO | discussion_summary_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 11:18:08,477 | INFO | discussion_summary_agent | tid=thread_3 | Coercion succeeded (during pydantic model instantiation tests).
+2025-10-28 11:18:08,477 | INFO | discussion_summary_agent | tid=thread_3 | Per-topic discussion summaries generated before retry checks | output=<hidden>
+2025-10-28 11:18:08,478 | INFO | discussion_summary_agent | tid=thread_3 | Per-topic discussion summaries generated successfully | output=<hidden>
+2025-10-28 14:15:18,313 | INFO | discussion_summary_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 14:15:18,316 | INFO | discussion_summary_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 14:15:18,316 | INFO | discussion_summary_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 14:15:20,097 | INFO | discussion_summary_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:15:20,099 | INFO | discussion_summary_agent | tid=thread_3 | Tool plan:
+2025-10-28 14:15:20,100 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 14:15:20,101 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 14:15:20,102 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 14:15:20,112 | INFO | discussion_summary_agent | tid=thread_3 | Tool results:
+2025-10-28 14:15:20,112 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_xBnMyWa8fWSbAwr1ZQzpIVOD data=<hidden>
+2025-10-28 14:15:20,113 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_mBxwzRNMjXLcx8AxiIAtogrQ data=<hidden>
+2025-10-28 14:15:20,114 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_rvRBW9ZBX8UYXW9XQnlnpi7e data=<hidden>
+2025-10-28 14:15:20,114 | INFO | discussion_summary_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 14:15:21,775 | INFO | discussion_summary_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:15:21,777 | INFO | discussion_summary_agent | tid=thread_3 | Tool plan:
+2025-10-28 14:15:21,778 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 14:15:21,778 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 14:15:21,787 | INFO | discussion_summary_agent | tid=thread_3 | Tool results:
+2025-10-28 14:15:21,787 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_Dah8FlDcjutrGg4W5BBjix54 data=<hidden>
+2025-10-28 14:15:21,787 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_aGXH80t86bazwBaTfNVgzcqg data=<hidden>
+2025-10-28 14:15:21,787 | INFO | discussion_summary_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 14:15:21,961 | INFO | discussion_summary_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:15:21,962 | INFO | discussion_summary_agent | tid=thread_3 | Tool plan:
+2025-10-28 14:15:21,962 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 14:15:21,962 | INFO | discussion_summary_agent | tid=thread_3 |   planned -> custom_mongodb_query args=<hidden>
+2025-10-28 14:15:21,967 | INFO | discussion_summary_agent | tid=thread_3 | Tool results:
+2025-10-28 14:15:21,968 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_MGJik5ZsKhFpYdbunj8LsUi1 data=<hidden>
+2025-10-28 14:15:21,968 | INFO | discussion_summary_agent | tid=thread_3 |   result -> id=call_JHXXeWCxVIj3ZTw5CwTGAW1Z data=<hidden>
+2025-10-28 14:15:21,968 | INFO | discussion_summary_agent | tid=thread_3 | Calling LLM (structured)
+2025-10-28 14:15:28,812 | INFO | discussion_summary_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:15:28,813 | INFO | discussion_summary_agent | tid=thread_3 | Coercion succeeded (during pydantic model instantiation tests).
+2025-10-28 14:15:41,998 | INFO | discussion_summary_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:15:42,004 | INFO | discussion_summary_agent | tid=thread_3 | Coercion succeeded (during pydantic model instantiation tests).
+2025-10-28 14:15:51,789 | INFO | discussion_summary_agent | tid=thread_3 | LLM (agent) call succeeded
+2025-10-28 14:15:51,793 | INFO | discussion_summary_agent | tid=thread_3 | Coercion succeeded (during pydantic model instantiation tests).
+2025-10-28 14:15:51,794 | INFO | discussion_summary_agent | tid=thread_3 | Per-topic discussion summaries generated before retry checks | output=<hidden>
+2025-10-28 14:15:51,795 | INFO | discussion_summary_agent | tid=thread_3 | Per-topic discussion summaries generated successfully | output=<hidden>
