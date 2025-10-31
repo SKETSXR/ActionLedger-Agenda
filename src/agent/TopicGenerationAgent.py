@@ -99,7 +99,10 @@ from src.schema.output_schema import CollectiveInterviewTopicSchema
 
 AGENT_NAME = "topic_generation_agent"
 
-FEEDBACK_HEADER = "<Please don't miss/skip on any of these skills from the provided MUST_SKILLS set in your focus areas of the last topic of General Skill Assessment>\n"
+FEEDBACK_HEADER = (
+    "<Please don't miss/skip on any of these skills from the provided "
+    "MUST_SKILLS set in your focus areas of the last topic of General Skill Assessment>\n"
+)
 
 
 @dataclass(frozen=True)
@@ -136,13 +139,11 @@ class TopicAgentConfig:
     split_log_by_thread: bool = os.getenv(
         "TOPIC_AGENT_LOG_SPLIT_BY_THREAD", "1"
     ).strip().lower() in ("1", "true", "yes", "y")
-    # --- Feedback logging toggle + level ---
-    # If False: feedback is accumulated in state but NOT printed to logs.
+    # Feedback logging toggle
     log_feedbacks: bool = os.getenv(
         "TOPIC_AGENT_LOG_FEEDBACKS", "0"
     ).strip().lower() in ("1", "true", "yes", "y")
 
-    # Level at which feedback bodies are printed (e.g. DEBUG to keep logs tidy).
     feedback_log_level: str = (
         os.getenv("TOPIC_AGENT_FEEDBACK_LOG_LEVEL", "INFO").strip().upper()
     )
@@ -152,9 +153,6 @@ CFG = TopicAgentConfig()
 
 # Single shared executor for sync tools with timeouts
 _EXECUTOR = ThreadPoolExecutor(max_workers=CFG.tool_max_workers)
-
-# Global counter for outer-loop retry logs
-_topic_retry_counter = 1
 
 # Thread id for logging context
 THREAD_ID_VAR: ContextVar[str] = ContextVar("thread_id", default="-")
@@ -173,7 +171,7 @@ class _ThreadIdFilter(logging.Filter):
 _THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
 
 
-def shutdown_executor():
+def shutdown_executor() -> None:
     # Graceful shutdown; cancel any pending futures when supported.
     try:
         _EXECUTOR.shutdown(wait=True, cancel_futures=True)
@@ -188,16 +186,19 @@ _CANON_RE = re.compile(r"\s+")
 
 
 def canon(s: str) -> str:
-    # canonical form: lowercase, strip, single space
+    """
+    Canonicalize skill names: lowercase, strip, single-space.
+    """
     return _CANON_RE.sub(" ", (s or "").strip().lower())
 
 
-def build_skill_index(skill_tree) -> dict[str, str]:
+def build_skill_index(skill_tree) -> Dict[str, str]:
     """
     Flatten level-3 skills into {canonical_name: original_name}
     so that we always match against what the user actually defined.
+    Dynamic skill-tree friendly.
     """
-    idx: dict[str, str] = {}
+    idx: Dict[str, str] = {}
 
     if not getattr(skill_tree, "children", None):
         return idx
@@ -213,16 +214,16 @@ def build_skill_index(skill_tree) -> dict[str, str]:
     return idx
 
 
-def resolve_to_known_skill(raw: str, known: dict[str, str]) -> str | None:
+def resolve_to_known_skill(raw: str, known: Dict[str, str]) -> Optional[str]:
     """
     Try to map a focus-area string to one of the skill-tree leaves.
 
     Order:
       1. exact canonical match
-      2. prefix match on canonical (for small spelling/style diffs)
-      3. containment match (focus contains canonical leaf)
+      2. prefix match (either side) for small style diffs
+      3. containment (subset) match
 
-    This is intentionally simple and explainable.
+    This keeps the mapping explainable and avoids brittle LLM-only validation.
     """
     c = canon(raw)
     if not c:
@@ -232,7 +233,7 @@ def resolve_to_known_skill(raw: str, known: dict[str, str]) -> str | None:
     if c in known:
         return known[c]
 
-    # 2) prefix (known startswith focus or focus startswith known)
+    # 2) prefix
     for kc, orig in known.items():
         if c.startswith(kc) or kc.startswith(c):
             return orig
@@ -247,21 +248,18 @@ def resolve_to_known_skill(raw: str, known: dict[str, str]) -> str | None:
 
 def _classify_provider_error(exc: Exception) -> tuple[str, Dict[str, Any]]:
     """
-    Return (reason, extra) where reason is a short label like:
-      'billing/quota' | 'auth' | 'permission' | 'rate_limited'
-      | 'http_<code>' | 'timeout' | 'unknown'
-    and extra contains structured details (status_code, provider_error/code, etc.).
+    Return (reason, extra) for structured error logging.
     """
     reason = "unknown"
     extra: Dict[str, Any] = {"error": str(exc)}
 
-    # Timeout from asyncio.wait_for
+    # asyncio timeout
     import asyncio as _asyncio
 
     if isinstance(exc, _asyncio.TimeoutError):
         return "timeout", extra
 
-    # httpx (what LangChain / SDKs often raise under the hood)
+    # httpx
     try:
         import httpx  # type: ignore
     except Exception:
@@ -294,7 +292,7 @@ def _classify_provider_error(exc: Exception) -> tuple[str, Dict[str, Any]]:
                 reason = f"http_{resp.status_code}"
         return reason, extra
 
-    # OpenAI/Anthropic SDK specific (only if you use them directly)
+    # OpenAI/Anthropic SDK specific
     try:
         import openai  # type: ignore
 
@@ -313,7 +311,9 @@ def _classify_provider_error(exc: Exception) -> tuple[str, Dict[str, Any]]:
 
 
 def _attach_thread_file_handler(thread_id: str) -> None:
-    """Attach a per-thread TimedRotatingFileHandler writing to <log_dir>/<thread_id>/<agent_name>.log."""
+    """
+    Attach a per-thread TimedRotatingFileHandler writing to <log_dir>/<thread_id>/<agent_name>.log.
+    """
     if not CFG.split_log_by_thread:
         return
     if not thread_id:
@@ -321,12 +321,10 @@ def _attach_thread_file_handler(thread_id: str) -> None:
     if thread_id in _THREAD_FILE_HANDLERS:
         return
 
-    # Sanitize and create folder: <log_dir>/<thread_id>/
     safe_tid = re.sub(r"[^\w.-]", "_", str(thread_id))
     thread_dir = os.path.join(CFG.log_dir, safe_tid)
     os.makedirs(thread_dir, exist_ok=True)
 
-    # Use configured log_file if present, else default to "<AGENT_NAME>.log"
     log_filename = getattr(CFG, "log_file", f"{AGENT_NAME}.log")
     path = os.path.join(thread_dir, log_filename)
 
@@ -353,7 +351,7 @@ def _attach_thread_file_handler(thread_id: str) -> None:
 
 
 def _detach_thread_file_handler(thread_id: str) -> None:
-    """Close and remove the per-thread file handler if present (graceful cleanup only)."""
+    """Close and remove the per-thread file handler if present."""
     h = _THREAD_FILE_HANDLERS.pop(thread_id, None)
     if h:
         try:
@@ -375,11 +373,8 @@ def _close_all_thread_file_handlers() -> None:
 
 
 def _get_logger() -> logging.Logger:
-    """Configure and return the agent logger.
-
-    Adds a stdout handler and, when `CFG.split_log_by_thread` is False, a
-    timed-rotating shared file handler. Injects `thread_id` via `_ThreadIdFilter`,
-    disables propagation, and is idempotent if handlers already exist.
+    """
+    Configure and return the agent logger.
     """
     logger = logging.getLogger(AGENT_NAME)
     if logger.handlers:
@@ -402,7 +397,6 @@ def _get_logger() -> logging.Logger:
     console.addFilter(tid_filter)
     logger.addHandler(console)
 
-    # Only attach the shared file if per-thread split is OFF
     if not CFG.split_log_by_thread:
         rotate_file = TimedRotatingFileHandler(
             shared_path,
@@ -424,7 +418,9 @@ def _get_logger() -> logging.Logger:
 
 
 def with_thread_context(fn):
-    """Set THREAD_ID_VAR from state.id, attach per-thread handler, restore afterwards."""
+    """
+    Set THREAD_ID_VAR from state.id, attach per-thread handler, restore afterwards.
+    """
 
     @wraps(fn)
     async def _inner(*args, **kwargs):
@@ -488,7 +484,6 @@ def _compact(value: Any) -> str:
 
 
 def _pydantic_to_obj(obj: Any) -> Any:
-    # pydantic v2 preferred
     if hasattr(obj, "model_dump_json"):
         try:
             return json.loads(obj.model_dump_json())
@@ -499,7 +494,6 @@ def _pydantic_to_obj(obj: Any) -> Any:
             return obj.model_dump()
         except Exception:
             pass
-    # v1 / plain dict fallback
     if hasattr(obj, "dict"):
         try:
             return obj.dict()
@@ -591,7 +585,6 @@ def _log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) ->
     if not messages:
         return
 
-    # Planned tool calls (from the current AI message), if any
     planned = getattr(ai_msg, "tool_calls", None)
     if planned:
         _log_info("Tool plan:")
@@ -600,7 +593,6 @@ def _log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) ->
             args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
             LOGGER.info(f"  planned -> {name} args={_render_tool_payload(args)}")
 
-    # Trailing tool results in the message buffer
     tool_msgs: List[Any] = []
     i = len(messages) - 1
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
@@ -622,10 +614,6 @@ def _log_retry(reason: str, iteration: int, extra: Optional[dict] = None) -> Non
 
 
 def _log_feedback_event(action: str, text: str) -> None:
-    """
-    Log a feedback body (entire text) only when CFG.log_feedbacks=True.
-    Uses CFG.feedback_log_level; retains WARNING lines elsewhere.
-    """
     if not CFG.log_feedbacks:
         return
     level = getattr(logging, CFG.feedback_log_level, logging.INFO)
@@ -635,9 +623,6 @@ def _log_feedback_event(action: str, text: str) -> None:
 
 
 def _log_feedback_cumulative(all_text: str) -> None:
-    """
-    Log the entire cumulative feedback string only when CFG.log_feedbacks=True.
-    """
     if not CFG.log_feedbacks:
         return
     level = getattr(logging, CFG.feedback_log_level, logging.INFO)
@@ -660,7 +645,6 @@ async def _retry_async_with_backoff(
     retry_reason: str,
     iteration_start: int = 1,
 ) -> Any:
-    """Run op_factory with timeout and exponential-backoff retries."""
     attempt = 0
     last_exc: Optional[BaseException] = None
     while attempt <= retries:
@@ -674,15 +658,18 @@ async def _retry_async_with_backoff(
                 break
             await asyncio.sleep(backoff_base_s * (2 ** (attempt - 1)))
 
-    # --- Single terminal error line with reason + structured details ---
     assert last_exc is not None
     try:
-        reason, extra = _classify_provider_error(last_exc)  # uses helper above
+        reason, extra = _classify_provider_error(last_exc)
     except Exception:
         reason, extra = "unknown", {"error": str(last_exc)}
 
     LOGGER.error(
-        f"Terminal failure after {retries + 1} attempt(s) | context={retry_reason} | reason={reason} | extra={extra}"
+        "Terminal failure after %s attempt(s) | context=%s | reason=%s | extra=%s",
+        retries + 1,
+        retry_reason,
+        reason,
+        extra,
     )
     raise last_exc
 
@@ -695,7 +682,6 @@ async def _retry_async_with_backoff(
 class RetryTool(BaseTool):
     """
     Wrap a BaseTool with timeout + retries (both sync and async paths).
-    Compatible with bind_tools and ToolNode.
     """
 
     _inner: BaseTool = PrivateAttr()
@@ -717,7 +703,6 @@ class RetryTool(BaseTool):
         self._backoff_base_s = backoff_base_s
 
     def _run(self, *args: Any, **kwargs: Any) -> Any:
-        """Sync execution via threadpool with timeout + retries."""
         config = kwargs.pop("config", None)
 
         def _call_once():
@@ -746,7 +731,6 @@ class RetryTool(BaseTool):
         raise last_exc
 
     async def _arun(self, *args: Any, **kwargs: Any) -> Any:
-        """Async execution with timeout + retries. Falls back to sync in executor."""
         config = kwargs.pop("config", None)
 
         async def _call_once():
@@ -795,7 +779,6 @@ class TopicGenerationAgent:
 
     llm = _llm_client
 
-    # Tools
     _RAW_TOOLS: List[BaseTool] = get_mongo_tools(llm=llm)
     TOOLS: List[BaseTool] = [
         RetryTool(
@@ -810,7 +793,7 @@ class TopicGenerationAgent:
     _AGENT_MODEL = llm.bind_tools(TOOLS)
     _STRUCTURED_MODEL = llm.with_structured_output(CollectiveInterviewTopicSchema)
 
-    _compiled_inner_graph = None  # cache
+    _compiled_inner_graph = None
 
     # ----- LLM invokers -----
 
@@ -862,31 +845,26 @@ class TopicGenerationAgent:
 
     @staticmethod
     async def _agent_node(state: _MongoAgentState):
-        """Invoke the tool-enabled model. Returns {'messages': [ai_message]}."""
         _log_tool_activity(state["messages"], ai_msg=None)
         ai = await TopicGenerationAgent._invoke_agent(state["messages"])
         return {"messages": [ai]}
 
     @staticmethod
     async def _respond_node(state: _MongoAgentState):
-        """Coerce the last tool-free assistant message to the schema."""
         msgs = state["messages"]
 
         ai_content: Optional[str] = None
-        # Prefer last assistant message without tool calls
         for m in reversed(msgs):
             if getattr(m, "type", None) in ("ai", "assistant") and not getattr(
                 m, "tool_calls", None
             ):
                 ai_content = m.content
                 break
-        # Fallback: any assistant message
         if ai_content is None:
             for m in reversed(msgs):
                 if getattr(m, "type", None) in ("ai", "assistant"):
                     ai_content = m.content
                     break
-        # Absolute fallback: last message content
         if ai_content is None:
             ai_content = msgs[-1].content
 
@@ -895,7 +873,6 @@ class TopicGenerationAgent:
 
     @staticmethod
     def _should_continue(state: _MongoAgentState):
-        """Route: if last assistant asked for tools, go to ToolNode; else respond."""
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
             _log_tool_activity(state["messages"], ai_msg=last)
@@ -933,7 +910,6 @@ class TopicGenerationAgent:
         if not state.generated_summary:
             raise ValueError("Summary cannot be null.")
 
-        # Append latest feedback (if any) to cumulative
         fb = getattr(state, "interview_topics_feedback", None)
         if isinstance(fb, dict):
             feedback_text = fb.get("feedback", "")
@@ -941,12 +917,10 @@ class TopicGenerationAgent:
             feedback_text = getattr(fb, "feedback", "") or ""
 
         if feedback_text:
-            # Just append verbatim; do not modify or add extra headers here
             if state.interview_topics_feedbacks:
                 state.interview_topics_feedbacks += "\n"
             state.interview_topics_feedbacks += feedback_text
 
-            # Optional logs: individual feedback and current cumulative
             _log_feedback_event("appended", feedback_text)
             _log_feedback_cumulative(state.interview_topics_feedbacks)
 
@@ -973,7 +947,7 @@ class TopicGenerationAgent:
         rendered = _render_topics_for_log(
             state.interview_topics.model_dump_json(indent=2)
         )
-        _log_info(f"Topics generated before all retry checks | output={rendered}")
+        _log_info(f"Topics generated before validation | output={rendered}")
         return state
 
     # ==========================
@@ -986,17 +960,13 @@ class TopicGenerationAgent:
         """
         Validator without outer retries.
 
-        Flow:
         1. Build index from the current skill tree.
         2. Normalize all topic focus_area skills to the skill-tree names.
-        3. Check total_questions. If mismatch, try to fix once in-place by
-           adjusting the last topic's count. Then accept.
-        4. If any MUST skills are still missing, inject them into the last topic's
-           focus_area in-place. Then accept.
-
-        We *do not* ask the LLM again here. We fix and return True.
+        3. Fix total_questions in-place if needed.
+        4. Inject missing MUST skills into the last topic's focus_area in-place.
+        5. Return True to exit the graph.
         """
-        # 1) build index from skill tree (dynamic skills)
+        # 1) dynamic skill index
         skill_index = build_skill_index(state.skill_tree)
 
         # 2) total questions check
@@ -1006,24 +976,20 @@ class TopicGenerationAgent:
         target_questions = state.generated_summary.total_questions
 
         if total_questions != target_questions:
-            logger = logging.getLogger(AGENT_NAME)
-            logger.warning(
-                "Topic gen: total questions mismatch: got=%s want=%s. "
-                "Adjusting last topic in-place.",
+            LOGGER.warning(
+                "Topic gen: total questions mismatch: got=%s want=%s. Adjusting last topic in-place.",
                 total_questions,
                 target_questions,
             )
-            # adjust the last topic's total_questions to match
             if state.interview_topics.interview_topics:
                 last_topic = state.interview_topics.interview_topics[-1]
-                # avoid negative
                 last_topic.total_questions = max(
-                    0, target_questions - (total_questions - last_topic.total_questions)
+                    0,
+                    target_questions - (total_questions - last_topic.total_questions),
                 )
-            # after in-place fix, we continue to skill fixing below
 
         # 3) normalize focus_area skills in-place
-        normalized_focus: list[str] = []
+        normalized_focus: List[str] = []
         for topic in state.interview_topics.interview_topics:
             for fa in topic.focus_area:
                 raw_skill = fa.model_dump().get("skill", "")
@@ -1037,7 +1003,7 @@ class TopicGenerationAgent:
         normalized_set = set(normalized_focus)
 
         # 4) collect MUST skills from tree
-        must_skills: list[str] = []
+        must_skills: List[str] = []
         if getattr(state.skill_tree, "children", None):
             for domain in state.skill_tree.children or []:
                 for leaf in getattr(domain, "children", []) or []:
@@ -1047,10 +1013,9 @@ class TopicGenerationAgent:
                         must_skills.append(leaf.name)
 
         # 5) find missing MUSTs
-        missing: list[str] = []
-        for ms in must_skills:
-            if canon(ms) not in normalized_set:
-                missing.append(ms)
+        missing: List[str] = [
+            ms for ms in must_skills if canon(ms) not in normalized_set
+        ]
 
         if missing:
             logger = logging.getLogger(AGENT_NAME)
@@ -1058,29 +1023,41 @@ class TopicGenerationAgent:
                 "Topic gen: missing MUST skills, fixing in-place: %s", missing
             )
 
-            # inject into last topic (this is deterministic and non-LLM)
             if state.interview_topics.interview_topics:
                 last_topic = state.interview_topics.interview_topics[-1]
-                # if no focus_area exists, create from the first FA type we can infer
-                if not last_topic.focus_area:
-                    # try to infer the class from any earlier topic
-                    fa_type = None
+
+                # try to infer FA class and its required fields
+                fa_type = None
+                if last_topic.focus_area:
+                    fa_type = last_topic.focus_area[0].__class__
+                else:
+                    # look at earlier topics
                     for t in state.interview_topics.interview_topics:
                         if t.focus_area:
                             fa_type = t.focus_area[0].__class__
                             break
-                    if fa_type is None:
-                        # cannot infer, so just accept without blocking
-                        return True
-                    # create focus_area list now
-                    last_topic.focus_area = []
 
-                    for ms in missing:
-                        last_topic.focus_area.append(fa_type(skill=ms))
-                else:
-                    fa_type = last_topic.focus_area[0].__class__
-                    for ms in missing:
-                        last_topic.focus_area.append(fa_type(skill=ms))
+                if fa_type is None:
+                    # we cannot safely construct a focus-area object, so just stop
+                    return True
+
+                # now actually append missing skills
+                for ms in missing:
+                    # check what fields the FA model expects
+                    # pydantic v2: model_fields
+                    fields = getattr(fa_type, "model_fields", {})  # {} if not pydantic
+                    payload = {"skill": ms}
+
+                    if "guideline" in fields:
+                        payload["guideline"] = (
+                            "Cover this skill in the interview. Injected from MUST list."
+                        )
+
+                    # add more defaults if your FA schema needs them:
+                    # if "priority" in fields: payload["priority"] = "must"
+                    # if "difficulty" in fields: payload["difficulty"] = "medium"
+
+                    last_topic.focus_area.append(fa_type(**payload))
 
             # also write feedback back to state, like before
             feedback = FEEDBACK_HEADER + ", ".join(missing) + "\n"
@@ -1088,7 +1065,6 @@ class TopicGenerationAgent:
                 "satisfied": False,
                 "feedback": feedback,
             }
-            # accumulate for logging
             if state.interview_topics_feedbacks:
                 state.interview_topics_feedbacks += "\n" + feedback
             else:
@@ -1097,11 +1073,9 @@ class TopicGenerationAgent:
             _log_feedback_event("generated", feedback)
             _log_feedback_cumulative(state.interview_topics_feedbacks)
 
-        # whether we fixed counts, skills, or nothing, we are done
-        logging.getLogger(AGENT_NAME).info(
+        LOGGER.info(
             "Topic generation completed after in-place normalization/fix | output=<hidden>"
         )
-        # important: do NOT re-run topic_generator
         return True
 
     # ==========================
@@ -1111,7 +1085,8 @@ class TopicGenerationAgent:
     @staticmethod
     def get_graph(checkpointer=None):
         """
-        START -> topic_generator -> (should_regenerate ? END : topic_generator)
+        START -> topic_generator -> should_regenerate -> END
+        (no outer LLM retry; fixes are in-place)
         """
         g = StateGraph(state_schema=AgentInternalState)
         g.add_node("topic_generator", TopicGenerationAgent.topic_generator)
@@ -1124,7 +1099,7 @@ class TopicGenerationAgent:
         return g.compile(checkpointer=checkpointer, name="Topic Generation Agent")
 
 
-# -------- Process-exit safety nets (no behavior change to main flow) --------
+# -------- Process-exit safety nets --------
 @atexit.register
 def _shutdown_topic_agent_at_exit() -> None:
     with contextlib.suppress(Exception):
