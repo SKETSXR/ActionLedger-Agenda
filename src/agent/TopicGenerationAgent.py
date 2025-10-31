@@ -91,7 +91,6 @@ from src.model_handling import llm_tg as _llm_client
 from src.mongo_tools import get_mongo_tools
 from src.prompt.topic_generation_agent_prompt import TOPIC_GENERATION_AGENT_PROMPT
 from src.schema.agent_schema import AgentInternalState
-from src.schema.input_schema import SkillTreeSchema
 from src.schema.output_schema import CollectiveInterviewTopicSchema
 
 # ==============================
@@ -183,6 +182,67 @@ def shutdown_executor():
             _EXECUTOR.shutdown(wait=True)
     except Exception:
         pass
+
+
+_CANON_RE = re.compile(r"\s+")
+
+
+def canon(s: str) -> str:
+    # canonical form: lowercase, strip, single space
+    return _CANON_RE.sub(" ", (s or "").strip().lower())
+
+
+def build_skill_index(skill_tree) -> dict[str, str]:
+    """
+    Flatten level-3 skills into {canonical_name: original_name}
+    so that we always match against what the user actually defined.
+    """
+    idx: dict[str, str] = {}
+
+    if not getattr(skill_tree, "children", None):
+        return idx
+
+    for domain in skill_tree.children or []:
+        for leaf in getattr(domain, "children", []) or []:
+            # only leaf nodes (no further children)
+            if getattr(leaf, "children", None):
+                continue
+            c = canon(leaf.name)
+            if c:
+                idx[c] = leaf.name
+    return idx
+
+
+def resolve_to_known_skill(raw: str, known: dict[str, str]) -> str | None:
+    """
+    Try to map a focus-area string to one of the skill-tree leaves.
+
+    Order:
+      1. exact canonical match
+      2. prefix match on canonical (for small spelling/style diffs)
+      3. containment match (focus contains canonical leaf)
+
+    This is intentionally simple and explainable.
+    """
+    c = canon(raw)
+    if not c:
+        return None
+
+    # 1) exact
+    if c in known:
+        return known[c]
+
+    # 2) prefix (known startswith focus or focus startswith known)
+    for kc, orig in known.items():
+        if c.startswith(kc) or kc.startswith(c):
+            return orig
+
+    # 3) containment
+    for kc, orig in known.items():
+        if kc in c or c in kc:
+            return orig
+
+    return None
 
 
 def _classify_provider_error(exc: Exception) -> tuple[str, Dict[str, Any]]:
@@ -924,105 +984,124 @@ class TopicGenerationAgent:
     @with_thread_context
     async def should_regenerate(state: AgentInternalState) -> bool:
         """
-        Return True when satisfied (END). Return False to retry topic generation.
+        Validator without outer retries.
+
+        Flow:
+        1. Build index from the current skill tree.
+        2. Normalize all topic focus_area skills to the skill-tree names.
+        3. Check total_questions. If mismatch, try to fix once in-place by
+           adjusting the last topic's count. Then accept.
+        4. If any MUST skills are still missing, inject them into the last topic's
+           focus_area in-place. Then accept.
+
+        We *do not* ask the LLM again here. We fix and return True.
         """
-        global _topic_retry_counter
+        # 1) build index from skill tree (dynamic skills)
+        skill_index = build_skill_index(state.skill_tree)
 
-        def canon(text: str) -> str:
-            return (text or "").strip().lower()
-
-        def level3_leaves(root: SkillTreeSchema) -> List[SkillTreeSchema]:
-            if not getattr(root, "children", None):
-                return []
-            leaves: List[SkillTreeSchema] = []
-            for domain in root.children or []:
-                for leaf in domain.children or []:
-                    if not getattr(leaf, "children", None):
-                        leaves.append(leaf)
-            return leaves
-
-        def level3_must_leaves(root: SkillTreeSchema) -> List[SkillTreeSchema]:
-            if not getattr(root, "children", None):
-                return []
-            musts: List[SkillTreeSchema] = []
-            for domain in root.children or []:
-                for leaf in domain.children or []:
-                    if (
-                        not getattr(leaf, "children", None)
-                        and getattr(leaf, "priority", None) == "must"
-                    ):
-                        musts.append(leaf)
-            return musts
-
-        all_skill_leaves = [
-            canon(leaf.name) for leaf in level3_leaves(state.skill_tree)
-        ]
-        must_skill_leaves = [
-            canon(leaf.name) for leaf in level3_must_leaves(state.skill_tree)
-        ]
-
-        # Collect unique focus-area skills across topics
-        focus_area_skills: List[str] = []
-        for topic in state.interview_topics.interview_topics:
-            for fa in topic.focus_area:
-                val = canon(fa.model_dump().get("skill", ""))
-                if val and val not in focus_area_skills:
-                    focus_area_skills.append(val)
-
-        # 1) total_questions must match
+        # 2) total questions check
         total_questions = sum(
             t.total_questions for t in state.interview_topics.interview_topics
         )
-        if total_questions != state.generated_summary.total_questions:
-            _log_retry(
-                "Total questions mismatch",
-                _topic_retry_counter,
-                {
-                    "got": total_questions,
-                    "target": state.generated_summary.total_questions,
-                },
+        target_questions = state.generated_summary.total_questions
+
+        if total_questions != target_questions:
+            logger = logging.getLogger(AGENT_NAME)
+            logger.warning(
+                "Topic gen: total questions mismatch: got=%s want=%s. "
+                "Adjusting last topic in-place.",
+                total_questions,
+                target_questions,
             )
-            _topic_retry_counter += 1
-            return False
+            # adjust the last topic's total_questions to match
+            if state.interview_topics.interview_topics:
+                last_topic = state.interview_topics.interview_topics[-1]
+                # avoid negative
+                last_topic.total_questions = max(
+                    0, target_questions - (total_questions - last_topic.total_questions)
+                )
+            # after in-place fix, we continue to skill fixing below
 
-        # 2) every focus skill must be a valid leaf
-        leaf_set = set(all_skill_leaves)
-        for s in focus_area_skills:
-            if s not in leaf_set:
-                _log_retry("Invalid focus skill", _topic_retry_counter, {"skill": s})
-                _topic_retry_counter += 1
-                return False
+        # 3) normalize focus_area skills in-place
+        normalized_focus: list[str] = []
+        for topic in state.interview_topics.interview_topics:
+            for fa in topic.focus_area:
+                raw_skill = fa.model_dump().get("skill", "")
+                resolved = resolve_to_known_skill(raw_skill, skill_index)
+                if resolved:
+                    fa.skill = resolved
+                    normalized_focus.append(canon(resolved))
+                else:
+                    normalized_focus.append(canon(raw_skill))
 
-        # 3) all MUST leaves must be present
-        missing_musts = sorted(set(must_skill_leaves) - set(focus_area_skills))
-        if missing_musts:
-            # WARNING line (kept exactly as before)
-            _log_retry(
-                "Missing MUST skills", _topic_retry_counter, {"missing": missing_musts}
+        normalized_set = set(normalized_focus)
+
+        # 4) collect MUST skills from tree
+        must_skills: list[str] = []
+        if getattr(state.skill_tree, "children", None):
+            for domain in state.skill_tree.children or []:
+                for leaf in getattr(domain, "children", []) or []:
+                    if getattr(leaf, "children", None):
+                        continue
+                    if getattr(leaf, "priority", None) == "must":
+                        must_skills.append(leaf.name)
+
+        # 5) find missing MUSTs
+        missing: list[str] = []
+        for ms in must_skills:
+            if canon(ms) not in normalized_set:
+                missing.append(ms)
+
+        if missing:
+            logger = logging.getLogger(AGENT_NAME)
+            logger.warning(
+                "Topic gen: missing MUST skills, fixing in-place: %s", missing
             )
-            _topic_retry_counter += 1
 
-            feedback = FEEDBACK_HEADER + ", ".join(missing_musts) + "\n"
+            # inject into last topic (this is deterministic and non-LLM)
+            if state.interview_topics.interview_topics:
+                last_topic = state.interview_topics.interview_topics[-1]
+                # if no focus_area exists, create from the first FA type we can infer
+                if not last_topic.focus_area:
+                    # try to infer the class from any earlier topic
+                    fa_type = None
+                    for t in state.interview_topics.interview_topics:
+                        if t.focus_area:
+                            fa_type = t.focus_area[0].__class__
+                            break
+                    if fa_type is None:
+                        # cannot infer, so just accept without blocking
+                        return True
+                    # create focus_area list now
+                    last_topic.focus_area = []
 
-            state.interview_topics_feedback = {"satisfied": False, "feedback": feedback}
+                    for ms in missing:
+                        last_topic.focus_area.append(fa_type(skill=ms))
+                else:
+                    fa_type = last_topic.focus_area[0].__class__
+                    for ms in missing:
+                        last_topic.focus_area.append(fa_type(skill=ms))
 
-            # Optional: print this full feedback + cumulative (if toggle is ON)
+            # also write feedback back to state, like before
+            feedback = FEEDBACK_HEADER + ", ".join(missing) + "\n"
+            state.interview_topics_feedback = {
+                "satisfied": False,
+                "feedback": feedback,
+            }
+            # accumulate for logging
+            if state.interview_topics_feedbacks:
+                state.interview_topics_feedbacks += "\n" + feedback
+            else:
+                state.interview_topics_feedbacks = feedback
+
             _log_feedback_event("generated", feedback)
-            combined = state.interview_topics_feedbacks or ""
-            if combined:
-                combined += "\n"
-            combined += feedback
-            _log_feedback_cumulative(combined)
+            _log_feedback_cumulative(state.interview_topics_feedbacks)
 
-            return False
-
-        # Success
-        rendered = _render_topics_for_log(
-            state.interview_topics.model_dump_json(indent=2)
+        # whether we fixed counts, skills, or nothing, we are done
+        logging.getLogger(AGENT_NAME).info(
+            "Topic generation completed after in-place normalization/fix | output=<hidden>"
         )
-        _log_info(f"Topic generation successfully completed | output={rendered}")
-        _topic_retry_counter = 1
-        shutdown_executor()
+        # important: do NOT re-run topic_generator
         return True
 
     # ==========================

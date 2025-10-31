@@ -24,9 +24,11 @@
 # =============================================================================
 
 import asyncio
+import gc
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import pymongo
@@ -46,14 +48,14 @@ from src.schema.input_schema import (
 APP_NAME = "agenda_api"
 logger = logging.getLogger(APP_NAME)
 
-# force this API to only show WARNING and above
+# API level logging for console warnings
 if not logger.handlers:
     logging.basicConfig(
-        level=logging.WARNING,  # <- key change
+        level=logging.WARNING,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
 
-# Simple in-memory job store
+# Minimal in-memory job map: status + thread_id only (no results kept)
 JOBS: Dict[str, Dict[str, Any]] = {}
 
 
@@ -72,14 +74,15 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("close_all_mongo_connections raised but continuing shutdown")
     JOBS.clear()
+    gc.collect()
 
 
-app = FastAPI(title="Agenda API", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="Agenda API", version="1.2.0", lifespan=lifespan)
 
 
-# ----------------------------
+# ============================
 # Models
-# ----------------------------
+# ============================
 class AgendaRequest(BaseModel):
     job_description: JobDescriptionSchema = Field(..., description="Job description")
     candidate_profile: CandidateProfileSchema = Field(
@@ -118,10 +121,14 @@ class AgendaResultResponse(BaseModel):
     thread_id: Optional[str] = None
 
 
-# ----------------------------
-# Mongo helpers
-# ----------------------------
-def _mongo_env() -> tuple[str, str, str]:
+# ============================
+# Existing mongo helper for guidelines
+# ============================
+def _mongo_env_for_guidelines() -> tuple[str, str, str]:
+    """
+    Uses your existing env:
+      MONGO_CLIENT, MONGO_DB, MONGO_QUESTION_GENERATION_COLLECTION
+    """
     uri = os.environ.get("MONGO_CLIENT")
     db = os.environ.get("MONGO_DB")
     coll = os.environ.get("MONGO_QUESTION_GENERATION_COLLECTION")
@@ -140,25 +147,16 @@ def _mongo_env() -> tuple[str, str, str]:
 
 
 def _upsert_question_guidelines(qg_payload: Optional[Dict[str, Any]]) -> None:
-    """
-    Upsert each guideline:
-      _id = question_type_name
-      doc = { _id, question_type_name, question_guidelines }
-    Only WARNING/ERROR logs are allowed here.
-    """
     if not qg_payload or not isinstance(qg_payload, dict):
-        # was: logger.info(...)
         return
 
     items = qg_payload.get("question_guidelines")
     if not isinstance(items, list) or not items:
-        # was: logger.info(...)
         return
 
     try:
-        uri, db_name, coll_name = _mongo_env()
+        uri, db_name, coll_name = _mongo_env_for_guidelines()
     except RuntimeError as e:
-        # this is an actual issue, so WARNING
         logger.warning("Guidelines upsert skipped: %s", e)
         return
 
@@ -186,9 +184,6 @@ def _upsert_question_guidelines(qg_payload: Optional[Dict[str, Any]]) -> None:
                 coll.replace_one({"_id": name}, doc, upsert=True)
             except PyMongoError as e:
                 logger.error("Failed to upsert guideline '%s': %s", name, e)
-
-        # was: logger.info("Question guidelines upsert complete ...")
-        # skip info
     except PyMongoError as e:
         logger.error("Mongo error during guidelines upsert: %s", e)
     finally:
@@ -196,9 +191,95 @@ def _upsert_question_guidelines(qg_payload: Optional[Dict[str, Any]]) -> None:
             client.close()
 
 
-# ----------------------------
+# ============================
+# Save + Load agenda docs in Mongo (output DB)
+# ============================
+def _output_db_params() -> Optional[tuple[str, str]]:
+    uri = os.environ.get("MONGO_CLIENT")
+    db_name = os.environ.get("MONGO_DB_OUTPUT", "agenda_db_output")
+    if not uri:
+        logger.warning("MONGO_CLIENT not set; skipping DB IO")
+        return None
+    return uri, db_name
+
+
+def _save_agenda_result_to_db(
+    job_id: str,
+    thread_id: Optional[str],
+    req: AgendaRequest,
+    result: Optional[Dict[str, Any]],
+    error: Optional[str],
+) -> None:
+    """
+    Uses:
+        MONGO_CLIENT
+        MONGO_DB_OUTPUT (default: agenda_db_output)
+
+    Writes to:
+        db: MONGO_DB_OUTPUT
+        collection: agenda_output
+    """
+    params = _output_db_params()
+    if not params:
+        return
+    uri, db_name = params
+
+    client = None
+    try:
+        client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=5000)
+        db = client[db_name]
+        coll = db["agenda_output"]
+
+        doc = {
+            "job_id": job_id,
+            "thread_id": thread_id,
+            "request": {
+                "job_description": req.job_description.model_dump(),
+                "candidate_profile": req.candidate_profile.model_dump(),
+                "skill_tree": req.skill_tree.model_dump(),
+                "question_guidelines": req.question_guidelines,
+            },
+            "result": result,
+            "error": error,
+            "status": "error" if error else "done",
+            "created_at": datetime.now(timezone.utc),
+        }
+
+        coll.replace_one({"job_id": job_id}, doc, upsert=True)
+    except PyMongoError as e:
+        logger.error("Failed to save agenda result for job_id=%s: %s", job_id, e)
+    finally:
+        if client:
+            client.close()
+
+
+def _load_agenda_doc_from_db(job_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Returns the stored document without the Mongo _id field, or None if not found.
+    """
+    params = _output_db_params()
+    if not params:
+        return None
+    uri, db_name = params
+
+    client = None
+    try:
+        client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=5000)
+        db = client[db_name]
+        coll = db["agenda_output"]
+        doc = coll.find_one({"job_id": job_id}, {"_id": 0})
+        return doc
+    except PyMongoError as e:
+        logger.error("Failed to load agenda result for job_id=%s: %s", job_id, e)
+        return None
+    finally:
+        if client:
+            client.close()
+
+
+# ============================
 # Helpers
-# ----------------------------
+# ============================
 def _normalize_output(otpt: Dict[str, Any]) -> Dict[str, Any]:
     norm: Dict[str, Any] = {}
     for k, v in otpt.items():
@@ -216,9 +297,17 @@ def _normalize_output(otpt: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def _run_job(job_id: str, req: AgendaRequest):
+    """
+    Runs the agenda job, persists the result/error to DB,
+    then removes the job entry from memory and cleans resources.
+    """
     try:
-        JOBS[job_id]["status"] = "running"
+        # Track minimal state while running
+        job = JOBS.get(job_id)
+        if job is not None:
+            job["status"] = "running"
 
+        # Optional guideline upsert
         _upsert_question_guidelines(req.question_guidelines)
 
         inp = InputSchema(
@@ -228,19 +317,44 @@ async def _run_job(job_id: str, req: AgendaRequest):
             question_guidelines=req.question_guidelines or {"question_guidelines": []},
         )
 
-        # pass config as-is if you like, or wrap it
         out = await run_agenda_with_logging(inp, {"thread_id": req.thread_id})
+        norm_out = _normalize_output(out)
 
-        JOBS[job_id]["status"] = "done"
-        JOBS[job_id]["result"] = _normalize_output(out)
+        # Persist and do NOT keep result in memory
+        _save_agenda_result_to_db(
+            job_id=job_id,
+            thread_id=req.thread_id,
+            req=req,
+            result=norm_out,
+            error=None,
+        )
+
     except Exception as e:
-        JOBS[job_id]["status"] = "error"
-        JOBS[job_id]["error"] = str(e)
+        # Persist the error as a terminal state document
+        _save_agenda_result_to_db(
+            job_id=job_id,
+            thread_id=req.thread_id,
+            req=req,
+            result=None,
+            error=str(e),
+        )
+    finally:
+        # Remove any in-memory reference to this job to free memory
+        JOBS.pop(job_id, None)
+
+        # Close any pooled connections held by our code
+        try:
+            close_all_mongo_connections()
+        except Exception:
+            logger.debug("close_all_mongo_connections raised during cleanup")
+
+        # Last-resort GC
+        gc.collect()
 
 
-# ----------------------------
+# ============================
 # Routes
-# ----------------------------
+# ============================
 @app.get("/health")
 async def health():
     return {"ok": True}
@@ -252,9 +366,9 @@ async def agenda_create(req: AgendaRequest):
     if not job_id:
         raise HTTPException(status_code=400, detail="thread_id is required")
 
+    # Keep only minimal info in memory
     JOBS[job_id] = {
         "status": "queued",
-        "result": None,
         "error": None,
         "thread_id": job_id,
     }
@@ -265,34 +379,50 @@ async def agenda_create(req: AgendaRequest):
 
 @app.get("/agenda_status/{job_id}", response_model=AgendaStatusResponse)
 async def agenda_status(job_id: str):
+    # If present in memory (running), report that
     job = JOBS.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="job_id not found")
-    return AgendaStatusResponse(
-        job_id=job_id,
-        status=job["status"],
-        error=job.get("error"),
-        thread_id=job.get("thread_id"),
-    )
-
-
-@app.get("/agenda_result/{job_id}", response_model=AgendaResultResponse)
-async def agenda_result(job_id: str):
-    job = JOBS.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="job_id not found")
-    if job["status"] != "done":
-        return AgendaResultResponse(
+    if job:
+        return AgendaStatusResponse(
             job_id=job_id,
             status=job["status"],
             error=job.get("error"),
             thread_id=job.get("thread_id"),
-            result=None,
         )
+
+    # Otherwise, try DB (job may have finished and been cleaned from memory)
+    doc = _load_agenda_doc_from_db(job_id)
+    if doc:
+        return AgendaStatusResponse(
+            job_id=job_id,
+            status=str(doc.get("status", "done")),
+            error=doc.get("error"),
+            thread_id=doc.get("thread_id"),
+        )
+
+    raise HTTPException(status_code=404, detail="job_id not found")
+
+
+@app.get("/agenda_result/{job_id}", response_model=AgendaResultResponse)
+async def agenda_result(job_id: str):
+    # Results are not kept in memory by design; read from DB
+    doc = _load_agenda_doc_from_db(job_id)
+    if not doc:
+        # If not persisted yet, maybe still running
+        job = JOBS.get(job_id)
+        if job:
+            return AgendaResultResponse(
+                job_id=job_id,
+                status=job["status"],
+                error=job.get("error"),
+                thread_id=job.get("thread_id"),
+                result=None,
+            )
+        raise HTTPException(status_code=404, detail="job_id not found")
+
     return AgendaResultResponse(
         job_id=job_id,
-        status="done",
-        result=job["result"],
-        error=None,
-        thread_id=job.get("thread_id"),
+        status=str(doc.get("status", "done")),
+        result=doc.get("result"),
+        error=doc.get("error"),
+        thread_id=doc.get("thread_id"),
     )
