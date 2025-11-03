@@ -1230,7 +1230,6 @@ class PerTopicDiscussionSummaryAgent:
 
 if __name__ == "__main__":
     graph = PerTopicDiscussionSummaryAgent.get_graph()
-    print(graph.get_graph().draw_ascii())
 
 
 # -------- Process-exit safety nets (no behavior change to main flow) --------

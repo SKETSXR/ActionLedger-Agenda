@@ -559,19 +559,6 @@ class SummaryGenerationAgent:
 # =============================================================================
 
 
-def draw_graph_ascii() -> None:
-    """Quick ASCII preview for local inspection."""
-    try:
-        graph = SummaryGenerationAgent.get_graph()
-        print(graph.get_graph().draw_ascii())
-    except Exception as exc:
-        LOGGER.error(
-            "Unable to draw ASCII graph.",
-            extra={"error": _brief_exception(exc)},
-            exc_info=CONFIG.include_stacks,
-        )
-
-
 # -------- Process-exit safety net (no behavior change to main flow) --------
 @atexit.register
 def _shutdown_summary_agent_at_exit() -> None:
@@ -580,4 +567,11 @@ def _shutdown_summary_agent_at_exit() -> None:
 
 
 if __name__ == "__main__":
-    draw_graph_ascii()
+    try:
+        graph = SummaryGenerationAgent.get_graph()
+    except Exception as exc:
+        LOGGER.error(
+            "Unable to draw ASCII graph.",
+            extra={"error": _brief_exception(exc)},
+            exc_info=CONFIG.include_stacks,
+        )
