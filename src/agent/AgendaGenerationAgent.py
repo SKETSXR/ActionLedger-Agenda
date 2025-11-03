@@ -572,4 +572,3 @@ class AgendaGenerationAgent:
 
 if __name__ == "__main__":
     graph = AgendaGenerationAgent.get_graph()
-    print(graph.get_graph().draw_ascii())

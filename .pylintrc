@@ -1,0 +1,41 @@
+[MASTER]
+py-version=3.12
+ignore=.git,.venv,venv,build,dist,node_modules,__pycache__,migrations
+load-plugins=
+extension-pkg-allow-list=
+
+[MESSAGES CONTROL]
+# Defer these to Ruff
+disable=C0301,C0411,C0412,C0413
+
+[REPORTS]
+output-format=colorized
+score=no
+
+[BASIC]
+good-names=i,j,k,ex,Run,_
+ignore-mixin-members=yes
+
+[FORMAT]
+max-line-length=200   ; Ruff governs line length anyway
+
+[DESIGN]
+max-args=10
+max-branches=25
+max-statements=100
+max-attributes=15
+
+[LOGGING]
+# Use % formatting for lazy logging
+logging-format-style=old
+# Keep W1203 (logging-fstring-interpolation) enabled so f-strings in logging are flagged
+
+[TYPECHECK]
+ignored-modules=
+ignored-classes=
+
+[SIMILARITIES]
+min-similarity-lines=8
+ignore-comments=yes
+ignore-docstrings=yes
+ignore-imports=yes

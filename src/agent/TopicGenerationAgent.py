@@ -1110,4 +1110,3 @@ def _shutdown_topic_agent_at_exit() -> None:
 
 if __name__ == "__main__":
     graph = TopicGenerationAgent.get_graph()
-    print(graph.get_graph().draw_ascii())

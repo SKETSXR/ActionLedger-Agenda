@@ -1,0 +1,30 @@
+# ruff.toml
+
+# Top-level options (standalone file — no [ruff] table)
+target-version = "py312"
+
+# Folders/files Ruff should skip
+exclude = [
+  ".git",
+  ".venv",
+  "venv",
+  "build",
+  "dist",
+  "node_modules",
+  "__pycache__",
+  "migrations"
+]
+
+[lint]
+# Matches your VS Code settings
+select = ["E", "F", "W"]
+extend-select = ["I", "T201"]
+ignore = ["E501"]
+
+[lint.isort]
+# Treat these as first-party imports for sorting
+known-first-party = ["src"]
+
+[format]
+# You’re using Ruff as the formatter; preserve existing quotes
+quote-style = "preserve"
