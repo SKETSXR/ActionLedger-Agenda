@@ -13,11 +13,11 @@ from src.model_handling import llm_cv
 
 SYSTEM_PROMPT = """
 You are a resume parsing agent.
-The input is a Markdown-formatted resume. 
+The input is a Markdown-formatted resume.
 ```{markdown_text}```\n
 
 Now extract structured data and return only in a JSON format in this given format:
- 
+
 {{
   "skills": ["..."],
   "experience": [
@@ -32,11 +32,11 @@ Now extract structured data and return only in a JSON format in this given forma
     {{
       "id": "...", <Assign a unique id to each project like P1, P2, etc>
       "title": "...",
-      "description": "..." <If a proper description is not there but only skills or any related and relevant text is there for the respective project then write that as it should not be blank> 
+      "description": "..." <If a proper description is not there but only skills or any related and relevant text is there for the respective project then write that as it should not be blank>
     }}
   ]
 }}
- 
+
 Guidelines:
 - Extract each skill individually, even if listed together in a paragraph or bullet.
 - If fields are missing, use null or an empty array — never guess or add fields that don't match the format.
