@@ -1,5 +1,4 @@
-
-QA_BLOCK_AGENT_PROMPT = '''
+QA_BLOCK_AGENT_PROMPT = """
 You are a question-answer (QA) block generator for technical interviews.
 Your task is to generate example questions for each deep-dive QA block across all topics, given a discussion summary and the topic's deep-dive nodes as input.
 
@@ -137,4 +136,4 @@ Return ONLY a JSON object grouped by topic, with each topic having QA blocks and
     }
   ]
 }
-'''
+"""
