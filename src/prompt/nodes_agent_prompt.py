@@ -123,10 +123,10 @@ The sequence must follow a walkthrough order for each topic.
 
 - Subsequent Direct nodes:
   - If the topic is a Case study topic then you MUST explicitly continue the same scenario (e.g., "Building on your design...", "Given your approach...", "If your system encounters X..."); no restarts.
-  - If the topic is not a Case Study topic then the direct node after the first direct node should ask about the given topic 
+  - If the topic is not a Case Study topic then the direct node after the first direct node should ask about the given topic
 
 - The Direct nodes always have total_question_threshold = null.
-- Each Deep Dive must have total_question_threshold as an integer >= 2, 
+- Each Deep Dive must have total_question_threshold as an integer >= 2,
 - QA Blocks are only for Deep Dives.
 - Each node must set the graded flag to true always
 
@@ -140,7 +140,7 @@ Do not show tool calls in the answer.
 
 Do not write the _id names and key names like P1, P2, E4, T, S etc anywhere in your output.
 
-Output must be a JSON object grouped by topic: 
+Output must be a JSON object grouped by topic:
 You can only follow any of these patterns only for your node generation and don't go outside of this:
 Pattern A (Direct->QA(2)->Direct->QA(2)) - It should have first node as Direct then its next node should be Deep Dive/QA node which has its question threshold as 2 then its next node should be a direct node then after that its last node will be a deep dive/QA block node with a question threshold as 2.
     {
