@@ -33,6 +33,7 @@ from typing import Any, Dict, Optional
 
 import pymongo
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from pymongo.errors import PyMongoError
 
@@ -78,6 +79,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Agenda API", version="1.2.0", lifespan=lifespan)
+
+# CORS settings
+origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ============================
@@ -358,6 +370,11 @@ async def _run_job(job_id: str, req: AgendaRequest):
 @app.get("/health")
 async def health():
     return {"ok": True}
+
+
+@app.get("/")
+async def main():
+    return {"message": "Hello World"}
 
 
 @app.post("/agenda_create", response_model=AgendaCreateResponse, status_code=202)
