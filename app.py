@@ -374,7 +374,7 @@ async def health():
 
 @app.get("/")
 async def main():
-    return {"message": "Hello World"}
+    return {"message": "Agenda API Home!"}
 
 
 @app.post("/agenda_create", response_model=AgendaCreateResponse, status_code=202)
