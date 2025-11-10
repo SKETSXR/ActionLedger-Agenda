@@ -1,5 +1,3 @@
-ruff.toml:
-
 # ruff.toml
 
 # Top-level options (standalone file — no [ruff] table)
