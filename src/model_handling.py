@@ -6,6 +6,7 @@ from langchain_openai import ChatOpenAI
 
 from src.utils import load_config
 
+
 # Load environment variables (e.g., API keys) from .env if present.
 load_dotenv()
 

@@ -2,8 +2,6 @@ import pytest
 
 from src.agent.DiscussionSummaryPerTopic import (
     PerTopicDiscussionSummaryAgent as DSPA,
-)
-from src.agent.DiscussionSummaryPerTopic import (
     PerTopicDiscussionSummaryGenerationAgent as InnerDSPT,
 )
 from src.schema.agent_schema import AgentInternalState

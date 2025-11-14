@@ -24,17 +24,17 @@
 # =============================================================================
 
 import asyncio
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 import gc
 import logging
 import os
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from typing import Any, Optional
 
-import pymongo
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+import pymongo
 from pymongo.errors import PyMongoError
 
 from src.agent.AgendaGenerationAgent import run_agenda_with_logging
@@ -45,6 +45,7 @@ from src.schema.input_schema import (
     JobDescriptionSchema,
     SkillTreeSchema,
 )
+
 
 APP_NAME = "agenda_api"
 logger = logging.getLogger(APP_NAME)

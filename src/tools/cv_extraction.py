@@ -1,8 +1,8 @@
 import argparse
 import asyncio
 import json
-import re
 from pathlib import Path
+import re
 
 import fitz  # PyMuPDF
 from langchain_core.messages import HumanMessage
@@ -10,6 +10,7 @@ from rich import print as rprint
 from rich.console import Console
 
 from src.model_handling import llm_cv
+
 
 SYSTEM_PROMPT = """
 You are a resume parsing agent.

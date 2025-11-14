@@ -1,9 +1,11 @@
+import asyncio
 import logging
 import re
 
 from langchain_core.messages import HumanMessage
 
 from src.model_handling import llm_jd
+
 
 # Module-level logger (diagnostics only)
 LOGGER = logging.getLogger(__name__)
@@ -49,6 +51,8 @@ async def parse_jd_text_to_json(jd_text: str) -> str:
             content = _CODE_FENCE_END.sub("", content)
 
         return content.strip()
-    except Exception as e:
+    except (asyncio.TimeoutError, RuntimeError, ValueError) as e:
+        # Log expected/handled failures from the LLM call or parsing
         LOGGER.warning("Failed to parse JD to JSON: %s", e)
         return "JD not contain any text"
+

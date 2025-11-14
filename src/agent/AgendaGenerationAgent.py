@@ -35,20 +35,20 @@
 #   MONGO_SKILL_TREE_COLLECTION, MONGO_QUESTION_GENERATION_COLLECTION
 # =============================================================================
 
+from dataclasses import dataclass
 import json
 import logging
+from logging.handlers import TimedRotatingFileHandler
 import os
 import re
 import sys
-from dataclasses import dataclass
-from logging.handlers import TimedRotatingFileHandler
 from typing import Any
 
-import pymongo
 from dotenv import dotenv_values
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
+import pymongo
 from pymongo.errors import ServerSelectionTimeoutError
 
 from src.schema.agent_schema import AgentInternalState
@@ -60,6 +60,7 @@ from .NodesAgent import NodesGenerationAgent
 from .QABlocksAgent import QABlockGenerationAgent
 from .SummaryGenerationAgent import SummaryGenerationAgent
 from .TopicGenerationAgent import TopicGenerationAgent
+
 
 # ==============================
 # Configuration

@@ -12,6 +12,7 @@ from langchain_mongodb.agent_toolkit.toolkit import MongoDBDatabaseToolkit
 from pydantic.v1 import BaseModel, Field
 from pymongo import MongoClient
 
+
 _CLIENT_CACHE: dict[str, MongoClient] = {}
 # In-process cache of DB interfaces keyed by "<uri>::<database>"
 _CONN_CACHE: dict[str, MongoDBDatabase] = {}

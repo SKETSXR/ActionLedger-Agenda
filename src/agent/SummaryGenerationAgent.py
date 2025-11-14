@@ -45,17 +45,17 @@
 import asyncio
 import atexit
 import contextlib
-import json
-import logging
-import os
-import re
-import sys
-import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import wraps
+import json
+import logging
 from logging.handlers import TimedRotatingFileHandler
+import os
+import re
+import sys
 from typing import Optional, Sequence, Union
+import uuid
 
 import httpx
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -65,6 +65,7 @@ from src.model_handling import llm_sg as _llm_client
 from src.prompt.summary_generation_agent_prompt import SUMMARY_GENERATION_AGENT_PROMPT
 from src.schema.agent_schema import AgentInternalState
 from src.schema.output_schema import GeneratedSummarySchema
+
 
 # =============================================================================
 # Configuration (env-driven, safe defaults)

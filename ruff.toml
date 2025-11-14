@@ -1,30 +1,82 @@
-# ruff.toml
+# ==============================================
+# Ruff Configuration — Hard Guidelines Only
+# ==============================================
 
-# Top-level options (standalone file — no [ruff] table)
 target-version = "py312"
+preview = true
 
-# Folders/files Ruff should skip
+# Project source roots for import resolution
+src = ["src", "app"]
+
+# Exclusions
 exclude = [
-  ".git",
   ".venv",
   "venv",
   "build",
   "dist",
-  "node_modules",
   "__pycache__",
-  "migrations"
+  "migrations",
+  "*.egg-info",
+  ".git",
+  ".tox",
+  ".nox",
+  ".ruff_cache",
 ]
 
+# ----------------------------------------------
+# Core Linting Rules — HARD ONLY
+# ----------------------------------------------
 [lint]
-# Matches your VS Code settings
-select = ["E", "F", "W"]
-extend-select = ["I", "T201"]
-ignore = ["E501"]
+# Select only rules that enforce your hard standards:
+# - Imports: unused + ordering
+# - Naming: snake_case etc.
+# - Whitespace: trailing, final newline, 2 blank lines
+# - Errors: no bare except / blind except
+# - Logging: no print in prod; no debugger
+# - Secrets: no hardcoded secrets
+select = [
+  "F401",          # Unused imports
+  "I",             # Import order (isort)
+  "N",             # pep8-naming (snake_case etc.)
+  "E302", "E305",  # Two blank lines around top-level defs
+  "W291", "W292",  # Trailing whitespace; final newline required
+  "E722",          # No bare except
+  "BLE001",        # No blind/broad exceptions
+  "T201",          # No print() in prod code
+  "T10",           # No debugger calls (pdb, ipdb, breakpoint)
+  "S105", "S106", "S107",  # Hardcoded secrets detection
+]
 
+# Tests can print during debugging without failing CI.
+[lint.per-file-ignores]
+"tests/*" = ["T201"]
+"*/test_*.py" = ["T201"]
+
+# ----------------------------------------------
+# Import Order (Hard)
+# ----------------------------------------------
 [lint.isort]
-# Treat these as first-party imports for sorting
-known-first-party = ["src"]
+known-first-party = ["src", "app"]
+combine-as-imports = true
+force-sort-within-sections = true
+order-by-type = false                 # Pure alphabetical within sections
+force-single-line = false
+lines-after-imports = 2
+section-order = ["standard-library", "third-party", "first-party", "local-folder"]
 
+# ----------------------------------------------
+# Naming (Hard)
+# ----------------------------------------------
+[lint.pep8-naming]
+# Using defaults to enforce snake_case for functions/vars, CapWords for classes, etc.
+
+# ----------------------------------------------
+# Formatting (kept minimal; Ruff enforces whitespace rules via E/W above)
+# ----------------------------------------------
 [format]
-# You’re using Ruff as the formatter; preserve existing quotes
-quote-style = "preserve"
+line-ending = "lf"
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+docstring-code-format = true
+ 
