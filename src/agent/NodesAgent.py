@@ -77,7 +77,7 @@ from datetime import date, datetime
 from functools import wraps
 from logging.handlers import TimedRotatingFileHandler
 from string import Template
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Sequence
+from typing import Any, Callable, Coroutine, Optional, Sequence
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableLambda
@@ -173,7 +173,7 @@ class _ThreadIdFilter(logging.Filter):
 
 
 # Avoid duplicate file handlers per thread id
-_THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
+_THREAD_FILE_HANDLERS: dict[str, logging.Handler] = {}
 
 
 def _attach_thread_file_handler(thread_id: str) -> None:
@@ -290,7 +290,7 @@ def _get_logger() -> logging.Logger:
     return logger
 
 
-def _classify_provider_error(exc: Exception) -> tuple[str, Dict[str, Any]]:
+def _classify_provider_error(exc: Exception) -> tuple[str, dict[str, Any]]:
     """
     Classify LLM/tool provider errors for one terminal log line.
 
@@ -300,7 +300,7 @@ def _classify_provider_error(exc: Exception) -> tuple[str, Dict[str, Any]]:
     and extra carries structured fields (status_code, provider payload/code, etc.).
     """
     reason = "unknown"
-    extra: Dict[str, Any] = {"error": str(exc)}
+    extra: dict[str, Any] = {"error": str(exc)}
 
     # asyncio timeout surfaced by asyncio.wait_for
     import asyncio as _asyncio
@@ -484,8 +484,8 @@ def _summarize_nodes_result(payload: Any) -> str:
 
         if isinstance(topics, list):
             n = len(topics)
-            names: List[str] = []
-            counts: List[int] = []
+            names: list[str] = []
+            counts: list[int] = []
             for t in topics[:6]:
                 td = _pydantic_to_obj(t)
                 nm = None
@@ -544,7 +544,7 @@ def _log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) ->
             LOGGER.info(f"  planned -> {name} args={_render_tool_payload(args)}")
 
     # Trailing tool results in the message buffer
-    tool_msgs: List[Any] = []
+    tool_msgs: list[Any] = []
     i = len(messages) - 1
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
         tool_msgs.append(messages[i])
@@ -601,7 +601,7 @@ async def _retry_async(
 
     # --- Terminal logging (classify a bit if httpx is available) ---
     reason = "unknown"
-    extra: Dict[str, Any] = {"error": str(last_exc)}
+    extra: dict[str, Any] = {"error": str(last_exc)}
 
     try:
         import httpx  # type: ignore
@@ -745,8 +745,8 @@ class NodesGenerationAgent:
     llm = _llm_client
 
     # Tools (wrapped with retry/timeout)
-    _RAW_TOOLS: List[BaseTool] = get_mongo_tools(llm=llm)
-    TOOLS: List[BaseTool] = [
+    _RAW_TOOLS: list[BaseTool] = get_mongo_tools(llm=llm)
+    TOOLS: list[BaseTool] = [
         RetryTool(
             t,
             retries=CFG.tool_retries,
@@ -882,7 +882,7 @@ class NodesGenerationAgent:
     # ----------------- Utilities -----------------
 
     @staticmethod
-    def _as_dict(x: Any) -> Dict[str, Any]:
+    def _as_dict(x: Any) -> dict[str, Any]:
         if hasattr(x, "model_dump"):
             return x.model_dump()
         if hasattr(x, "dict"):
@@ -984,7 +984,7 @@ class NodesGenerationAgent:
             sort_keys=True,
         )
 
-        topic_with_nodes_list: List[TopicWithNodesSchema] = []
+        topic_with_nodes_list: list[TopicWithNodesSchema] = []
 
         for dspt_obj in zip(topics_list, summaries_list):
             per_topic_summary_json = NodesGenerationAgent._to_json_one(dspt_obj)

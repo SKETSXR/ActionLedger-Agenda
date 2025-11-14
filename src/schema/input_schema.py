@@ -1,4 +1,4 @@
-from typing import Annotated, List, Literal, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -179,7 +179,7 @@ class QuestionGuidelinesCompleteSchema(BaseModel):
     """Container for all question guidelines."""
 
     question_guidelines: Annotated[
-        List[QuestionGuidelinesSchema],
+        list[QuestionGuidelinesSchema],
         Field(..., description="List of question guidelines to be used"),
     ]
 

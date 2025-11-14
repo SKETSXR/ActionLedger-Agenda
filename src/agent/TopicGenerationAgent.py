@@ -79,7 +79,7 @@ from dataclasses import dataclass
 from functools import wraps
 from logging.handlers import TimedRotatingFileHandler
 from string import Template
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Coroutine, Optional, Sequence, Union
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
@@ -168,7 +168,7 @@ class _ThreadIdFilter(logging.Filter):
 
 
 # Avoid duplicate per-thread handlers
-_THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
+_THREAD_FILE_HANDLERS: dict[str, logging.Handler] = {}
 
 
 def shutdown_executor() -> None:
@@ -192,13 +192,13 @@ def canon(s: str) -> str:
     return _CANON_RE.sub(" ", (s or "").strip().lower())
 
 
-def build_skill_index(skill_tree) -> Dict[str, str]:
+def build_skill_index(skill_tree) -> dict[str, str]:
     """
     Flatten level-3 skills into {canonical_name: original_name}
     so that we always match against what the user actually defined.
     Dynamic skill-tree friendly.
     """
-    idx: Dict[str, str] = {}
+    idx: dict[str, str] = {}
 
     if not getattr(skill_tree, "children", None):
         return idx
@@ -214,7 +214,7 @@ def build_skill_index(skill_tree) -> Dict[str, str]:
     return idx
 
 
-def resolve_to_known_skill(raw: str, known: Dict[str, str]) -> Optional[str]:
+def resolve_to_known_skill(raw: str, known: dict[str, str]) -> Optional[str]:
     """
     Try to map a focus-area string to one of the skill-tree leaves.
 
@@ -246,12 +246,12 @@ def resolve_to_known_skill(raw: str, known: Dict[str, str]) -> Optional[str]:
     return None
 
 
-def _classify_provider_error(exc: Exception) -> tuple[str, Dict[str, Any]]:
+def _classify_provider_error(exc: Exception) -> tuple[str, dict[str, Any]]:
     """
     Return (reason, extra) for structured error logging.
     """
     reason = "unknown"
-    extra: Dict[str, Any] = {"error": str(exc)}
+    extra: dict[str, Any] = {"error": str(exc)}
 
     # asyncio timeout
     import asyncio as _asyncio
@@ -520,7 +520,7 @@ def _summarize_topics(payload: Any) -> str:
                         topics = v
                         break
 
-            names: List[str] = []
+            names: list[str] = []
             if isinstance(topics, list):
                 for t in topics[:8]:
                     nm = None
@@ -593,7 +593,7 @@ def _log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) ->
             args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
             LOGGER.info(f"  planned -> {name} args={_render_tool_payload(args)}")
 
-    tool_msgs: List[Any] = []
+    tool_msgs: list[Any] = []
     i = len(messages) - 1
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
         tool_msgs.append(messages[i])
@@ -779,8 +779,8 @@ class TopicGenerationAgent:
 
     llm = _llm_client
 
-    _RAW_TOOLS: List[BaseTool] = get_mongo_tools(llm=llm)
-    TOOLS: List[BaseTool] = [
+    _RAW_TOOLS: list[BaseTool] = get_mongo_tools(llm=llm)
+    TOOLS: list[BaseTool] = [
         RetryTool(
             t,
             retries=CFG.tool_retries,
@@ -933,7 +933,7 @@ class TopicGenerationAgent:
             thread_id=state.id,
         )
 
-        messages: List[Msg] = [
+        messages: list[Msg] = [
             SystemMessage(content=sys_content),
             HumanMessage(
                 content="Based on the instructions, please start the process."
@@ -989,7 +989,7 @@ class TopicGenerationAgent:
                 )
 
         # 3) normalize focus_area skills in-place
-        normalized_focus: List[str] = []
+        normalized_focus: list[str] = []
         for topic in state.interview_topics.interview_topics:
             for fa in topic.focus_area:
                 raw_skill = fa.model_dump().get("skill", "")
@@ -1003,7 +1003,7 @@ class TopicGenerationAgent:
         normalized_set = set(normalized_focus)
 
         # 4) collect MUST skills from tree
-        must_skills: List[str] = []
+        must_skills: list[str] = []
         if getattr(state.skill_tree, "children", None):
             for domain in state.skill_tree.children or []:
                 for leaf in getattr(domain, "children", []) or []:
@@ -1013,7 +1013,7 @@ class TopicGenerationAgent:
                         must_skills.append(leaf.name)
 
         # 5) find missing MUSTs
-        missing: List[str] = [
+        missing: list[str] = [
             ms for ms in must_skills if canon(ms) not in normalized_set
         ]
 

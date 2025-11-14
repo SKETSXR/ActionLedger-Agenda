@@ -1,4 +1,4 @@
-from typing import Annotated, List, Literal, Optional, Union
+from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -58,7 +58,7 @@ class ProjectReasoningSummarySchema(BaseModel):
 class CandidateProjectSummarySchema(BaseModel):
     """Aggregate of project-wise reasoning summaries."""
 
-    projectwise_summary: List[ProjectReasoningSummarySchema] = Field(
+    projectwise_summary: list[ProjectReasoningSummarySchema] = Field(
         ..., description="List of project wise summary"
     )
 
@@ -80,7 +80,7 @@ class DomainNode(BaseModel):
     weight: float = Field(..., description="Normalized in [0,1]")
     priority: Literal["must", "high", "low"]
     comment: Optional[str] = None
-    children: List[SkillLeaf] = Field(..., description="Non-empty list of leaf skills")
+    children: list[SkillLeaf] = Field(..., description="Non-empty list of leaf skills")
 
 
 class AnnotatedSkillTreeSummarySchema(BaseModel):
@@ -90,7 +90,7 @@ class AnnotatedSkillTreeSummarySchema(BaseModel):
     weight: float = Field(..., description="Usually 1.0")
     priority: Literal["must", "high", "low"]
     comment: Optional[str] = None
-    children: List[DomainNode] = Field(..., description="Non-empty list of domains")
+    children: list[DomainNode] = Field(..., description="Non-empty list of domains")
 
 
 class DomainsToAssessListSchema(BaseModel):
@@ -101,7 +101,7 @@ class DomainsToAssessListSchema(BaseModel):
         weight: float
         priority: Literal["must", "high", "low"]
 
-    domains: List[Domain]
+    domains: list[Domain]
 
 
 class TotalQuestionsSchema(BaseModel):
@@ -154,7 +154,7 @@ class TopicSchema(BaseModel):
             description="A short reason for why this discussion topic has been chosen",
         ),
     ]
-    focus_area: List[FocusAreaSchema] = Field(
+    focus_area: list[FocusAreaSchema] = Field(
         ...,
         description="List of focus skills with guidelines (each item is {skill, guideline})",
         examples=[
@@ -187,7 +187,7 @@ class TopicSchema(BaseModel):
 class CollectiveInterviewTopicSchema(BaseModel):
     """Collection of interview topics."""
 
-    interview_topics: List[TopicSchema] = Field(
+    interview_topics: list[TopicSchema] = Field(
         ..., description="List of interview topics"
     )
 
@@ -210,26 +210,26 @@ class DiscussionSummaryPerTopicSchema(BaseModel):
         type: str
         description: str
         guidelines: str
-        focus_areas: List[str]
-        reference_sources: List[str]
+        focus_areas: list[str]
+        reference_sources: list[str]
 
     class DirectQuestion(BaseModel):
         type: str
         description: str
         guidelines: str
-        focus_areas: List[str]
-        reference_sources: List[str]
+        focus_areas: list[str]
+        reference_sources: list[str]
 
     class DeepDive(BaseModel):
         type: str
         description: str
         guidelines: str
-        focus_areas: List[str]
-        reference_sources: List[str]
+        focus_areas: list[str]
+        reference_sources: list[str]
 
     class DiscussionTopic(BaseModel):
         topic: str
-        sequence: List[
+        sequence: list[
             Union[
                 "DiscussionSummaryPerTopicSchema.Opening",
                 "DiscussionSummaryPerTopicSchema.DirectQuestion",
@@ -237,10 +237,10 @@ class DiscussionSummaryPerTopicSchema(BaseModel):
             ]
         ]
         guidelines: str
-        focus_areas_covered: List[str]
-        reference_material: List[str]
+        focus_areas_covered: list[str]
+        reference_material: list[str]
 
-    discussion_topics: List[DiscussionTopic]
+    discussion_topics: list[DiscussionTopic]
 
 
 # ============================== NODES (TOPIC FLOW GRAPH) ============================== #
@@ -260,7 +260,7 @@ class NodeSchema(BaseModel):
     graded: bool
     next_node: Optional[int] = Field(None, ge=1)
     context: str = Field(..., min_length=1)
-    skills: List[str] = Field(..., min_length=1)
+    skills: list[str] = Field(..., min_length=1)
     total_question_threshold: Optional[int] = Field(None, ge=2)
     question_guidelines: Optional[str] = None
 
@@ -269,13 +269,13 @@ class TopicWithNodesSchema(BaseModel):
     """A topic with its ordered list of nodes."""
 
     topic: str
-    nodes: List[NodeSchema] = Field(..., min_length=1)
+    nodes: list[NodeSchema] = Field(..., min_length=1)
 
 
 class NodesSchema(BaseModel):
     """Container for topic-node flows across all topics."""
 
-    topics_with_nodes: List[TopicWithNodesSchema] = Field(..., min_length=1)
+    topics_with_nodes: list[TopicWithNodesSchema] = Field(..., min_length=1)
 
 
 # ============================== QA BLOCKS (QUESTION SETS) ============================== #
@@ -291,7 +291,7 @@ class QAItem(BaseModel):
     q_type: QType
     q_difficulty: QDiff
     counter_type: Optional[QCountType] = None
-    example_questions: List[str] = Field(..., min_length=5, max_length=5)
+    example_questions: list[str] = Field(..., min_length=5, max_length=5)
 
 
 class QABlock(BaseModel):
@@ -299,20 +299,20 @@ class QABlock(BaseModel):
 
     block_id: str = Field(..., description="Block identifier like 'B1'")
     guideline: str = Field(..., min_length=1)
-    qa_items: List[QAItem] = Field(..., min_length=7, max_length=7)
+    qa_items: list[QAItem] = Field(..., min_length=7, max_length=7)
 
 
 class QASet(BaseModel):
     """All blocks generated for a single topic."""
 
     topic: str = Field(..., min_length=1)
-    qa_blocks: List[QABlock] = Field(..., min_length=1)
+    qa_blocks: list[QABlock] = Field(..., min_length=1)
 
 
 class QASetsSchema(BaseModel):
     """Top-level collection of QA sets across topics."""
 
-    qa_sets: List[QASet] = Field(..., min_length=1)
+    qa_sets: list[QASet] = Field(..., min_length=1)
 
 
 # ============================== OUTPUT ROOT ============================== #

@@ -80,7 +80,7 @@ from dataclasses import dataclass
 from functools import wraps
 from logging.handlers import TimedRotatingFileHandler
 from string import Template
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Coroutine, Optional, Sequence
 
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -159,7 +159,7 @@ class _ThreadIdFilter(logging.Filter):
 
 
 # Avoid duplicate handlers per thread id
-_THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
+_THREAD_FILE_HANDLERS: dict[str, logging.Handler] = {}
 
 
 def shutdown_executor():
@@ -174,7 +174,7 @@ def shutdown_executor():
         pass
 
 
-def _classify_provider_error(exc: Exception) -> tuple[str, Dict[str, Any]]:
+def _classify_provider_error(exc: Exception) -> tuple[str, dict[str, Any]]:
     """
     Return (reason, extra) where reason is one of:
       'billing/quota' | 'auth' | 'permission' | 'rate_limited'
@@ -182,7 +182,7 @@ def _classify_provider_error(exc: Exception) -> tuple[str, Dict[str, Any]]:
     and extra contains structured hints (status_code, provider_error/code, etc.).
     """
     reason = "unknown"
-    extra: Dict[str, Any] = {"error": str(exc)}
+    extra: dict[str, Any] = {"error": str(exc)}
 
     # asyncio timeout from wait_for(...)
     import asyncio as _asyncio
@@ -471,12 +471,12 @@ def _summarize_qa_result(payload: Any) -> str:
 
         if isinstance(qa_sets, list):
             n = len(qa_sets)
-            details: List[Dict[str, Any]] = []
+            details: list[dict[str, Any]] = []
             for qs in qa_sets[:4]:
                 d = _pydantic_obj(qs) if not isinstance(qs, dict) else qs
                 topic = d.get("topic") or "Unknown"
                 blocks = d.get("qa_blocks") or []
-                counts: List[int] = []
+                counts: list[int] = []
                 for b in blocks[:6]:
                     bd = _pydantic_obj(b) if not isinstance(b, dict) else b
                     items = bd.get("qa_items") or []
@@ -520,7 +520,7 @@ def log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) -> 
             args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
             LOGGER.info(f"  planned -> {name} args={_gated_tool_payload(args)}")
 
-    tool_msgs: List[Any] = []
+    tool_msgs: list[Any] = []
     i = len(messages) - 1
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
         tool_msgs.append(messages[i])
@@ -693,8 +693,8 @@ class QABlockGenerationAgent:
     llm = _llm_client
 
     # Tools (wrapped with retry/timeout)
-    _RAW_TOOLS: List[BaseTool] = get_mongo_tools(llm=llm)
-    MONGO_TOOLS: List[BaseTool] = [
+    _RAW_TOOLS: list[BaseTool] = get_mongo_tools(llm=llm)
+    MONGO_TOOLS: list[BaseTool] = [
         RetryTool(
             t,
             retries=CFG.tool_retries,
@@ -820,7 +820,7 @@ class QABlockGenerationAgent:
     # ----------------- Utilities -----------------
 
     @staticmethod
-    def _as_dict(x: Any) -> Dict[str, Any]:
+    def _as_dict(x: Any) -> dict[str, Any]:
         if hasattr(x, "model_dump"):
             return x.model_dump()
         if hasattr(x, "dict"):
@@ -859,7 +859,7 @@ class QABlockGenerationAgent:
         deep_dive_nodes_json: str,
         thread_id: str,
         qa_error: str = "",
-    ) -> Tuple[Dict[str, Any], str]:
+    ) -> tuple[dict[str, Any], str]:
         """
         Generate QA blocks for a single topic and enforce:
         - number of blocks == number of deep-dive nodes
@@ -940,7 +940,7 @@ class QABlockGenerationAgent:
             if not isinstance(blocks, list):
                 blocks = []
 
-            errs: List[str] = []
+            errs: list[str] = []
             if parse_err:
                 errs.append(parse_err)
             if len(blocks) != n_blocks:
@@ -1008,13 +1008,13 @@ class QABlockGenerationAgent:
             )
 
         # Quick index by canonical topic
-        summaries_by_can: Dict[str, Any] = {}
+        summaries_by_can: dict[str, Any] = {}
         for s in summaries_list:
             nm = QABlockGenerationAgent._topic_from_summary(s)
             summaries_by_can[QABlockGenerationAgent._canon(nm)] = s
 
-        final_sets: List[Dict[str, Any]] = []
-        accumulated_errs: List[str] = []
+        final_sets: list[dict[str, Any]] = []
+        accumulated_errs: list[str] = []
         covered: set[str] = set()
 
         # Deep-dive aliases
@@ -1051,7 +1051,7 @@ class QABlockGenerationAgent:
                 continue
 
             # Collect deep-dive nodes in order
-            deep_dive_nodes: List[dict] = []
+            deep_dive_nodes: list[dict] = []
             for node in topic_dict.get("nodes") or []:
                 qtype = str(node.get("question_type", "")).strip().lower()
                 if qtype in DEEP_DIVE_ALIASES:

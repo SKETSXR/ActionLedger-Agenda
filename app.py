@@ -29,7 +29,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import pymongo
 from fastapi import FastAPI, HTTPException
@@ -57,7 +57,7 @@ if not logger.handlers:
     )
 
 # Minimal in-memory job map: status + thread_id only (no results kept)
-JOBS: Dict[str, Dict[str, Any]] = {}
+JOBS: dict[str, dict[str, Any]] = {}
 
 
 @asynccontextmanager
@@ -101,10 +101,10 @@ class AgendaRequest(BaseModel):
         ..., description="Candidate CV/profile"
     )
     skill_tree: SkillTreeSchema = Field(..., description="Skill tree")
-    question_guidelines: Optional[Dict[str, Any]] = Field(
+    question_guidelines: Optional[dict[str, Any]] = Field(
         default=None, description="Optional question guidelines dict"
     )
-    config: Optional[Dict[str, Any]] = Field(
+    config: Optional[dict[str, Any]] = Field(
         default=None, description="Optional graph config to override defaults"
     )
     thread_id: Optional[str] = Field(
@@ -128,7 +128,7 @@ class AgendaStatusResponse(BaseModel):
 class AgendaResultResponse(BaseModel):
     job_id: str
     status: str
-    result: Optional[Dict[str, Any]] = None
+    result: Optional[dict[str, Any]] = None
     error: Optional[str] = None
     thread_id: Optional[str] = None
 
@@ -158,7 +158,7 @@ def _mongo_env_for_guidelines() -> tuple[str, str, str]:
     return uri, db, coll
 
 
-def _upsert_question_guidelines(qg_payload: Optional[Dict[str, Any]]) -> None:
+def _upsert_question_guidelines(qg_payload: Optional[dict[str, Any]]) -> None:
     if not qg_payload or not isinstance(qg_payload, dict):
         return
 
@@ -219,7 +219,7 @@ def _save_agenda_result_to_db(
     job_id: str,
     thread_id: Optional[str],
     req: AgendaRequest,
-    result: Optional[Dict[str, Any]],
+    result: Optional[dict[str, Any]],
     error: Optional[str],
 ) -> None:
     """
@@ -265,7 +265,7 @@ def _save_agenda_result_to_db(
             client.close()
 
 
-def _load_agenda_doc_from_db(job_id: str) -> Optional[Dict[str, Any]]:
+def _load_agenda_doc_from_db(job_id: str) -> Optional[dict[str, Any]]:
     """
     Returns the stored document without the Mongo _id field, or None if not found.
     """
@@ -292,8 +292,8 @@ def _load_agenda_doc_from_db(job_id: str) -> Optional[Dict[str, Any]]:
 # ============================
 # Helpers
 # ============================
-def _normalize_output(otpt: Dict[str, Any]) -> Dict[str, Any]:
-    norm: Dict[str, Any] = {}
+def _normalize_output(otpt: dict[str, Any]) -> dict[str, Any]:
+    norm: dict[str, Any] = {}
     for k, v in otpt.items():
         key = str(k)
         try:

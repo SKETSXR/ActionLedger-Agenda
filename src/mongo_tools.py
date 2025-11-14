@@ -1,7 +1,7 @@
 import atexit
 import json
 import re
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from bson import json_util
 from dotenv import dotenv_values
@@ -12,9 +12,9 @@ from langchain_mongodb.agent_toolkit.toolkit import MongoDBDatabaseToolkit
 from pydantic.v1 import BaseModel, Field
 from pymongo import MongoClient
 
-_CLIENT_CACHE: Dict[str, MongoClient] = {}
+_CLIENT_CACHE: dict[str, MongoClient] = {}
 # In-process cache of DB interfaces keyed by "<uri>::<database>"
-_CONN_CACHE: Dict[str, MongoDBDatabase] = {}
+_CONN_CACHE: dict[str, MongoDBDatabase] = {}
 
 # Only these tool names will be returned by get_mongo_tools()
 _ALLOWED_TOOL_NAMES = {
@@ -73,7 +73,7 @@ def _get_or_create_db(uri: str, database: str) -> MongoDBDatabase:
     return db
 
 
-def _coerce_query_to_dict(q: Union[Dict[str, Any], str]) -> Dict[str, Any]:
+def _coerce_query_to_dict(q: Union[dict[str, Any], str]) -> dict[str, Any]:
     """
     Accept either a dict or a JSON string and return a dict.
     Handles common pitfalls: extra quoting, single quotes, and escaped quotes.
@@ -115,7 +115,7 @@ def _coerce_query_to_dict(q: Union[Dict[str, Any], str]) -> Dict[str, Any]:
         raise ValueError(f"query is not valid JSON after coercion: {e}")
 
 
-def _validate_allowed_shape(collection: str, qdict: Dict[str, Any]) -> tuple[bool, str]:
+def _validate_allowed_shape(collection: str, qdict: dict[str, Any]) -> tuple[bool, str]:
     """
     Enforce strict, collection-specific query shapes to reduce risk:
       - 'cv' and 'summary': {'_id': '<thread_id>'} with _id as string
@@ -168,7 +168,7 @@ class MongoQueryInput(BaseModel):
     collection: Literal["cv", "summary", "question_guidelines"] = Field(
         description="Target MongoDB collection."
     )
-    query: Union[Dict[str, Any], str] = Field(
+    query: Union[dict[str, Any], str] = Field(
         description="Mongo filter as dict or JSON string. Example: {'_id': 'thread_7'}"
     )
 
@@ -176,8 +176,8 @@ class MongoQueryInput(BaseModel):
 # ------------------------------ Tools ------------------------------ #
 @tool("mongodb_query_checker", args_schema=MongoQueryInput)
 def mongodb_query_checker(
-    collection: str, query: Union[Dict[str, Any], str]
-) -> Dict[str, Any]:
+    collection: str, query: Union[dict[str, Any], str]
+) -> dict[str, Any]:
     """
     Validate and normalize a MongoDB query before execution.
     Returns a dict with:
@@ -199,8 +199,8 @@ def mongodb_query_checker(
 
 @tool("custom_mongodb_query", args_schema=MongoQueryInput)
 def custom_mongodb_query(
-    collection: str, query: Union[Dict[str, Any], str]
-) -> Dict[str, Any]:
+    collection: str, query: Union[dict[str, Any], str]
+) -> dict[str, Any]:
     """
     Execute a sanitized 'find' query on the specified collection.
     Expected call pattern: run `mongodb_query_checker` first and pass its normalized_query here.
@@ -238,7 +238,7 @@ class ListCollectionsInput(BaseModel):
 
 
 @tool("mongodb_list_collections", args_schema=ListCollectionsInput)
-def mongodb_list_collections() -> Dict[str, Any]:
+def mongodb_list_collections() -> dict[str, Any]:
     """
     Optionally list collection names. Not included by default in the exported toolset.
     """
@@ -255,7 +255,7 @@ def get_mongo_tools(
     llm: BaseChatModel,
     uri: Optional[str] = None,
     database: Optional[str] = None,
-) -> List[BaseTool]:
+) -> list[BaseTool]:
     """
     Build and return the curated list of Mongo tools, filtered by _ALLOWED_TOOL_NAMES.
     Establishes a connection up front to fail fast if credentials are invalid.
@@ -269,7 +269,7 @@ def get_mongo_tools(
         llm=llm,
     )
 
-    all_tools: List[BaseTool] = [
+    all_tools: list[BaseTool] = [
         custom_mongodb_query,
         mongodb_query_checker,
         # mongodb_list_collections,  # enable if desired and add to _ALLOWED_TOOL_NAMES

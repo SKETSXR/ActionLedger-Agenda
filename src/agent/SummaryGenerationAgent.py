@@ -55,7 +55,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import wraps
 from logging.handlers import TimedRotatingFileHandler
-from typing import List, Optional, Sequence, Union
+from typing import Optional, Sequence, Union
 
 import httpx
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -326,7 +326,7 @@ def _render_for_log(payload: object) -> str:
 Msg = Union[SystemMessage, HumanMessage]
 
 
-def build_messages(state: AgentInternalState) -> List[Msg]:
+def build_messages(state: AgentInternalState) -> list[Msg]:
     """Deterministic prompt construction; JSON inputs to keep formatting stable."""
     system = SystemMessage(
         content=SUMMARY_GENERATION_AGENT_PROMPT.format(

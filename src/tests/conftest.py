@@ -1,5 +1,5 @@
 # --- ensure project root is on sys.path ---
-from typing import Any, Dict
+from typing import Any
 
 import mongomock
 import pytest
@@ -33,7 +33,7 @@ from src.schema.output_schema import (
 
 # ---------- small async stub with ainvoke ----------
 class AsyncGraphStub:
-    def __init__(self, payload: Dict[str, Any]):
+    def __init__(self, payload: dict[str, Any]):
         self.payload = payload
 
     async def ainvoke(self, _):

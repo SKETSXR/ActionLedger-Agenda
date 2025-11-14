@@ -74,7 +74,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from logging.handlers import TimedRotatingFileHandler
 from string import Template
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Coroutine, Optional, Sequence, Union
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableLambda
@@ -175,7 +175,7 @@ class _ThreadIdFilter(logging.Filter):
 
 
 # Registry to avoid duplicate handlers per thread
-_THREAD_FILE_HANDLERS: Dict[str, logging.Handler] = {}
+_THREAD_FILE_HANDLERS: dict[str, logging.Handler] = {}
 
 
 def _attach_thread_file_handler(thread_id: str) -> None:
@@ -380,7 +380,7 @@ def _summarize_final_result(payload: Any) -> str:
         elif isinstance(data, dict) and "discussion_topics" in data:
             topics = data["discussion_topics"]
 
-        names: List[str] = []
+        names: list[str] = []
         if isinstance(topics, list):
             for t in topics[:8]:
                 nm = None
@@ -461,7 +461,7 @@ def _log_tool_activity(messages: Sequence[Any], ai_msg: Optional[Any] = None) ->
             LOGGER.info(f"  planned -> {name} args={_render_tool_payload(args)}")
 
     # Trailing tool results
-    tool_msgs: List[Any] = []
+    tool_msgs: list[Any] = []
     i = len(messages) - 1
     while i >= 0 and getattr(messages[i], "type", None) == "tool":
         tool_msgs.append(messages[i])
@@ -489,7 +489,7 @@ def _log_retry(reason: str, iteration: int, extra: Optional[dict] = None) -> Non
 _STEP_KEYS = ("Opening", "DirectQuestion", "DeepDive")
 
 
-def _as_list_str(x: Any) -> List[str]:
+def _as_list_str(x: Any) -> list[str]:
     if x is None:
         return []
     if isinstance(x, list):
@@ -497,7 +497,7 @@ def _as_list_str(x: Any) -> List[str]:
     return [str(x)]
 
 
-def _normalize_one_step(step: Any) -> Optional[Dict[str, Any]]:
+def _normalize_one_step(step: Any) -> Optional[dict[str, Any]]:
     """
     Accept either:
       • {"type": "...", "description": "...", ...}
@@ -539,7 +539,7 @@ def _normalize_one_step(step: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _normalize_topic_obj(obj: Any) -> Optional[Dict[str, Any]]:
+def _normalize_topic_obj(obj: Any) -> Optional[dict[str, Any]]:
     """
     Accept a dict that may contain a wrapped sequence.
     Return a dict matching DiscussionSummaryPerTopicSchema.DiscussionTopic.
@@ -556,7 +556,7 @@ def _normalize_topic_obj(obj: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(seq_in, list):
         seq_in = []
 
-    seq_out: List[Dict[str, Any]] = []
+    seq_out: list[dict[str, Any]] = []
     for step in seq_in:
         norm = _normalize_one_step(step)
         if norm is not None:
@@ -669,7 +669,7 @@ async def _retry_async(
         httpx = None  # optional
 
     reason = "unknown"
-    extra: Dict[str, Any] = {"error": str(last_exc)}
+    extra: dict[str, Any] = {"error": str(last_exc)}
 
     if httpx and isinstance(last_exc, httpx.HTTPStatusError):
         resp = last_exc.response
@@ -1005,7 +1005,7 @@ class PerTopicDiscussionSummaryGenerationAgent:
 
     @staticmethod
     async def _one_topic_call(
-        generated_summary_json: str, topic: Dict[str, Any], thread_id: str
+        generated_summary_json: str, topic: dict[str, Any], thread_id: str
     ):
         # Bind thread id for inner graph calls too
         token = THREAD_ID_VAR.set(thread_id or "-")
@@ -1116,7 +1116,7 @@ class PerTopicDiscussionSummaryAgent:
             _attach_thread_file_handler(state.id or "-")
             # Normalize topics list coming from parent state
             try:
-                topics_list: List[Dict[str, Any]] = [
+                topics_list: list[dict[str, Any]] = [
                     t.model_dump() for t in state.interview_topics.interview_topics
                 ]
             except Exception:
@@ -1153,7 +1153,7 @@ class PerTopicDiscussionSummaryAgent:
                             await t
 
             # Collect successful DiscussionTopic entries and enforce exact topic names
-            discussion_topics: List[
+            discussion_topics: list[
                 DiscussionSummaryPerTopicSchema.DiscussionTopic
             ] = []
             for idx, result in enumerate(results):
